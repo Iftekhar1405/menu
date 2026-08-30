@@ -8,7 +8,9 @@ import { cx } from "@/components/ui";
 
 const NAV = [
   { href: "/dashboard", label: "Overview" },
+  { href: "/orders", label: "Orders" },
   { href: "/menu", label: "Menu" },
+  { href: "/tables", label: "Tables" },
   { href: "/templates", label: "Design" },
   { href: "/qr", label: "QR code" },
   { href: "/settings", label: "Settings" },

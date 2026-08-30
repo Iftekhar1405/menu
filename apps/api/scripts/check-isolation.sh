@@ -86,6 +86,45 @@ else
 fi
 
 echo
+echo "Table sessions — the second principal:"
+
+# Give tenant A two tables and take a session on each.
+T1=$(curl -s -X POST "$API/businesses/$A_BID/tables" -H "Authorization: Bearer $A_TOKEN"   -H 'Content-Type: application/json' -d '{"label":"iso-1"}' | json_field '["token"]')
+T2=$(curl -s -X POST "$API/businesses/$A_BID/tables" -H "Authorization: Bearer $A_TOKEN"   -H 'Content-Type: application/json' -d '{"label":"iso-2"}' | json_field '["token"]')
+
+S1=$(curl -s -X POST "$API/public/tables/resolve" -H 'Content-Type: application/json'   -d "{\"token\":\"$T1\"}" | json_field '["sessionToken"]')
+
+# A table session must not work anywhere in the owner surface.
+probe "table session reads the owner's menu"  "$API/businesses/$A_BID/menu" -H "Authorization: Bearer $S1"
+probe "table session lists the order board"   "$API/businesses/$A_BID/orders" -H "Authorization: Bearer $S1"
+probe "table session lists tables"            "$API/businesses/$A_BID/tables" -H "Authorization: Bearer $S1"
+probe "table session downloads the QR"        "$API/businesses/$A_BID/qr?format=png" -H "Authorization: Bearer $S1"
+
+# An owner token must not work on the diner surface either. The two are
+# different token types signed with different keys, so neither verifies as
+# the other rather than relying on a scope check.
+probe "owner token on the diner order route"  "$API/public/table/order" -H "Authorization: Bearer $A_TOKEN"
+probe "owner token on the diner menu route"   "$API/public/table/menu" -H "Authorization: Bearer $A_TOKEN"
+
+# A forged or truncated session must be refused outright.
+probe "tampered table session"                "$API/public/table/order" -H "Authorization: Bearer ${S1%?}x"
+probe "no session at all"                     "$API/public/table/order"
+
+# A session for table 1 must only ever see table 1. There is no parameter to
+# point it elsewhere, which is the point — confirm the only order it can read
+# is its own.
+curl -s -o /dev/null -X POST "$API/public/table/order" -H "Authorization: Bearer $S1"   -H 'Content-Type: application/json' -d '{"items":[]}' || true
+
+S2=$(curl -s -X POST "$API/public/tables/resolve" -H 'Content-Type: application/json'   -d "{\"token\":\"$T2\"}" | json_field '["sessionToken"]')
+SEEN=$(curl -s "$API/public/table/order" -H "Authorization: Bearer $S2")
+if [ "$SEEN" = "null" ] || [ -z "$SEEN" ]; then
+  echo "  ok    table 2 sees only its own (empty) order"
+else
+  echo "  LEAK  table 2 sees an order it did not place: $SEEN"
+  FAILURES=$((FAILURES + 1))
+fi
+
+echo
 if [ "$FAILURES" -eq 0 ]; then
   echo "PASS — no cross-tenant access."
   exit 0
