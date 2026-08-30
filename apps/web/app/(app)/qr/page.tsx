@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiOrigin, downloadFile, getAccessToken } from "@/lib/api-client";
 import { useSession } from "@/components/session";
@@ -76,9 +77,12 @@ export default function QrPage() {
           <div className="mt-8 rounded-2xl border border-line bg-surface p-4">
             <h3 className="text-[14px] font-medium">Want them printed?</h3>
             <p className="mt-1 text-[13.5px] leading-relaxed text-muted">
-              We make PVC and epoxy table cards. Ordering opens shortly — the artwork
-              you download here is what we print from.
+              We print PVC cards, epoxy tags and acrylic stands, and post them to you.
+              Each table gets its own code.
             </p>
+            <Link href="/merch" className="mt-3 inline-block">
+              <Button size="sm">See printed cards</Button>
+            </Link>
           </div>
         </div>
       </div>

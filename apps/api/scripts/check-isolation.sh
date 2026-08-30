@@ -150,6 +150,41 @@ else
 fi
 
 echo
+echo "Platform admin — the one boundary that is crossed on purpose:"
+
+# An ordinary owner must not reach the admin area at all.
+probe "owner lists all merch orders"       "$API/admin/merch/orders" -H "Authorization: Bearer $A_TOKEN"
+probe "owner reads an admin merch order"   "$API/admin/merch/orders/00000000-0000-0000-0000-000000000000" -H "Authorization: Bearer $A_TOKEN"
+probe "owner pulls admin print artwork"    "$API/admin/merch/orders/00000000-0000-0000-0000-000000000000/artwork" -H "Authorization: Bearer $A_TOKEN"
+probe "owner edits an admin merch order" -X PATCH "$API/admin/merch/orders/00000000-0000-0000-0000-000000000000"   -H "Authorization: Bearer $A_TOKEN" -H 'Content-Type: application/json' -d '{"status":"shipped"}'
+probe "table session reaches the admin area" "$API/admin/merch/orders" -H "Authorization: Bearer $S1"
+probe "no token on the admin area"           "$API/admin/merch/orders"
+
+# Tenant B must not read tenant A's merch requests either.
+probe "tenant B reads A's merch orders"    "$API/businesses/$A_BID/merch-orders" -H "Authorization: Bearer $B_TOKEN"
+
+# The admin's reach is deliberately narrow: merch, plus business identity and
+# tables to fulfil. Everything else must still be closed to us.
+ADMIN_TOKEN=$(curl -s -X POST "$API/auth/login" -H 'Content-Type: application/json'   -d "{\"identifier\":\"${SEED_ADMIN_EMAIL:-admin@irad.solutions}\",\"pin\":\"${SEED_ADMIN_PIN:-204815}\",\"country\":\"IN\"}"   | json_field '["accessToken"]' 2>/dev/null || echo "")
+
+if [ -n "$ADMIN_TOKEN" ]; then
+  probe "admin reads a business's menu"      "$API/businesses/$A_BID/menu" -H "Authorization: Bearer $ADMIN_TOKEN"
+  probe "admin reads a business's orders"    "$API/businesses/$A_BID/orders" -H "Authorization: Bearer $ADMIN_TOKEN"
+  probe "admin reads a business's bills"     "$API/businesses/$A_BID/bills" -H "Authorization: Bearer $ADMIN_TOKEN"
+  probe "admin reads a business's ratings"   "$API/businesses/$A_BID/ratings" -H "Authorization: Bearer $ADMIN_TOKEN"
+
+  ADMIN_LIST=$(curl -s -o /dev/null -w '%{http_code}' "$API/admin/merch/orders" -H "Authorization: Bearer $ADMIN_TOKEN")
+  if [ "$ADMIN_LIST" = "200" ]; then
+    echo "  ok    admin can list merch orders                  -> 200"
+  else
+    echo "  BROKEN admin cannot list merch orders              -> $ADMIN_LIST"
+    FAILURES=$((FAILURES + 1))
+  fi
+else
+  echo "  skip  admin checks (seed not run: pnpm db:seed)"
+fi
+
+echo
 if [ "$FAILURES" -eq 0 ]; then
   echo "PASS — no cross-tenant access."
   exit 0

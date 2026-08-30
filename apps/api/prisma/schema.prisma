@@ -152,6 +152,7 @@ model Business {
   bills      Bill[]
   ratings    OrderRating[]
   prompts    ReviewPrompt[]
+  merchOrders MerchOrder[]
 
   @@index([ownerId])
   @@map("businesses")
@@ -431,4 +432,95 @@ model OrderRating {
 
   @@index([businessId, createdAt])
   @@map("order_ratings")
+}
+
+
+// ─── Phase 4: QR merchandise ─────────────────────────────────────────────────
+
+enum MerchStatus {
+  requested
+  quoted
+  confirmed
+  in_production
+  shipped
+  delivered
+  cancelled
+}
+
+/// Platform catalogue. No businessId: everyone orders from the same list at
+/// the same prices, and we are the only seller.
+model MerchProduct {
+  id           String  @id @default(uuid()) @db.Uuid
+  sku          String  @unique
+  name         String
+  blurb        String
+  unitPrice    Decimal @map("unit_price") @db.Decimal(10, 2)
+  currency     String  @default("INR")
+  minQuantity  Int     @default(1) @map("min_quantity")
+  leadTimeDays Int     @default(7) @map("lead_time_days")
+  /// True when the product needs one card per table rather than one per order.
+  perTable     Boolean @default(true) @map("per_table")
+  isActive     Boolean @default(true) @map("is_active")
+  position     Int     @default(0)
+
+  items MerchOrderItem[]
+
+  @@map("merch_products")
+}
+
+model MerchOrder {
+  id          String      @id @default(uuid()) @db.Uuid
+  businessId  String      @map("business_id") @db.Uuid
+  /// Platform-wide sequential. What we quote and invoice against offline.
+  orderNumber Int         @unique @map("order_number")
+  status      MerchStatus @default(requested)
+
+  contactName  String  @map("contact_name")
+  contactPhone String  @map("contact_phone")
+  contactEmail String? @map("contact_email")
+
+  addressLine1 String  @map("address_line1")
+  addressLine2 String? @map("address_line2")
+  city         String
+  state        String
+  postalCode   String  @map("postal_code")
+  country      String  @default("IN")
+
+  /// From the owner.
+  notes          String?  @map("notes")
+  /// Ours. Never returned to an owner — RLS is row-level, so this is withheld
+  /// in the API's owner-facing shape instead.
+  adminNotes     String?  @map("admin_notes")
+  quotedTotal    Decimal? @map("quoted_total") @db.Decimal(10, 2)
+  /// Catalogue arithmetic at request time, so the owner sees a number before
+  /// we quote. Not a price we are bound to.
+  estimatedTotal Decimal  @map("estimated_total") @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  items    MerchOrderItem[]
+
+  @@index([businessId, createdAt])
+  @@index([status, createdAt])
+  @@map("merch_orders")
+}
+
+model MerchOrderItem {
+  id        String  @id @default(uuid()) @db.Uuid
+  orderId   String  @map("order_id") @db.Uuid
+  productId String  @map("product_id") @db.Uuid
+  quantity  Int
+  unitPrice Decimal @map("unit_price") @db.Decimal(10, 2)
+  /// Which tables' codes to print. Empty means the venue card instead of table
+  /// cards. A PVC card is per-table, so "20 cards" without saying which tables
+  /// is not a fulfillable order.
+  tableIds  String[] @map("table_ids") @db.Uuid
+
+  order   MerchOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product MerchProduct @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@map("merch_order_items")
 }

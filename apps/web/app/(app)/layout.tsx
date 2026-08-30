@@ -14,8 +14,12 @@ const NAV = [
   { href: "/billing", label: "Billing" },
   { href: "/templates", label: "Design" },
   { href: "/qr", label: "QR code" },
+  { href: "/merch", label: "Printed cards" },
   { href: "/settings", label: "Settings" },
 ];
+
+/** Ours. Hidden from owners, and refused by the API even if they find it. */
+const ADMIN_NAV = [{ href: "/admin", label: "Card orders" }];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -26,7 +30,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
-  const { current, businesses, setCurrentId, loading } = useSession();
+  const { current, businesses, setCurrentId, loading, me } = useSession();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -66,7 +70,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           )}
 
           <nav className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
-            {NAV.map((item) => {
+            {[...NAV, ...(me?.role === "platform_admin" ? ADMIN_NAV : [])].map((item) => {
               const active = pathname === item.href;
               return (
                 <Link

@@ -10,8 +10,10 @@ orders on a live board.
 Staff close the order and the diner gets a bill they can download for 30
 minutes, plus a 10-minute window to rate the meal.
 
-**Phases 1, 2 and 3 are built.** The PVC/epoxy QR storefront (Phase 4) is
-specified but not implemented.
+Owners order printed PVC cards, epoxy tags and acrylic stands from us; only the
+seeded platform admin can see those orders.
+
+**All four phases are built.**
 
 ## Running it
 
@@ -103,6 +105,29 @@ and has cost businesses their review counts. Note also that no API can post a
 review to Google on someone's behalf — copy-and-deep-link is the only mechanism
 that exists.
 
+## Printed cards, and the admin area
+
+Owners request printed QR products; **only an account with
+`role = 'platform_admin'` can see those requests**, and it is seeded by
+`pnpm db:seed` from `SEED_ADMIN_*`. There is no payment gateway, so a request
+is a request: we quote and take payment offline, and the owner-facing copy says
+that rather than implying a checkout.
+
+This is the one capability in the system that **deliberately crosses the tenant
+boundary** — fulfilling an order means reading rows belonging to someone else.
+The widening is kept as small as the job allows: a second clause on the three
+`merch_*` tables, plus SELECT-only policies on `businesses` and `tables` so we
+can address a parcel and print the cards. The admin still cannot read any
+business's menu, orders, bills, or ratings, and the isolation suite asserts
+exactly that.
+
+`admin_notes` and internal costing are withheld in the API rather than by RLS,
+which is row-level and cannot hide a column from someone entitled to the row.
+
+Per-table products take table ids rather than a quantity. Each card carries a
+different QR, so "20 cards" without saying which tables cannot be printed — and
+the artwork download is a single PDF with one page per table, in table order.
+
 ## Two things worth knowing before changing anything
 
 **Tenant isolation is enforced twice, and the second layer is easy to disable by
@@ -131,8 +156,11 @@ bill once ordering lands.
    disk.
 3. Set `WHATSAPP_*` (Meta Cloud API, approved authentication template) and
    `RESEND_API_KEY`, then set `AUTH_SKIP_VERIFICATION=false`.
-4. Rotate `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, and `REVALIDATE_SECRET`.
-5. Seed the platform admin: `pnpm db:seed`.
+4. Rotate `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `REVALIDATE_SECRET`, and
+   `TABLE_SESSION_SECRET`.
+5. Set a real `SEED_ADMIN_PIN`, then seed the platform admin and the
+   merchandise catalogue: `pnpm db:seed`. The seed is idempotent and warns if
+   the PIN is still the example value.
 
 ### One accepted risk, recorded deliberately
 

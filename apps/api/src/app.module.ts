@@ -24,6 +24,8 @@ import { TableSessionGuard, TableSessionService } from "./tables/table-session";
 import { JwtModule } from "@nestjs/jwt";
 import { BillingController, TableBillingController } from "./billing/billing.controller";
 import { BillingService } from "./billing/billing.service";
+import { AdminMerchController, MerchController } from "./merch/merch.controller";
+import { MerchService } from "./merch/merch.service";
 
 @Module({
   imports: [PrismaModule, NotificationsModule, AuthModule, JwtModule.register({})],
@@ -38,6 +40,8 @@ import { BillingService } from "./billing/billing.service";
     TableOrderController,
     BillingController,
     TableBillingController,
+    MerchController,
+    AdminMerchController,
   ],
   providers: [
     BusinessesService,
@@ -51,6 +55,7 @@ import { BillingService } from "./billing/billing.service";
     TableSessionService,
     TableSessionGuard,
     BillingService,
+    MerchService,
     // Authenticated by default: a new controller is protected unless it
     // explicitly opts out with @Public.
     { provide: APP_GUARD, useClass: JwtAuthGuard },

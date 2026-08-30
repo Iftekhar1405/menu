@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "noEmit": false,
+    "declaration": false,
+    // Off deliberately. nest build deletes dist first, and an incremental
+    // build reading a stale tsbuildinfo concludes the output is already
+    // current and emits nothing — leaving an empty dist and a confusing
+    // "cannot find module" at runtime.
+    "incremental": false
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "test", "prisma", "scripts"]
+}

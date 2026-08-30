@@ -34,12 +34,19 @@ export function PinInput({
   }, [autoFocus]);
 
   const setDigit = (index: number, digit: string) => {
-    const next = value.split("");
-    next[index] = digit;
-    const joined = next.join("").slice(0, 6);
+    // A fixed-length array, not a split string: writing index 4 of a 2-character
+    // value must leave holes rather than silently shifting digits left.
+    const slots = Array.from({ length: 6 }, (_, i) => value[i] ?? "");
+    slots[index] = digit;
+    const joined = slots.join("");
+
     onChange(joined);
     if (digit && index < 5) refs.current[index + 1]?.focus();
-    if (joined.length === 6 && !joined.includes("") && onComplete) onComplete(joined);
+
+    // Every slot filled — checked per slot. `joined.includes("")` cannot be
+    // used here: every string contains the empty string, so that test is
+    // always true and completion would never fire.
+    if (slots.every((d) => d !== "") && onComplete) onComplete(joined);
   };
 
   const onKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
