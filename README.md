@@ -128,6 +128,35 @@ Per-table products take table ids rather than a quantity. Each card carries a
 different QR, so "20 cards" without saying which tables cannot be printed — and
 the artwork download is a single PDF with one page per table, in table order.
 
+## Images
+
+Three storage drivers behind one interface, picked by which credentials exist:
+**Cloudinary** when `CLOUDINARY_*` is set, else **Supabase Storage**, else the
+**local disk** driver so development works with no accounts at all.
+
+Cloudinary is preferred where available for one reason: it transforms at
+delivery, so `f_auto,q_auto` serves the same upload as AVIF or WebP at a
+sensible quality depending on the diner's phone.
+
+All three keep the property that matters — **image bytes never pass through the
+API.** The browser resizes to 1600px WebP, asks for a ticket, and uploads
+straight to storage. For Cloudinary the ticket is a signature covering the
+`public_id`, so a ticket for one business's folder cannot be redirected to
+another's, and `overwrite` is refused. `pnpm --filter @menu/api test` checks
+that signature arithmetic, because a wrong signature only fails in a diner's
+browser.
+
+## Brand
+
+`public/mark.svg` is the logo — a QR finder pattern, the square-in-a-square
+people already know how to point a camera at. It is achromatic on purpose: the
+whole design rests on the tenant's accent being the only colour in the
+interface, so our own mark stays in ink and white.
+
+The favicon and touch icons are generated from it with
+`pnpm --filter @menu/web icons`, rather than drawn separately, so they cannot
+drift from the logo.
+
 ## Two things worth knowing before changing anything
 
 **Tenant isolation is enforced twice, and the second layer is easy to disable by

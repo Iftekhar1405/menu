@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { api } from "@/lib/api-client";
 import { isImage, prepareImage } from "@/lib/image";
 import { mediaUrl } from "@/lib/preview";
+import { uploadToTicket } from "@/lib/upload";
 import type { Photo, UploadTicket } from "@/lib/types";
 import { Button, cx } from "../ui";
 
@@ -46,12 +47,7 @@ export function PhotoUploader({
           itemId,
         });
 
-        const res = await fetch(ticket.uploadUrl, {
-          method: "PUT",
-          headers: { "Content-Type": "image/webp" },
-          body: blob,
-        });
-        if (!res.ok) throw new Error("upload failed");
+        await uploadToTicket(ticket, blob);
 
         added.push({
           id: crypto.randomUUID(),

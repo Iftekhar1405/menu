@@ -83,5 +83,7 @@ export interface Summary {
 export interface UploadTicket {
   uploadUrl: string;
   path: string;
-  driver: "supabase" | "local";
+  driver: "cloudinary" | "supabase" | "local";
+  /** Cloudinary only: multipart fields that must accompany the file. */
+  fields?: Record<string, string>;
 }

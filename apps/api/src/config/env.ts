@@ -42,6 +42,15 @@ const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().default(""),
   SUPABASE_STORAGE_BUCKET: z.string().default("business-assets"),
 
+  /**
+   * Cloudinary. Preferred over Supabase Storage when set, because it
+   * transforms at delivery time — the same upload is served as AVIF or WebP
+   * at a sensible quality depending on the diner's phone.
+   */
+  CLOUDINARY_CLOUD_NAME: z.string().default(""),
+  CLOUDINARY_API_KEY: z.string().default(""),
+  CLOUDINARY_API_SECRET: z.string().default(""),
+
   WHATSAPP_PHONE_NUMBER_ID: z.string().default(""),
   WHATSAPP_ACCESS_TOKEN: z.string().default(""),
   WHATSAPP_OTP_TEMPLATE: z.string().default("otp_verification"),

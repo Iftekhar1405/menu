@@ -11,6 +11,7 @@ import {
 } from "@menu/shared";
 import { Button, cx } from "../ui";
 import { DietMark } from "../templates/shared";
+import { SiteFooter } from "../site-footer";
 import { BillAndRating } from "./bill-and-rating";
 
 interface CurrentOrder {
@@ -255,6 +256,10 @@ export function Ordering({
           />
         </>
       )}
+
+      {/* The ordering surface had no credit at all — a diner who orders from
+          the table never reaches the public menu page where it lives. */}
+      <SiteFooter />
 
       {tab === "menu" && cart.length > 0 && (
         <CartBar

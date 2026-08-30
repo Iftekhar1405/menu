@@ -8,6 +8,16 @@ export const metadata: Metadata = {
   },
   description:
     "Build a menu, print a QR code, and let people order from the table.",
+  applicationName: "menu.irad.solutions",
+  // app/icon.svg and app/apple-icon.png are picked up by convention; the 32px
+  // PNG is here for anything that still refuses an SVG favicon.
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: "/apple-icon.png",
+  },
 };
 
 export const viewport: Viewport = {

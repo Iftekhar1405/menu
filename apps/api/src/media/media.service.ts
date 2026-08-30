@@ -3,14 +3,19 @@ import { createHmac, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadEnv, usesSupabaseStorage } from "../config/env";
+import { deliveryUrl, signUpload, usesCloudinary } from "./cloudinary";
 
 export interface UploadTicket {
-  /** Where the browser PUTs the bytes. */
+  /** Where the browser sends the bytes. */
   uploadUrl: string;
   /** What to send back to the API once the upload succeeds. */
   path: string;
-  /** Local driver only: the API accepts a plain PUT at uploadUrl. */
-  driver: "supabase" | "local";
+  driver: "cloudinary" | "supabase" | "local";
+  /**
+   * Cloudinary only: multipart form fields that must accompany the file.
+   * Supabase and the local driver take a plain PUT of the bytes.
+   */
+  fields?: Record<string, string>;
 }
 
 /**
@@ -48,6 +53,20 @@ export class MediaService {
       kind === "logo"
         ? `${businessId}/logo/${filename}`
         : `${businessId}/items/${itemId}/${filename}`;
+
+    // Cloudinary first when configured: it is the only driver that optimises
+    // per-request at delivery, which matters most on the diner's phone.
+    if (usesCloudinary(this.env)) {
+      // Cloudinary appends its own extension, so the public_id carries none.
+      const publicId = path.replace(/\.webp$/, "");
+      const ticket = signUpload(this.env, publicId);
+      return {
+        uploadUrl: ticket.uploadUrl,
+        path: ticket.publicId,
+        driver: "cloudinary",
+        fields: ticket.fields,
+      };
+    }
 
     if (usesSupabaseStorage(this.env)) {
       return { uploadUrl: await this.signSupabaseUpload(path), path, driver: "supabase" };
@@ -110,6 +129,10 @@ export class MediaService {
   /** Turns a stored path into something an <img> can load. */
   publicUrl(path: string | null): string | null {
     if (!path) return null;
+    if (/^https?:\/\//.test(path)) return path;
+    if (usesCloudinary(this.env)) {
+      return deliveryUrl(this.env, path);
+    }
     if (usesSupabaseStorage(this.env)) {
       return `${this.env.SUPABASE_URL}/storage/v1/object/public/${this.env.SUPABASE_STORAGE_BUCKET}/${path}`;
     }

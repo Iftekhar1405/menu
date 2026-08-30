@@ -5,6 +5,7 @@ import { BUSINESS_TYPES, BUSINESS_TYPE_LABEL } from "@menu/shared";
 import { ApiError, api } from "@/lib/api-client";
 import { isImage, prepareImage } from "@/lib/image";
 import { mediaUrl } from "@/lib/preview";
+import { uploadToTicket } from "@/lib/upload";
 import type { UploadTicket } from "@/lib/types";
 import { useSession } from "@/components/session";
 import { Banner, Button, Field, Input, Select, cx } from "@/components/ui";
@@ -52,11 +53,7 @@ export default function SettingsPage() {
     const ticket = await api.post<UploadTicket>(
       `/businesses/${current.id}/logo/upload-url`,
     );
-    await fetch(ticket.uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": "image/webp" },
-      body: blob,
-    });
+    await uploadToTicket(ticket, blob);
     setLogoPath(ticket.path);
   }
 

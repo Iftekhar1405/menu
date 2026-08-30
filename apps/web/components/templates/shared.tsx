@@ -188,12 +188,6 @@ export function EmptyMenu() {
   );
 }
 
-export function MenuFooter() {
-  return (
-    <footer className="px-5 pb-10 pt-8 text-center">
-      <p className="text-[11px] tracking-wide text-[color:var(--menu-muted)] opacity-60">
-        menu.irad.solutions
-      </p>
-    </footer>
-  );
-}
+/** Kept as a named export so the templates do not have to know where the
+ *  credit lives. */
+export { SiteFooter as MenuFooter } from "../site-footer";
