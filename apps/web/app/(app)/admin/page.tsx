@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { formatMoney } from "@menu/shared";
 import { ApiError, api, downloadFile } from "@/lib/api-client";
 import { useSession } from "@/components/session";
+import { useConfirm } from "@/components/confirm";
 import { Banner, Button, Empty, Input, Textarea, cx } from "@/components/ui";
 
 type Status =
@@ -82,6 +83,7 @@ const FILTERS: (Status | "all")[] = [
  */
 export default function AdminPage() {
   const { me } = useSession();
+  const confirm = useConfirm();
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [filter, setFilter] = useState<Status | "all">("all");
   const [loading, setLoading] = useState(true);
@@ -118,6 +120,15 @@ export default function AdminPage() {
   }
 
   async function update(order: AdminOrder, patch: Record<string, unknown>) {
+    if (patch.status === "cancelled") {
+      const ok = await confirm({
+        title: `Cancel order #${order.orderNumber}?`,
+        body: `${order.business.name} will see it as cancelled. This cannot be undone.`,
+        confirmLabel: "Cancel order",
+        cancelLabel: "Keep it",
+      });
+      if (!ok) return;
+    }
     setBusy(order.id);
     try {
       const updated = await api.patch<AdminOrder>(`/admin/merch/orders/${order.id}`, patch);

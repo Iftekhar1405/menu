@@ -5,6 +5,7 @@ import { DIET_TAGS, DIET_TAG_LABEL, SPICE_LEVEL_LABEL } from "@menu/shared";
 import type { Category, Item } from "@/lib/types";
 import { Button, Field, Input, Select, Textarea, cx } from "../ui";
 import { PhotoUploader } from "./photo-uploader";
+import { useConfirm } from "../confirm";
 
 export interface ItemDraft {
   id: string;
@@ -109,6 +110,7 @@ export function ItemSheet({
   onClose: () => void;
 }) {
   const [advanced, setAdvanced] = useState(false);
+  const confirm = useConfirm();
   const set = <K extends keyof ItemDraft>(key: K, value: ItemDraft[K]) =>
     onChange({ ...draft, [key]: value });
 
@@ -122,8 +124,11 @@ export function ItemSheet({
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
-      <button
-        aria-label="Close"
+      {/* Presentational: clicking outside closes, but assistive tech already
+          has the Close button and Escape, and announcing a second "Close"
+          control here would just be noise. */}
+      <div
+        aria-hidden="true"
         onClick={onClose}
         className="absolute inset-0 bg-[rgba(17,17,19,0.28)]"
       />
@@ -162,14 +167,16 @@ export function ItemSheet({
               single price disappears, so the two can never disagree. */}
           {!pricedByVariant ? (
             <Field label="Price">
-              <div className="flex gap-2">
-                <Input
-                  value={draft.price}
-                  onChange={(e) => set("price", e.target.value.replace(/[^\d.]/g, ""))}
-                  inputMode="decimal"
-                  placeholder="140"
-                  className="tnum flex-1"
-                />
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <Input
+                    value={draft.price}
+                    onChange={(e) => set("price", e.target.value.replace(/[^\d.]/g, ""))}
+                    inputMode="decimal"
+                    placeholder="140"
+                    className="tnum"
+                  />
+                </div>
                 <Button
                   type="button"
                   onClick={() =>
@@ -189,7 +196,14 @@ export function ItemSheet({
                 <legend className="text-[13px] font-medium text-ink">Sizes</legend>
                 <button
                   type="button"
-                  onClick={() => set("variants", [])}
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: "Use one price instead?",
+                      body: "The sizes you have added will be removed.",
+                      confirmLabel: "Remove sizes",
+                    });
+                    if (ok) set("variants", []);
+                  }}
                   className="text-[12.5px] text-muted hover:text-ink"
                 >
                   Use one price instead
@@ -197,28 +211,37 @@ export function ItemSheet({
               </div>
               <div className="space-y-2">
                 {draft.variants.map((v, i) => (
-                  <div key={v.id} className="flex gap-2">
-                    <Input
-                      value={v.name}
-                      onChange={(e) => {
-                        const next = [...draft.variants];
-                        next[i] = { ...v, name: e.target.value };
-                        set("variants", next);
-                      }}
-                      placeholder="Small"
-                      className="flex-1"
-                    />
-                    <Input
-                      value={v.price}
-                      onChange={(e) => {
-                        const next = [...draft.variants];
-                        next[i] = { ...v, price: e.target.value.replace(/[^\d.]/g, "") };
-                        set("variants", next);
-                      }}
-                      inputMode="decimal"
-                      placeholder="140"
-                      className="tnum w-28"
-                    />
+                  /* Widths live on the wrappers, not on the inputs. Input is
+                     w-full by design, and a w-28 or flex-1 passed alongside it
+                     is the same utility class fighting itself — which had the
+                     name box collapsing to 26px while price took the row. */
+                  <div key={v.id} className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <Input
+                        value={v.name}
+                        onChange={(e) => {
+                          const next = [...draft.variants];
+                          next[i] = { ...v, name: e.target.value };
+                          set("variants", next);
+                        }}
+                        placeholder="Small"
+                        aria-label={`Size ${i + 1} name`}
+                      />
+                    </div>
+                    <div className="w-24 shrink-0">
+                      <Input
+                        value={v.price}
+                        onChange={(e) => {
+                          const next = [...draft.variants];
+                          next[i] = { ...v, price: e.target.value.replace(/[^\d.]/g, "") };
+                          set("variants", next);
+                        }}
+                        inputMode="decimal"
+                        placeholder="140"
+                        className="tnum"
+                        aria-label={`Size ${i + 1} price`}
+                      />
+                    </div>
                     <Button
                       type="button"
                       variant="ghost"
@@ -380,25 +403,29 @@ export function ItemSheet({
                   optional
                   hint="Leave blank to use the business rate. Set it for packaged items taxed differently from food."
                 >
-                  <Input
-                    value={draft.taxRate}
-                    onChange={(e) => set("taxRate", e.target.value.replace(/[^\d.]/g, ""))}
-                    inputMode="decimal"
-                    placeholder="18"
-                    className="tnum w-28"
-                  />
+                  <div className="w-28">
+                    <Input
+                      value={draft.taxRate}
+                      onChange={(e) => set("taxRate", e.target.value.replace(/[^\d.]/g, ""))}
+                      inputMode="decimal"
+                      placeholder="18"
+                      className="tnum"
+                    />
+                  </div>
                 </Field>
 
                 <Field label="Prepared in (minutes)" optional>
-                  <Input
-                    value={draft.prepTimeMins}
-                    onChange={(e) =>
-                      set("prepTimeMins", e.target.value.replace(/[^\d]/g, ""))
-                    }
-                    inputMode="numeric"
-                    placeholder="12"
-                    className="tnum w-28"
-                  />
+                  <div className="w-28">
+                    <Input
+                      value={draft.prepTimeMins}
+                      onChange={(e) =>
+                        set("prepTimeMins", e.target.value.replace(/[^\d]/g, ""))
+                      }
+                      inputMode="numeric"
+                      placeholder="12"
+                      className="tnum"
+                    />
+                  </div>
                 </Field>
 
                 <fieldset>

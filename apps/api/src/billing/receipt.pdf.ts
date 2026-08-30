@@ -132,8 +132,51 @@ export function buildReceiptPdf(bill: Bill): Promise<Buffer> {
       align: "center",
       gap: 2,
     });
-    line("menu.irad.solutions", { size: 6, align: "center" });
+    // Mark and name together, centred as one unit. Drawn with pdfkit
+    // primitives rather than an embedded image: the same 32-unit geometry as
+    // the SVG mark, scaled to the receipt.
+    const markSize = 5;
+    const label = "menu.irad.solutions";
+    doc.font("Helvetica").fontSize(6);
+    const labelWidth = doc.widthOfString(label);
+    const groupLeft = PAD + (INNER - (markSize + 2 + labelWidth)) / 2;
+
+    drawMark(doc, groupLeft, y, markSize);
+    doc.fillColor("#1C1C1E").opacity(0.55);
+    doc.text(label, groupLeft + markSize + 2, y + 0.6);
+    doc.opacity(1).fillColor("#000000");
 
     doc.end();
   });
+}
+
+/**
+ * The mark, in pdfkit primitives.
+ *
+ * Not an embedded PNG: a receipt is often printed on a thermal printer where a
+ * raster of this size turns to mush, and the shapes are simple enough that
+ * drawing them keeps the edges crisp at any resolution.
+ */
+function drawMark(
+  doc: PDFKit.PDFDocument,
+  x: number,
+  y: number,
+  size: number,
+): void {
+  const u = size / 32;
+
+  doc.save();
+  doc.fillColor("#1C1C1E").opacity(0.55);
+  doc.roundedRect(x, y, size, size, 8 * u).fill();
+
+  doc.fillColor("#FFFFFF").opacity(1);
+  // Finder ring, drawn as a stroked rounded rect.
+  doc
+    .lineWidth(2.5 * u)
+    .strokeColor("#FFFFFF")
+    .roundedRect(x + 6.25 * u, y + 6.25 * u, 12.5 * u, 12.5 * u, 3.75 * u)
+    .stroke();
+  doc.roundedRect(x + 10.5 * u, y + 10.5 * u, 4 * u, 4 * u, 1.25 * u).fill();
+  doc.roundedRect(x + 20.5 * u, y + 20.5 * u, 6 * u, 6 * u, 2 * u).fill();
+  doc.restore();
 }

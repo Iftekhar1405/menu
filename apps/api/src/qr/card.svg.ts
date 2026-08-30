@@ -30,6 +30,10 @@ export interface CardOptions {
 const W = 105;
 const H = 148;
 const WATERMARK = "menu.irad.solutions";
+const WM_SIZE = 3.1;
+const WM_TRACK = 0.2;
+const WM_MARK = 3.6;
+const WM_GAP = 1.3;
 
 export async function buildCardSvg(opts: CardOptions): Promise<string> {
   const accent = opts.accent ?? "#1D6F5C";
@@ -75,6 +79,20 @@ export async function buildCardSvg(opts: CardOptions): Promise<string> {
 
   const nameY = nameYFor(opts);
 
+  /*
+   * The watermark is a mark and a name laid out as one centred group. SVG
+   * cannot measure text, so the width is estimated from the character count —
+   * accurate enough that a fraction of a millimetre either way is invisible at
+   * this size, and far better than centring the two independently and having
+   * them overlap.
+   */
+  const wmWidth =
+    WATERMARK.length * WM_SIZE * 0.5 + (WATERMARK.length - 1) * WM_TRACK;
+  const wmGroupX = (W - (WM_MARK + WM_GAP + wmWidth)) / 2;
+  const wmMarkX = wmGroupX;
+  const wmTextX = wmGroupX + WM_MARK + WM_GAP;
+  const wmBaseline = qrY + qrSize + 19;
+
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}mm" height="${H}mm"
      viewBox="0 0 ${W} ${H}" role="img" aria-label="QR code for ${escapeXml(opts.businessName)}">
   <rect width="${W}" height="${H}" fill="#FFFFFF"/>
@@ -95,10 +113,31 @@ export async function buildCardSvg(opts: CardOptions): Promise<string> {
         font-family="Helvetica, Arial, sans-serif" font-size="5" font-weight="500"
         letter-spacing="0.3" fill="${accent}">${escapeXml(caption)}</text>
 
-  <text x="${W / 2}" y="${qrY + qrSize + 19}" text-anchor="middle"
-        font-family="Helvetica, Arial, sans-serif" font-size="3.1"
-        letter-spacing="0.2" fill="#1C1C1E" opacity="0.45">${WATERMARK}</text>
+  ${markGlyph(wmMarkX, wmBaseline - WM_MARK + 0.85, WM_MARK)}
+  <text x="${round(wmTextX)}" y="${round(wmBaseline)}" text-anchor="start"
+        font-family="Helvetica, Arial, sans-serif" font-size="${WM_SIZE}"
+        letter-spacing="${WM_TRACK}" fill="#1C1C1E" opacity="0.45">${WATERMARK}</text>
 </svg>`;
+}
+
+/**
+ * The mark, drawn at an arbitrary size and position on the card.
+ *
+ * Redrawn here in SVG primitives rather than referenced: this file is
+ * rasterised by resvg and embedded into PDFs for print vendors, and an
+ * external <image> href would resolve to nothing in both. The geometry is the
+ * same 32-unit grid as public/mark.svg, scaled.
+ */
+function markGlyph(x: number, y: number, size: number): string {
+  const u = size / 32;
+  const r = (n: number) => (n * u).toFixed(3);
+  return `<g transform="translate(${x.toFixed(3)} ${y.toFixed(3)})" opacity="0.45">
+    <rect width="${r(32)}" height="${r(32)}" rx="${r(8)}" fill="#1C1C1E"/>
+    <rect x="${r(6.25)}" y="${r(6.25)}" width="${r(12.5)}" height="${r(12.5)}" rx="${r(3.75)}"
+          fill="none" stroke="#FFFFFF" stroke-width="${r(2.5)}"/>
+    <rect x="${r(10.5)}" y="${r(10.5)}" width="${r(4)}" height="${r(4)}" rx="${r(1.25)}" fill="#FFFFFF"/>
+    <rect x="${r(20.5)}" y="${r(20.5)}" width="${r(6)}" height="${r(6)}" rx="${r(2)}" fill="#FFFFFF"/>
+  </g>`;
 }
 
 function nameYFor(opts: CardOptions): number {

@@ -8,10 +8,12 @@ import { mediaUrl } from "@/lib/preview";
 import { uploadToTicket } from "@/lib/upload";
 import type { UploadTicket } from "@/lib/types";
 import { useSession } from "@/components/session";
+import { useConfirm } from "@/components/confirm";
 import { Banner, Button, Field, Input, Select, cx } from "@/components/ui";
 
 export default function SettingsPage() {
   const { current, me, refreshBusinesses } = useSession();
+  const confirm = useConfirm();
   const logoInput = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState({
@@ -120,7 +122,14 @@ export default function SettingsPage() {
             {logoPath && (
               <button
                 type="button"
-                onClick={() => setLogoPath(null)}
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: "Remove your logo?",
+                    body: "It comes off your menu and your printed QR cards once you save.",
+                    confirmLabel: "Remove logo",
+                  });
+                  if (ok) setLogoPath(null);
+                }}
                 className="ml-2 text-[13px] text-faint hover:text-ink"
               >
                 Remove

@@ -23,6 +23,7 @@ import { ApiError, api } from "@/lib/api-client";
 import { toPreviewMenu } from "@/lib/preview";
 import type { Category, Item } from "@/lib/types";
 import { useSession } from "@/components/session";
+import { useConfirm } from "@/components/confirm";
 import { MenuView } from "@/components/templates";
 import { PhoneFrame } from "@/components/phone-frame";
 import { Banner, Button, Empty, Input, cx } from "@/components/ui";
@@ -35,6 +36,7 @@ import {
 
 export default function MenuPage() {
   const { current } = useSession();
+  const confirm = useConfirm();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<ItemDraft | null>(null);
@@ -124,6 +126,12 @@ export default function MenuPage() {
 
   async function deleteItem() {
     if (!draft || !current || draftIsNew) return;
+    const ok = await confirm({
+      title: `Delete "${draft.name}"?`,
+      body: "It comes off your menu immediately. Past orders and bills keep their own copy, so nothing already sold is affected.",
+      confirmLabel: "Delete dish",
+    });
+    if (!ok) return;
     await api.del(`/businesses/${current.id}/items/${draft.id}`);
     setDraft(null);
     await load();
@@ -168,6 +176,12 @@ export default function MenuPage() {
 
   async function deleteCategory(category: Category) {
     if (!current) return;
+    const ok = await confirm({
+      title: `Delete "${category.name}"?`,
+      body: "The section disappears from your menu straight away.",
+      confirmLabel: "Delete section",
+    });
+    if (!ok) return;
     await api.del(`/businesses/${current.id}/categories/${category.id}`);
     await load();
   }

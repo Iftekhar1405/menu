@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api, downloadFile } from "@/lib/api-client";
 import { useSession } from "@/components/session";
+import { useConfirm } from "@/components/confirm";
 import { Banner, Button, Empty, Field, Input, cx } from "@/components/ui";
 
 interface TableRow {
@@ -15,6 +16,7 @@ interface TableRow {
 
 export default function TablesPage() {
   const { current } = useSession();
+  const confirm = useConfirm();
   const [tables, setTables] = useState<TableRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [label, setLabel] = useState("");
@@ -83,6 +85,12 @@ export default function TablesPage() {
 
   async function remove(table: TableRow) {
     if (!current) return;
+    const ok = await confirm({
+      title: `Delete table ${table.label}?`,
+      body: "Any printed card for this table stops working. If you just want to stop taking orders there, pause it instead.",
+      confirmLabel: "Delete table",
+    });
+    if (!ok) return;
     await api.del(`/businesses/${current.id}/tables/${table.id}`);
     await load();
   }

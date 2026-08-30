@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatMoney } from "@menu/shared";
 import { api, downloadFile } from "@/lib/api-client";
 import { useSession } from "@/components/session";
+import { useConfirm } from "@/components/confirm";
 import { Button, Empty, cx } from "@/components/ui";
 
 type Status = "placed" | "preparing" | "ready" | "completed" | "cancelled";
@@ -40,6 +41,7 @@ const COLUMNS: { status: Status; title: string; next?: Status; nextLabel?: strin
  */
 export default function OrdersPage() {
   const { current } = useSession();
+  const confirm = useConfirm();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -81,6 +83,20 @@ export default function OrdersPage() {
    */
   async function advance(order: Order, status: Status) {
     if (!current) return;
+
+    // Only cancelling asks. Start / Ready / Served are tapped constantly
+    // during a service, and a dialog on those would be an obstacle rather
+    // than a safeguard.
+    if (status === "cancelled") {
+      const ok = await confirm({
+        title: `Cancel table ${order.table.label}'s order?`,
+        body: "The kitchen stops work on it and the diner is told it was cancelled. This cannot be undone.",
+        confirmLabel: "Cancel order",
+        cancelLabel: "Keep it",
+      });
+      if (!ok) return;
+    }
+
     setBusy(order.id);
 
     if (status === "completed") {

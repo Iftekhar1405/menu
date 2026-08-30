@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { SessionProvider, useSession } from "@/components/session";
 import { logout } from "@/lib/api-client";
 import { cx } from "@/components/ui";
+import { Wordmark } from "@/components/brand";
+import { ConfirmProvider, useConfirm } from "@/components/confirm";
 
 const NAV = [
   { href: "/dashboard", label: "Overview" },
@@ -24,7 +26,9 @@ const ADMIN_NAV = [{ href: "/admin", label: "Card orders" }];
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
-      <Shell>{children}</Shell>
+      <ConfirmProvider>
+        <Shell>{children}</Shell>
+      </ConfirmProvider>
     </SessionProvider>
   );
 }
@@ -33,6 +37,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   const { current, businesses, setCurrentId, loading, me } = useSession();
   const pathname = usePathname();
   const router = useRouter();
+  const confirm = useConfirm();
 
   if (loading) {
     return (
@@ -47,9 +52,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       <aside className="border-b border-line bg-surface lg:border-b-0 lg:border-r">
         <div className="flex h-full flex-col p-4 lg:p-5">
           <Link href="/dashboard" className="mb-6 block px-2">
-            <span className="font-display text-[14px] font-semibold tracking-tight">
-              menu<span className="text-faint">.irad</span>
-            </span>
+            <Wordmark size={19} />
           </Link>
 
           {/* Only shown when it is a real choice. A single-restaurant owner
@@ -96,6 +99,13 @@ function Shell({ children }: { children: React.ReactNode }) {
             </p>
             <button
               onClick={async () => {
+                const ok = await confirm({
+                  title: "Sign out?",
+                  body: "You'll need your 6-digit PIN to get back in.",
+                  confirmLabel: "Sign out",
+                  tone: "normal",
+                });
+                if (!ok) return;
                 await logout();
                 router.replace("/login");
               }}

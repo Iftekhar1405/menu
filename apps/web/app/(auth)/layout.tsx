@@ -1,6 +1,7 @@
 import { MenuView } from "@/components/templates";
 import { PhoneFrame } from "@/components/phone-frame";
 import { sampleMenu } from "@/lib/sample-menu";
+import { Wordmark } from "@/components/brand";
 
 /**
  * The signup screen shows the thing being sold, at the size it will be read.
@@ -13,9 +14,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <main className="flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-[380px]">
           <div className="mb-9">
-            <p className="font-display text-[15px] font-semibold tracking-tight text-ink">
-              menu<span className="text-faint">.irad.solutions</span>
-            </p>
+            <Wordmark full size={21} />
           </div>
           {children}
         </div>

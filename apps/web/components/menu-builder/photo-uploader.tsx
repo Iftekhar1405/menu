@@ -7,6 +7,7 @@ import { mediaUrl } from "@/lib/preview";
 import { uploadToTicket } from "@/lib/upload";
 import type { Photo, UploadTicket } from "@/lib/types";
 import { Button, cx } from "../ui";
+import { useConfirm } from "../confirm";
 
 /**
  * Photos are resized and converted to WebP in the browser, then uploaded
@@ -28,6 +29,7 @@ export function PhotoUploader({
   onChange: (photos: Photo[]) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -109,7 +111,17 @@ export function PhotoUploader({
               </button>
               <button
                 type="button"
-                onClick={() => onChange(photos.filter((p) => p.id !== photo.id))}
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: "Remove this photo?",
+                    body:
+                      i === 0 && photos.length > 1
+                        ? "It is the first photo, so the next one becomes the one diners see."
+                        : "It comes off the dish once you save.",
+                    confirmLabel: "Remove photo",
+                  });
+                  if (ok) onChange(photos.filter((p) => p.id !== photo.id));
+                }}
                 aria-label="Remove photo"
                 className="h-6 w-6 bg-black/55 text-[13px] text-white"
               >
