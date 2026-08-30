@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatMoney } from "@menu/shared";
-import { api } from "@/lib/api-client";
+import { api, downloadFile } from "@/lib/api-client";
 import { useSession } from "@/components/session";
 import { Button, Empty, cx } from "@/components/ui";
 
@@ -74,9 +74,21 @@ export default function OrdersPage() {
 
   if (!current) return null;
 
+  /**
+   * Marking an order served also bills it. Two separate taps would leave
+   * unbilled completed orders lying around, and the diner's 30-minute
+   * download window starts the moment the order closes.
+   */
   async function advance(order: Order, status: Status) {
     if (!current) return;
     setBusy(order.id);
+
+    if (status === "completed") {
+      await api
+        .post(`/businesses/${current.id}/orders/${order.id}/bill`)
+        .catch(() => undefined);
+    }
+
     // Optimistic: a member of staff tapping "Ready" should see it move now,
     // not after a round trip through a busy kitchen's wifi.
     setOrders((prev) =>
@@ -135,6 +147,15 @@ export default function OrdersPage() {
                       nextLabel={column.nextLabel}
                       onAdvance={() => column.next && void advance(order, column.next)}
                       onCancel={() => void advance(order, "cancelled")}
+                      onBill={async () => {
+                        await api
+                          .post(`/businesses/${current.id}/orders/${order.id}/bill`)
+                          .catch(() => undefined);
+                        await downloadFile(
+                          `/businesses/${current.id}/orders/${order.id}/bill/pdf`,
+                          `bill-table-${order.table.label}.pdf`,
+                        );
+                      }}
                     />
                   ))}
                   {list.length === 0 && (
@@ -160,6 +181,7 @@ function OrderCard({
   nextLabel,
   onAdvance,
   onCancel,
+  onBill,
 }: {
   order: Order;
   now: number;
@@ -168,6 +190,7 @@ function OrderCard({
   nextLabel?: string;
   onAdvance: () => void;
   onCancel: () => void;
+  onBill: () => void;
 }) {
   const minutes = Math.max(0, Math.floor((now - new Date(order.placedAt).getTime()) / 60000));
 
@@ -225,6 +248,9 @@ function OrderCard({
         <span className="flex gap-1.5">
           <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
             Cancel
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onBill} disabled={busy}>
+            Bill
           </Button>
           {nextLabel && (
             <Button variant="primary" size="sm" onClick={onAdvance} loading={busy}>

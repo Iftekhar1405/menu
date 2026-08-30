@@ -19,6 +19,7 @@ export interface ItemDraft {
   ingredients: string;
   allergens: string;
   nutrition: Record<string, string>;
+  taxRate: string;
   variants: { id: string; name: string; price: string }[];
   photos: Item["photos"];
 }
@@ -37,6 +38,7 @@ export function emptyDraft(categoryId: string): ItemDraft {
     ingredients: "",
     allergens: "",
     nutrition: {},
+    taxRate: "",
     variants: [],
     photos: [],
   };
@@ -58,6 +60,7 @@ export function toDraft(item: Item): ItemDraft {
     nutrition: Object.fromEntries(
       Object.entries(item.nutrition ?? {}).map(([k, v]) => [k, String(v)]),
     ),
+    taxRate: item.taxRate ?? "",
     variants: item.variants.map((v) => ({ id: v.id, name: v.name, price: v.price })),
     photos: item.photos,
   };
@@ -369,6 +372,20 @@ export function ItemSheet({
                     value={draft.allergens}
                     onChange={(e) => set("allergens", e.target.value)}
                     placeholder="milk, mustard, gluten"
+                  />
+                </Field>
+
+                <Field
+                  label="Tax rate (%)"
+                  optional
+                  hint="Leave blank to use the business rate. Set it for packaged items taxed differently from food."
+                >
+                  <Input
+                    value={draft.taxRate}
+                    onChange={(e) => set("taxRate", e.target.value.replace(/[^\d.]/g, ""))}
+                    inputMode="decimal"
+                    placeholder="18"
+                    className="tnum w-28"
                   />
                 </Field>
 

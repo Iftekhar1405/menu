@@ -133,6 +133,7 @@ export class MenuService {
         ingredients: input.ingredients ?? null,
         allergens: input.allergens,
         nutrition: input.nutrition ?? undefined,
+        taxRate: input.taxRate ?? null,
       },
     });
 
@@ -167,6 +168,7 @@ export class MenuService {
         ingredients: input.ingredients ?? null,
         allergens: input.allergens,
         nutrition: input.nutrition ?? undefined,
+        taxRate: input.taxRate ?? null,
       },
     });
 

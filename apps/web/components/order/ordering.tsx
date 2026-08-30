@@ -11,6 +11,7 @@ import {
 } from "@menu/shared";
 import { Button, cx } from "../ui";
 import { DietMark } from "../templates/shared";
+import { BillAndRating } from "./bill-and-rating";
 
 interface CurrentOrder {
   id: string;
@@ -60,6 +61,7 @@ export function Ordering({
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"menu" | "order">("menu");
+  const [hasClosedBill, setHasClosedBill] = useState(false);
   const cartKey = `menu-cart-${table.id}`;
   const restored = useRef(false);
 
@@ -89,6 +91,18 @@ export function Ordering({
     if (!res || !res.ok) return;
     setOrder((await res.json()) as CurrentOrder | null);
   }, []);
+
+  const previousOrderId = useRef<string | null>(null);
+
+  // When staff close the order, move the diner to the tab that now has their
+  // bill on it rather than leaving them on a menu they have finished with.
+  useEffect(() => {
+    if (order) previousOrderId.current = order.id;
+    if (!order && previousOrderId.current) {
+      previousOrderId.current = null;
+      setTab("order");
+    }
+  }, [order]);
 
   useEffect(() => {
     void loadOrder();
@@ -226,7 +240,20 @@ export function Ordering({
       {tab === "menu" ? (
         <MenuList menu={menu} currency={business.currency} onAdd={addLine} cart={cart} />
       ) : (
-        <OrderPanel order={order} batches={batches} currency={business.currency} />
+        <>
+          {/* Once the bill is up, "nothing ordered yet" would be nonsense —
+              they are looking at a bill for what they just ate. */}
+          {!(hasClosedBill && !order) && (
+            <OrderPanel order={order} batches={batches} currency={business.currency} />
+          )}
+          {/* Appears once staff close the order. Both the bill and the rating
+              are time-boxed server-side, so this simply shows whatever the API
+              is still willing to return. */}
+          <BillAndRating
+            currency={business.currency}
+            onHasContent={setHasClosedBill}
+          />
+        </>
       )}
 
       {tab === "menu" && cart.length > 0 && (

@@ -125,6 +125,31 @@ else
 fi
 
 echo
+echo "Bills and ratings:"
+
+probe "table session reads the owner's bill list"  "$API/businesses/$A_BID/bills" -H "Authorization: Bearer $S1"
+probe "table session reads tax config"             "$API/businesses/$A_BID/tax" -H "Authorization: Bearer $S1"
+probe "table session reads the ratings"            "$API/businesses/$A_BID/ratings" -H "Authorization: Bearer $S1"
+probe "table session changes tax config" -X PATCH  "$API/businesses/$A_BID/tax" -H "Authorization: Bearer $S1"   -H 'Content-Type: application/json' -d '{"taxEnabled":true,"defaultTaxRate":0}'
+probe "owner token on the diner bill route"        "$API/public/table/bill" -H "Authorization: Bearer $A_TOKEN"
+probe "owner token on the diner rating route"      "$API/public/table/rating" -H "Authorization: Bearer $A_TOKEN"
+probe "no session on the diner bill route"         "$API/public/table/bill"
+
+# Tenant B must not reach tenant A's billing surface either.
+probe "tenant B reads A's bills"                   "$API/businesses/$A_BID/bills" -H "Authorization: Bearer $B_TOKEN"
+probe "tenant B reads A's ratings"                 "$API/businesses/$A_BID/ratings" -H "Authorization: Bearer $B_TOKEN"
+probe "tenant B rewrites A's tax config" -X PATCH  "$API/businesses/$A_BID/tax" -H "Authorization: Bearer $B_TOKEN"   -H 'Content-Type: application/json' -d '{"taxEnabled":false}'
+
+# A table with no billed order must see nothing rather than someone else's.
+SEEN_BILL=$(curl -s "$API/public/table/bill" -H "Authorization: Bearer $S2")
+if [ "$SEEN_BILL" = "null" ] || [ -z "$SEEN_BILL" ]; then
+  echo "  ok    table 2 sees no bill it did not incur"
+else
+  echo "  LEAK  table 2 sees a bill: $SEEN_BILL"
+  FAILURES=$((FAILURES + 1))
+fi
+
+echo
 if [ "$FAILURES" -eq 0 ]; then
   echo "PASS — no cross-tenant access."
   exit 0

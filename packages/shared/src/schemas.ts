@@ -157,6 +157,8 @@ export const menuItemSchema = z
     ingredients: z.string().trim().max(2000).nullish(),
     allergens: z.array(z.string().trim().max(60)).max(30).default([]),
     nutrition: nutritionSchema.nullish(),
+    /** Overrides the business default. Packaged goods differ from food. */
+    taxRate: z.number().min(0).max(100).nullish(),
     variants: z.array(variantSchema).max(20).default([]),
     photos: z.array(photoSchema).max(10).default([]),
   })

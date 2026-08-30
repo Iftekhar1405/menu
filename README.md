@@ -7,9 +7,11 @@ downloads a print-ready QR card. Diners scan it and read the menu.
 Diners at a table scan that table's card and order from it; staff work those
 orders on a live board.
 
-**Phases 1 and 2 are built.** Billing/GST, post-order Google reviews, and the
-PVC/epoxy QR storefront are specified but not implemented — see
-`docs/superpowers/specs/2026-08-30-menu-platform-phase1-design.md` §11.
+Staff close the order and the diner gets a bill they can download for 30
+minutes, plus a 10-minute window to rate the meal.
+
+**Phases 1, 2 and 3 are built.** The PVC/epoxy QR storefront (Phase 4) is
+specified but not implemented.
 
 ## Running it
 
@@ -68,6 +70,38 @@ Two more things the database enforces rather than the application:
 - **Prices are read from the menu inside the transaction that writes the
   order.** The client sends item ids and quantities only. A client that could
   name its own prices could order a biryani for one rupee.
+
+## Bills
+
+**The bill is a receipt that shows tax, not a GST tax invoice.** It carries no
+financial-year invoice sequence, no HSN codes, and no CGST/SGST split. A
+GST-registered restaurant cannot hand this to a customer in place of the tax
+invoice they are required to issue — the receipt and the billing settings page
+both say so. Each line snapshots its own rate and tax amount, so becoming
+compliant later is added columns rather than reinterpreting stored bills.
+
+Three things that are easy to get wrong and are therefore fixed in the database:
+
+- **Prices are tax-inclusive by default.** Most Indian menus are priced that way,
+  and the wrong default in that direction overcharges every diner on every bill.
+- **A bill is written once.** Regenerating returns the existing bill rather than
+  recomputing it; snapshotting is pointless if a reprint can differ from the
+  original.
+- **The 30-minute and 10-minute windows are SQL predicates**, not checks in the
+  API, and neither diner route takes a bill or order id. A session can reach
+  exactly one bill — its own table's most recent, inside the window.
+
+**Service charge is off by default and the diner can remove it from their own
+bill.** Since the 2022 CCPA guidelines an automatic or mandatory service charge
+is not permitted in India, and restaurants have been ordered to refund it. The
+printed receipt carries the same statement the screen does.
+
+**Review gating is deliberately not built.** The Google route and the private
+feedback box are offered at every rating, and the seeded prompts for 1–3 stars
+are honest ones. Showing Google only to happy diners violates Google's policies
+and has cost businesses their review counts. Note also that no API can post a
+review to Google on someone's behalf — copy-and-deep-link is the only mechanism
+that exists.
 
 ## Two things worth knowing before changing anything
 

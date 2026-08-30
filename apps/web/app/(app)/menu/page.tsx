@@ -98,6 +98,7 @@ export default function MenuPage() {
         .map((a) => a.trim())
         .filter(Boolean),
       nutrition: cleanNutrition(draft.nutrition),
+      taxRate: draft.taxRate ? Number(draft.taxRate) : null,
       variants: draft.variants
         .filter((v) => v.name.trim() && v.price)
         .map((v) => ({ name: v.name.trim(), price: Number(v.price) })),

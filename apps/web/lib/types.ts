@@ -58,6 +58,8 @@ export interface Item {
   ingredients: string | null;
   allergens: string[];
   nutrition: Record<string, number | string> | null;
+  /** Null falls back to the business default rate. */
+  taxRate: string | null;
   variants: Variant[];
   photos: Photo[];
 }

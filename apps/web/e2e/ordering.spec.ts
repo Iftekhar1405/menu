@@ -115,9 +115,14 @@ test("a diner orders from a table and staff work it through", async ({ page, con
   await page.getByRole("button", { name: "Ready" }).click();
   await page.getByRole("button", { name: "Served" }).click();
 
-  // Completing frees the table: the diner's current order goes away, which is
-  // "show only the current order, never previous ones".
-  await expect(diner.getByText("Nothing ordered yet.")).toBeVisible({ timeout: 15_000 });
+  // Completing frees the table: the running order view is gone, which is
+  // "show only the current order, never previous ones". Since Phase 3 the
+  // bill takes its place rather than an empty state.
+  await expect(diner.getByRole("heading", { name: "Your bill" })).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(diner.getByText("Round 1")).toHaveCount(0);
+  await expect(diner.getByText("Round 2")).toHaveCount(0);
 });
 
 test("a diner cannot reach another table's order by editing the URL", async ({

@@ -8,13 +8,22 @@ import { useSession } from "@/components/session";
 import { Button, Empty } from "@/components/ui";
 import { CopyLink } from "@/components/copy-link";
 
+interface Ratings {
+  average: number | null;
+  count: number;
+  ratings: { id: string; stars: number; privateFeedback: string | null; createdAt: string }[];
+}
+
+
 export default function DashboardPage() {
   const { current } = useSession();
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [ratings, setRatings] = useState<Ratings | null>(null);
 
   useEffect(() => {
     if (!current) return;
     void api.get<Summary>(`/businesses/${current.id}/summary`).then(setSummary);
+    void api.get<Ratings>(`/businesses/${current.id}/ratings`).then(setRatings).catch(() => undefined);
   }, [current]);
 
   if (!current) return null;
@@ -88,8 +97,38 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Orders and sales land here in the next phase; the row above is laid
-          out to take two more tiles without a redesign. */}
+      {ratings && ratings.count > 0 && (
+        <section className="mt-8 rounded-2xl border border-line bg-surface p-5">
+          <header className="flex items-baseline justify-between gap-3">
+            <h2 className="font-display text-[15px] font-semibold">
+              What diners said
+            </h2>
+            <span className="tnum text-[13px] text-muted">
+              {ratings.average} average · {ratings.count} in 30 days
+            </span>
+          </header>
+
+          <ul className="mt-3.5 space-y-2.5">
+            {ratings.ratings.slice(0, 6).map((rating) => (
+              <li key={rating.id} className="flex items-start gap-3">
+                <span
+                  className="tnum shrink-0 rounded-lg bg-[var(--accent-soft)] px-2 py-0.5 text-[13px] font-semibold text-[var(--accent-strong)]"
+                  aria-label={`${rating.stars} out of 5`}
+                >
+                  {rating.stars}★
+                </span>
+                <span className="min-w-0 flex-1 text-[13.5px] leading-relaxed text-muted">
+                  {/* Private feedback is meant for the owner and is never
+                      published anywhere the diner can see. */}
+                  {rating.privateFeedback ?? (
+                    <span className="text-faint">No note left</span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }
