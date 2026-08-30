@@ -14,7 +14,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:reset": "prisma migrate reset --force",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "test:isolation": "bash scripts/check-isolation.sh"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

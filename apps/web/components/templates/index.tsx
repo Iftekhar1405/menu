@@ -250,12 +250,13 @@ function CompactLayout({ categories, currency }: LayoutProps) {
                 className="border-t border-[color:var(--menu-line)] py-3 first:border-t-0"
               >
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="flex min-w-0 items-center gap-2">
+                  {/* A heading in every layout, not just the photo-led ones,
+                      so a screen reader user can jump dish to dish however
+                      the owner styled the menu. */}
+                  <h3 className="flex min-w-0 items-center gap-2 text-[15px] font-medium text-[color:var(--menu-ink)]">
                     <DietMark tag={item.dietTag} />
-                    <span className="truncate text-[15px] font-medium text-[color:var(--menu-ink)]">
-                      {item.name}
-                    </span>
-                  </span>
+                    <span className="truncate">{item.name}</span>
+                  </h3>
                   <Price item={item} currency={currency} />
                 </div>
                 {item.description && (

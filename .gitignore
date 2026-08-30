@@ -23,3 +23,6 @@ test-results/
 
 *.tsbuildinfo
 .vercel
+apps/web/e2e/shots/
+apps/web/test-results/
+apps/api/.uploads/

@@ -22,7 +22,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ref,
 ) {
   const base =
-    "spring inline-flex items-center justify-center gap-2 rounded-xl font-medium select-none disabled:opacity-45 disabled:pointer-events-none";
+    "spring inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl font-medium select-none disabled:opacity-45 disabled:pointer-events-none";
   const sizes = {
     md: "h-11 px-4 text-[15px]",
     sm: "h-9 px-3 text-[13px]",
