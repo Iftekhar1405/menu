@@ -23,6 +23,8 @@ export interface CardOptions {
   accent?: string;
   /** Shown under the QR. Table tents say "Scan for menu". */
   caption?: string;
+  /** Set for a per-table card. Printed large enough to sort a stack by. */
+  tableLabel?: string | null;
 }
 
 const W = 105;
@@ -31,7 +33,8 @@ const WATERMARK = "menu.irad.solutions";
 
 export async function buildCardSvg(opts: CardOptions): Promise<string> {
   const accent = opts.accent ?? "#1D6F5C";
-  const caption = opts.caption ?? "Scan for menu";
+  const caption =
+    opts.caption ?? (opts.tableLabel ? "Scan to order" : "Scan for menu");
 
   // Error-correction level H tolerates roughly 30% damage, which is what
   // makes the card survive a centre logo, a scuffed table, and cheap printing.
@@ -56,13 +59,21 @@ export async function buildCardSvg(opts: CardOptions): Promise<string> {
     }
   }
 
+  const tableBlock = opts.tableLabel
+    ? `<rect x="${W / 2 - 16}" y="${nameYFor(opts) + 3}" width="32" height="11" rx="5.5"
+             fill="${accent}" opacity="0.10"/>
+       <text x="${W / 2}" y="${nameYFor(opts) + 10.5}" text-anchor="middle"
+             font-family="Helvetica, Arial, sans-serif" font-size="6.2" font-weight="600"
+             fill="${accent}">${escapeXml(truncate(opts.tableLabel, 12))}</text>`
+    : "";
+
   const logoBlock = opts.logoDataUri
     ? `<clipPath id="logoClip"><circle cx="${W / 2}" cy="24" r="11"/></clipPath>
      <image href="${opts.logoDataUri}" x="${W / 2 - 11}" y="13" width="22" height="22"
             preserveAspectRatio="xMidYMid slice" clip-path="url(#logoClip)"/>`
     : "";
 
-  const nameY = opts.logoDataUri ? 45 : 34;
+  const nameY = nameYFor(opts);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}mm" height="${H}mm"
      viewBox="0 0 ${W} ${H}" role="img" aria-label="QR code for ${escapeXml(opts.businessName)}">
@@ -76,6 +87,8 @@ export async function buildCardSvg(opts: CardOptions): Promise<string> {
         font-family="Helvetica, Arial, sans-serif" font-size="7" font-weight="600"
         fill="#1C1C1E">${escapeXml(truncate(opts.businessName, 26))}</text>
 
+  ${tableBlock}
+
   <path d="${d}" fill="#111111" shape-rendering="crispEdges"/>
 
   <text x="${W / 2}" y="${qrY + qrSize + 12}" text-anchor="middle"
@@ -86,6 +99,10 @@ export async function buildCardSvg(opts: CardOptions): Promise<string> {
         font-family="Helvetica, Arial, sans-serif" font-size="3.1"
         letter-spacing="0.2" fill="#1C1C1E" opacity="0.45">${WATERMARK}</text>
 </svg>`;
+}
+
+function nameYFor(opts: CardOptions): number {
+  return opts.logoDataUri ? 45 : 34;
 }
 
 function round(n: number): string {

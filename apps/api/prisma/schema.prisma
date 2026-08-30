@@ -132,6 +132,8 @@ model Business {
   categories MenuCategory[]
   items      MenuItem[]
   views      MenuView[]
+  tables     Table[]
+  orders     Order[]
 
   @@index([ownerId])
   @@map("businesses")
@@ -228,4 +230,84 @@ model MenuView {
 
   @@unique([businessId, viewedOn])
   @@map("menu_views")
+}
+
+// ─── Phase 2: table ordering ─────────────────────────────────────────────────
+
+enum OrderStatus {
+  placed
+  preparing
+  ready
+  completed
+  cancelled
+}
+
+model Table {
+  id         String   @id @default(uuid()) @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  /// "12", "Balcony 3", "Screen 2 Row F" — whatever staff call it.
+  label      String
+  /// 32 hex chars, printed on this table's card and never changed. The card
+  /// is the only place it exists, which is what makes holding it equivalent
+  /// to sitting at the table.
+  token      String   @unique
+  position   Int
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  orders   Order[]
+
+  @@index([businessId, position])
+  @@map("tables")
+}
+
+model Order {
+  id          String      @id @default(uuid()) @db.Uuid
+  businessId  String      @map("business_id") @db.Uuid
+  tableId     String      @map("table_id") @db.Uuid
+  status      OrderStatus @default(placed)
+  /// Business day and a per-day counter: what staff actually call out. An
+  /// order id is unusable across a pass.
+  businessDay DateTime    @map("business_day") @db.Date
+  dailyNumber Int         @map("daily_number")
+  placedAt    DateTime    @default(now()) @map("placed_at") @db.Timestamptz(6)
+  completedAt DateTime?   @map("completed_at") @db.Timestamptz(6)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  note        String?
+
+  business Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  table    Table       @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  items    OrderItem[]
+
+  @@unique([businessId, businessDay, dailyNumber])
+  @@index([businessId, status])
+  @@index([tableId, status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String  @id @default(uuid()) @db.Uuid
+  orderId    String  @map("order_id") @db.Uuid
+  businessId String  @map("business_id") @db.Uuid
+  /// Kept for sales reporting, nulled if the dish is later deleted. Never
+  /// authoritative for price — see the snapshot columns below.
+  menuItemId String? @map("menu_item_id") @db.Uuid
+
+  /// What the menu said at the moment this was ordered. A price change at
+  /// 3pm must not alter what a table that ordered at 2pm is charged.
+  nameSnapshot    String  @map("name_snapshot")
+  variantSnapshot String? @map("variant_snapshot")
+  unitPrice       Decimal @map("unit_price") @db.Decimal(10, 2)
+
+  quantity  Int
+  /// Which round this arrived in, so staff can see what is new.
+  batch     Int
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, batch])
+  @@index([businessId])
+  @@map("order_items")
 }

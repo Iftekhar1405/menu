@@ -4,6 +4,7 @@ import PDFDocument from "pdfkit";
 import SVGtoPDF from "svg-to-pdfkit";
 import { readFile } from "node:fs/promises";
 import { BusinessesService } from "../businesses/businesses.service";
+import { TablesService } from "../tables/tables.service";
 import { loadEnv, usesSupabaseStorage } from "../config/env";
 import { MediaService } from "../media/media.service";
 import { buildCardSvg } from "./card.svg";
@@ -18,6 +19,7 @@ export class QrService {
   constructor(
     private readonly businesses: BusinessesService,
     private readonly media: MediaService,
+    private readonly tables: TablesService,
   ) {}
 
   private menuUrl(publicCode: string): string {
@@ -35,7 +37,37 @@ export class QrService {
   }
 
   async png(userId: string, businessId: string): Promise<Buffer> {
-    const svg = await this.svg(userId, businessId);
+    return this.rasterise(await this.svg(userId, businessId));
+  }
+
+  // ── Per-table cards ───────────────────────────────────────────────────────
+  //
+  // A table card encodes /t/<token>, not the menu URL. Scanning it binds the
+  // device to that table and then redirects to the shared /order address, so
+  // the table never appears anywhere the diner could edit it.
+
+  async tableSvg(userId: string, businessId: string, tableId: string): Promise<string> {
+    const business = await this.businesses.assertOwns(userId, businessId);
+    const table = await this.tables.get(userId, businessId, tableId);
+
+    return buildCardSvg({
+      businessName: business.name,
+      tableLabel: table.label,
+      url: `${this.env.PUBLIC_MENU_BASE_URL}/t/${table.token}`,
+      logoDataUri: await this.logoDataUri(business.logoPath),
+      accent: business.themeAccent,
+    });
+  }
+
+  async tablePng(userId: string, businessId: string, tableId: string): Promise<Buffer> {
+    return this.rasterise(await this.tableSvg(userId, businessId, tableId));
+  }
+
+  async tablePdf(userId: string, businessId: string, tableId: string): Promise<Buffer> {
+    return this.toPdf(await this.tableSvg(userId, businessId, tableId));
+  }
+
+  private rasterise(svg: string): Buffer {
     const resvg = new Resvg(svg, {
       fitTo: { mode: "width", value: PRINT_WIDTH_PX },
       background: "#FFFFFF",
@@ -48,8 +80,10 @@ export class QrService {
    * for the PVC and epoxy cards, and a raster cannot be recovered into one.
    */
   async pdf(userId: string, businessId: string): Promise<Buffer> {
-    const svg = await this.svg(userId, businessId);
+    return this.toPdf(await this.svg(userId, businessId));
+  }
 
+  private toPdf(svg: string): Promise<Buffer> {
     return new Promise<Buffer>((resolve, reject) => {
       // A6 in PostScript points.
       const doc = new PDFDocument({ size: [297.64, 419.53], margin: 0 });

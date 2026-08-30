@@ -16,15 +16,24 @@ import { PublicService } from "./public/public.service";
 import { RevalidateClient } from "./public/revalidate.client";
 import { QrController } from "./qr/qr.controller";
 import { QrService } from "./qr/qr.service";
+import { OrdersController, TableOrderController } from "./orders/orders.controller";
+import { OrdersService } from "./orders/orders.service";
+import { TablesController } from "./tables/tables.controller";
+import { TablesService } from "./tables/tables.service";
+import { TableSessionGuard, TableSessionService } from "./tables/table-session";
+import { JwtModule } from "@nestjs/jwt";
 
 @Module({
-  imports: [PrismaModule, NotificationsModule, AuthModule],
+  imports: [PrismaModule, NotificationsModule, AuthModule, JwtModule.register({})],
   controllers: [
     BusinessesController,
     MenuController,
     MediaController,
     PublicController,
     QrController,
+    TablesController,
+    OrdersController,
+    TableOrderController,
   ],
   providers: [
     BusinessesService,
@@ -33,6 +42,10 @@ import { QrService } from "./qr/qr.service";
     PublicService,
     RevalidateClient,
     QrService,
+    TablesService,
+    OrdersService,
+    TableSessionService,
+    TableSessionGuard,
     // Authenticated by default: a new controller is protected unless it
     // explicitly opts out with @Public.
     { provide: APP_GUARD, useClass: JwtAuthGuard },

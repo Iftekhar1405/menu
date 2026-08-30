@@ -21,6 +21,12 @@ const envSchema = z.object({
   JWT_ACCESS_SECRET: z.string().min(8),
   JWT_REFRESH_SECRET: z.string().min(8),
   REVALIDATE_SECRET: z.string().min(8),
+  /**
+   * Signs table sessions. Deliberately separate from the owner token secret:
+   * with distinct keys, an owner token presented to a diner route fails to
+   * verify outright rather than relying on a scope check being correct.
+   */
+  TABLE_SESSION_SECRET: z.string().min(8),
 
   /**
    * No WhatsApp/email credentials yet, so accounts are marked verified at
