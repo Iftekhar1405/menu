@@ -1,6 +1,7 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { loadEnv } from "../config/env";
 
 /**
  * A Prisma client bound to whatever transaction the current request opened.
@@ -26,8 +27,12 @@ export const tenantStorage = new AsyncLocalStorage<{ tx: TxClient; userId: strin
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor() {
+    const env = loadEnv();
     super({
-      log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+      datasources: {
+        db: { url: env.APP_DATABASE_URL || env.DATABASE_URL },
+      },
+      log: env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
     });
   }
 

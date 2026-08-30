@@ -7,6 +7,13 @@ import { z } from "zod";
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  /**
+   * The runtime connection. Must be a NON-superuser role, because table
+   * owners and superusers bypass row-level security entirely — pointing
+   * this at the migration role would silently disable every policy.
+   * Falls back to DATABASE_URL so tooling still works.
+   */
+  APP_DATABASE_URL: z.string().default(""),
   API_PORT: z.coerce.number().int().positive().default(4000),
   WEB_ORIGIN: z.string().url().default("http://localhost:3000"),
   PUBLIC_MENU_BASE_URL: z.string().url().default("http://localhost:3000"),
