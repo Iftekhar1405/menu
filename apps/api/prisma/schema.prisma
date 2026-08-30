@@ -1,0 +1,231 @@
+// Menu Platform — Phase 1 schema.
+//
+// Two rules drive the shape here:
+//  1. Every tenant-owned row carries `businessId` directly, even where it
+//     could be reached by a join. Isolation filters and RLS policies stay
+//     single-column predicates — the kind that are hard to get wrong.
+//  2. Price lives at whichever level actually carries it. An item priced by
+//     size has `price = null` and real prices on its variants. A constraint
+//     trigger (see migration) guarantees one or the other is always present.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  owner
+  platform_admin
+}
+
+enum BusinessType {
+  restaurant
+  cafe
+  theatre
+}
+
+enum DietTag {
+  veg
+  non_veg
+  vegan
+  egg
+}
+
+enum OtpPurpose {
+  verify
+  recover
+}
+
+model User {
+  id             String    @id @default(uuid()) @db.Uuid
+  email          String?   @unique
+  /// E.164, e.g. +919876543210
+  phone          String?   @unique
+  /// argon2id. Six digits, hashed — never the PIN itself.
+  pinHash        String    @map("pin_hash")
+  fullName       String    @map("full_name")
+  role           UserRole  @default(owner)
+  verifiedAt     DateTime? @map("verified_at") @db.Timestamptz(6)
+  failedAttempts Int       @default(0) @map("failed_attempts")
+  lockedUntil    DateTime? @map("locked_until") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  businesses     Business[]
+  otpChallenges  OtpChallenge[]
+  refreshTokens  RefreshToken[]
+
+  @@map("users")
+}
+
+model OtpChallenge {
+  id         String     @id @default(uuid()) @db.Uuid
+  userId     String     @map("user_id") @db.Uuid
+  purpose    OtpPurpose
+  /// argon2id of the 6-digit code. One code per challenge, fanned out to
+  /// every channel the account has.
+  codeHash   String     @map("code_hash")
+  expiresAt  DateTime   @map("expires_at") @db.Timestamptz(6)
+  attempts   Int        @default(0)
+  consumedAt DateTime?  @map("consumed_at") @db.Timestamptz(6)
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@map("otp_challenges")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  /// sha256 of the opaque token. Rotated on every refresh.
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Business {
+  id           String       @id @default(uuid()) @db.Uuid
+  ownerId      String       @map("owner_id") @db.Uuid
+  name         String
+  type         BusinessType
+  logoPath     String?      @map("logo_path")
+
+  addressLine1 String?      @map("address_line1")
+  addressLine2 String?      @map("address_line2")
+  city         String?
+  state        String?
+  postalCode   String?      @map("postal_code")
+  country      String       @default("IN")
+
+  /// Permanent, opaque, never editable — printed QR cards depend on it.
+  publicCode   String       @unique @map("public_code")
+  /// Renameable vanity URL that redirects to publicCode.
+  vanitySlug   String?      @unique @map("vanity_slug")
+
+  currency     String       @default("INR")
+
+  themeLayout  String       @default("editorial") @map("theme_layout")
+  themeAccent  String       @default("#1D6F5C") @map("theme_accent")
+  themeFont    String       @default("inter-fraunces") @map("theme_font")
+
+  /// Phase 3: post-order Google review deep link.
+  googlePlaceId String?     @map("google_place_id")
+
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// Bumped on every menu mutation; drives public payload cache busting.
+  menuUpdatedAt DateTime    @default(now()) @map("menu_updated_at") @db.Timestamptz(6)
+
+  owner      User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  categories MenuCategory[]
+  items      MenuItem[]
+  views      MenuView[]
+
+  @@index([ownerId])
+  @@map("businesses")
+}
+
+model MenuCategory {
+  id         String   @id @default(uuid()) @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  name       String
+  position   Int
+  isVisible  Boolean  @default(true) @map("is_visible")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  business Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  items    MenuItem[]
+
+  @@index([businessId, position])
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id           String   @id @default(uuid()) @db.Uuid
+  /// Denormalised from the category on purpose — see file header.
+  businessId   String   @map("business_id") @db.Uuid
+  categoryId   String   @map("category_id") @db.Uuid
+  name         String
+  /// Null when priced by variant. Guarded by menu_item_price_guard.
+  price        Decimal? @db.Decimal(10, 2)
+  description  String?
+  isAvailable  Boolean  @default(true) @map("is_available")
+  position     Int
+
+  // ── Advanced details: every field optional, hidden behind a disclosure ──
+  dietTag      DietTag? @map("diet_tag")
+  spiceLevel   Int?     @map("spice_level")
+  prepTimeMins Int?     @map("prep_time_mins")
+  ingredients  String?
+  allergens    String[] @default([])
+  nutrition    Json?
+
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category MenuCategory       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  variants MenuItemVariant[]
+  photos   MenuItemPhoto[]
+
+  @@index([businessId])
+  @@index([categoryId, position])
+  @@map("menu_items")
+}
+
+model MenuItemVariant {
+  id       String  @id @default(uuid()) @db.Uuid
+  itemId   String  @map("item_id") @db.Uuid
+  /// Carried for isolation queries, same reasoning as MenuItem.
+  businessId String @map("business_id") @db.Uuid
+  name     String
+  price    Decimal @db.Decimal(10, 2)
+  position Int
+
+  item MenuItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId, position])
+  @@index([businessId])
+  @@map("menu_item_variants")
+}
+
+model MenuItemPhoto {
+  id          String  @id @default(uuid()) @db.Uuid
+  itemId      String  @map("item_id") @db.Uuid
+  businessId  String  @map("business_id") @db.Uuid
+  storagePath String  @map("storage_path")
+  alt         String?
+  position    Int
+
+  item MenuItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId, position])
+  @@index([businessId])
+  @@map("menu_item_photos")
+}
+
+/// One row per business per day. A counter, not an analytics pipeline —
+/// Phase 1's dashboard only needs 7- and 30-day totals.
+model MenuView {
+  id         String   @id @default(uuid()) @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  viewedOn   DateTime @map("viewed_on") @db.Date
+  count      Int      @default(0)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, viewedOn])
+  @@map("menu_views")
+}

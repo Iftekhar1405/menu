@@ -1,0 +1,38 @@
+{
+  "name": "menu-platform",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "dev:api": "pnpm --filter @menu/api dev",
+    "dev:web": "pnpm --filter @menu/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @menu/api db:migrate",
+    "db:seed": "pnpm --filter @menu/api db:seed",
+    "db:reset": "pnpm --filter @menu/api db:reset"
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "@prisma/client",
+      "@prisma/engines",
+      "@swc/core",
+      "esbuild",
+      "prisma",
+      "@node-rs/argon2",
+      "sharp"
+    ]
+  }
+}

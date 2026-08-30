@@ -1,0 +1,20 @@
+{
+  "name": "@menu/shared",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "echo \"no tests in @menu/shared\""
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}
