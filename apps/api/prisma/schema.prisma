@@ -123,6 +123,21 @@ model Business {
   /// Phase 3: post-order Google review deep link.
   googlePlaceId String?     @map("google_place_id")
 
+  // ── Billing ──────────────────────────────────────────────────────────────
+  taxEnabled          Boolean @default(false) @map("tax_enabled")
+  /// Display only. The receipt is not a GST tax invoice — see the Phase 3 spec.
+  taxLabel            String  @default("GST") @map("tax_label")
+  defaultTaxRate      Decimal @default(5.00) @map("default_tax_rate") @db.Decimal(5, 2)
+  /// Defaults true because that is how most Indian menus are priced, and the
+  /// wrong default in this direction overcharges every diner on every bill.
+  pricesIncludeTax    Boolean @default(true) @map("prices_include_tax")
+  gstin               String? @map("gstin")
+  /// Off by default: an automatic service charge is not permitted under the
+  /// 2022 CCPA guidelines, and the diner can remove it from their bill.
+  serviceChargeEnabled Boolean @default(false) @map("service_charge_enabled")
+  serviceChargeRate    Decimal @default(0) @map("service_charge_rate") @db.Decimal(5, 2)
+  receiptFooter        String? @map("receipt_footer")
+
   createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
   /// Bumped on every menu mutation; drives public payload cache busting.
@@ -134,6 +149,9 @@ model Business {
   views      MenuView[]
   tables     Table[]
   orders     Order[]
+  bills      Bill[]
+  ratings    OrderRating[]
+  prompts    ReviewPrompt[]
 
   @@index([ownerId])
   @@map("businesses")
@@ -173,6 +191,9 @@ model MenuItem {
   ingredients  String?
   allergens    String[] @default([])
   nutrition    Json?
+  /// Overrides the business default. Packaged goods are not taxed at the same
+  /// rate as prepared food, and a single business rate bills one of them wrong.
+  taxRate      Decimal? @map("tax_rate") @db.Decimal(5, 2)
 
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -279,6 +300,8 @@ model Order {
   business Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
   table    Table       @relation(fields: [tableId], references: [id], onDelete: Cascade)
   items    OrderItem[]
+  bill     Bill?
+  rating   OrderRating?
 
   @@unique([businessId, businessDay, dailyNumber])
   @@index([businessId, status])
@@ -310,4 +333,102 @@ model OrderItem {
   @@index([orderId, batch])
   @@index([businessId])
   @@map("order_items")
+}
+
+
+// ─── Phase 3: bills and ratings ──────────────────────────────────────────────
+
+/// Written once. Regenerating returns the existing row rather than recomputing,
+/// because the point of snapshotting is that tomorrow's price change cannot
+/// alter a bill printed today.
+model Bill {
+  id          String   @id @default(uuid()) @db.Uuid
+  businessId  String   @map("business_id") @db.Uuid
+  orderId     String   @unique @map("order_id") @db.Uuid
+  /// Sequential per business. Not a GST invoice number — see the Phase 3 spec.
+  billNumber  Int      @map("bill_number")
+  /// Snapshot: the table may be renamed or deleted later.
+  tableLabel  String   @map("table_label")
+  issuedAt    DateTime @default(now()) @map("issued_at") @db.Timestamptz(6)
+  currency    String   @default("INR")
+
+  // The configuration that produced these numbers, frozen.
+  pricesIncludeTax  Boolean @map("prices_include_tax")
+  taxLabel          String  @map("tax_label")
+  serviceChargeRate Decimal @map("service_charge_rate") @db.Decimal(5, 2)
+  /// name, address, gstin, logo path — everything needed to reprint later.
+  businessSnapshot  Json    @map("business_snapshot")
+  receiptFooter     String? @map("receipt_footer")
+
+  subtotal      Decimal @db.Decimal(10, 2)
+  taxTotal      Decimal @map("tax_total") @db.Decimal(10, 2)
+  serviceCharge Decimal @map("service_charge") @db.Decimal(10, 2)
+  roundOff      Decimal @map("round_off") @db.Decimal(10, 2)
+  total         Decimal @db.Decimal(10, 2)
+
+  business Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  order    Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  lines    BillLine[]
+
+  @@unique([businessId, billNumber])
+  @@index([businessId, issuedAt])
+  @@map("bills")
+}
+
+model BillLine {
+  id         String  @id @default(uuid()) @db.Uuid
+  billId     String  @map("bill_id") @db.Uuid
+  businessId String  @map("business_id") @db.Uuid
+  name       String
+  variant    String?
+  quantity   Int
+  unitPrice  Decimal @map("unit_price") @db.Decimal(10, 2)
+  /// Gross, as the menu displayed it.
+  lineTotal  Decimal @map("line_total") @db.Decimal(10, 2)
+  lineNet    Decimal @map("line_net") @db.Decimal(10, 2)
+  taxRate    Decimal @map("tax_rate") @db.Decimal(5, 2)
+  taxAmount  Decimal @map("tax_amount") @db.Decimal(10, 2)
+  position   Int
+
+  bill Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([billId, position])
+  @@index([businessId])
+  @@map("bill_lines")
+}
+
+/// Suggested review texts. A row with a null businessId is a platform default;
+/// an owner can add their own.
+model ReviewPrompt {
+  id           String  @id @default(uuid()) @db.Uuid
+  businessId   String? @map("business_id") @db.Uuid
+  businessType String? @map("business_type")
+  /// 'low' (1-3) | 'good' (4) | 'great' (5)
+  ratingBand   String  @map("rating_band")
+  text         String
+  position     Int     @default(0)
+
+  business Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, ratingBand])
+  @@map("review_prompts")
+}
+
+/// Our own rating, captured in our own UI. Useful to the owner whether or not
+/// the diner ever reaches Google.
+model OrderRating {
+  id              String   @id @default(uuid()) @db.Uuid
+  businessId      String   @map("business_id") @db.Uuid
+  orderId         String   @unique @map("order_id") @db.Uuid
+  tableId         String   @map("table_id") @db.Uuid
+  stars           Int
+  promptId        String?  @map("prompt_id") @db.Uuid
+  privateFeedback String?  @map("private_feedback")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, createdAt])
+  @@map("order_ratings")
 }

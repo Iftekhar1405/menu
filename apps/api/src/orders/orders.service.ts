@@ -8,6 +8,7 @@ import { OrderStatus } from "@prisma/client";
 import { BusinessesService } from "../businesses/businesses.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TenantContext } from "../prisma/tenant-context";
+import { cleanPgMessage } from "../common/pg-message";
 
 export interface PlaceLine {
   itemId: string;
@@ -78,7 +79,7 @@ export class OrdersService {
         // the message as written, not 500s.
         const message = err instanceof Error ? err.message : "";
         const match = /ERROR: (.+)/.exec(message);
-        if (match) throw new BadRequestException(match[1]!.split("\n")[0]!.trim());
+        if (match) throw new BadRequestException(cleanPgMessage(match[1]!));
         throw err;
       }
     });
