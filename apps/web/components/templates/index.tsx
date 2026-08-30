@@ -19,29 +19,61 @@ import {
 } from "./shared";
 
 /**
- * Three layouts, one payload.
+ * Three layouts, one payload — and now one implementation shared by both
+ * diner surfaces.
  *
  * They differ in how much room photography gets and how dense the rows are,
  * because a cinema concession queue and a tasting-menu restaurant are not the
- * same reading situation. Everything else — the theme tokens, the diet marks,
- * the price logic — is shared, so a menu looks like the same product whichever
- * layout the owner picked.
+ * same reading situation. Everything else — theme tokens, diet marks, price
+ * logic — is shared, so a menu looks like the same product whichever layout
+ * the owner picked.
+ *
+ * `renderAction` is what lets the ordering page reuse all of this. Without it
+ * these render a menu to read; with it, the same layouts grow an add control
+ * per item and per size. The alternative — a second hand-written list for
+ * ordering — is what this used to be, and it silently ignored the layout the
+ * owner had chosen.
  */
+
+/** Given an item (and a size, where it has them), render its add control. */
+export type RenderAction = (
+  item: PublicItem,
+  variantId: string | null,
+) => React.ReactNode;
 
 export interface MenuViewProps {
   menu: PublicMenu;
-  /** Preview mode drops the sticky rail and search, which need real viewport. */
+  /** Preview mode drops the sticky rail and search, which need a real viewport. */
   compactChrome?: boolean;
+  renderAction?: RenderAction;
 }
 
-export function MenuView({ menu, compactChrome }: MenuViewProps) {
-  const [query, setQuery] = useState("");
-  const [vegOnly, setVegOnly] = useState(false);
-
+/** The whole public menu page: header, body, credit. */
+export function MenuView({ menu, compactChrome, renderAction }: MenuViewProps) {
   const vars = useMemo(
     () => themeCssVars(menu.theme.accent, menu.theme.fontPairing),
     [menu.theme.accent, menu.theme.fontPairing],
   );
+
+  return (
+    <div style={menuVars(vars)} className="min-h-full bg-white">
+      <link rel="stylesheet" href={googleFontsHref(menu.theme.fontPairing)} />
+      <MenuHeader menu={menu} />
+      <MenuBody menu={menu} compactChrome={compactChrome} renderAction={renderAction} />
+      <MenuFooter />
+    </div>
+  );
+}
+
+/**
+ * Just the menu itself — filters and the chosen layout, no header or credit.
+ *
+ * The ordering page has its own header (business name, table, tabs) and its
+ * own footer, so it takes this rather than the whole page.
+ */
+export function MenuBody({ menu, compactChrome, renderAction }: MenuViewProps) {
+  const [query, setQuery] = useState("");
+  const [vegOnly, setVegOnly] = useState(false);
 
   // Filtering happens on the already-loaded payload, so it costs nothing and
   // works offline once the page is open.
@@ -72,22 +104,7 @@ export function MenuView({ menu, compactChrome }: MenuViewProps) {
   const hasAnyItems = menu.categories.some((c) => c.items.length > 0);
 
   return (
-    <div
-      style={
-        {
-          ...vars,
-          "--menu-ink": "#17171a",
-          "--menu-muted": "#6b6f78",
-          "--menu-line": "#e8e9ec",
-          fontFamily: "var(--font-body)",
-        } as React.CSSProperties
-      }
-      className="min-h-full bg-white"
-    >
-      <link rel="stylesheet" href={googleFontsHref(menu.theme.fontPairing)} />
-
-      <MenuHeader menu={menu} />
-
+    <>
       {hasAnyItems && !compactChrome && (
         <FilterBar
           query={query}
@@ -105,12 +122,25 @@ export function MenuView({ menu, compactChrome }: MenuViewProps) {
           Nothing matches that. Try a different word.
         </p>
       ) : (
-        <Layout categories={categories} currency={menu.business.currency} />
+        <Layout
+          categories={categories}
+          currency={menu.business.currency}
+          renderAction={renderAction}
+        />
       )}
-
-      <MenuFooter />
-    </div>
+    </>
   );
+}
+
+/** The neutral greys the templates read, alongside the tenant's theme tokens. */
+export function menuVars(vars: Record<string, string>): React.CSSProperties {
+  return {
+    ...vars,
+    "--menu-ink": "#17171a",
+    "--menu-muted": "#6b6f78",
+    "--menu-line": "#e8e9ec",
+    fontFamily: "var(--font-body)",
+  } as React.CSSProperties;
 }
 
 /* ── Chrome ────────────────────────────────────────────────────────────────
@@ -187,11 +217,28 @@ function CategoryHeading({ id, name }: { id: string; name: string }) {
 type LayoutProps = {
   categories: { id: string; name: string; items: PublicItem[] }[];
   currency: string;
+  renderAction?: RenderAction;
 };
+
+/**
+ * An item priced by size has no single "add" — you pick the size, which is
+ * the same decision either way. So the action appears per variant row, and
+ * only whole-priced items get one of their own.
+ */
+function ItemAction({
+  item,
+  renderAction,
+}: {
+  item: PublicItem;
+  renderAction?: RenderAction;
+}) {
+  if (!renderAction || item.variants.length > 0) return null;
+  return <div className="mt-2.5 flex justify-end">{renderAction(item, null)}</div>;
+}
 
 /* ── Editorial ─────────────────────────────────────────────────────────── */
 
-function EditorialLayout({ categories, currency }: LayoutProps) {
+function EditorialLayout({ categories, currency, renderAction }: LayoutProps) {
   return (
     <div>
       {categories.map((c) => (
@@ -224,8 +271,13 @@ function EditorialLayout({ categories, currency }: LayoutProps) {
                     {item.description}
                   </p>
                 )}
-                <VariantRow item={item} currency={currency} />
+                <VariantRow
+                  item={item}
+                  currency={currency}
+                  renderAction={renderAction}
+                />
                 <Details item={item} />
+                <ItemAction item={item} renderAction={renderAction} />
               </li>
             ))}
           </ul>
@@ -237,7 +289,7 @@ function EditorialLayout({ categories, currency }: LayoutProps) {
 
 /* ── Compact ───────────────────────────────────────────────────────────── */
 
-function CompactLayout({ categories, currency }: LayoutProps) {
+function CompactLayout({ categories, currency, renderAction }: LayoutProps) {
   return (
     <div>
       {categories.map((c) => (
@@ -264,8 +316,13 @@ function CompactLayout({ categories, currency }: LayoutProps) {
                     {item.description}
                   </p>
                 )}
-                <VariantRow item={item} currency={currency} />
+                <VariantRow
+                  item={item}
+                  currency={currency}
+                  renderAction={renderAction}
+                />
                 <Details item={item} />
+                <ItemAction item={item} renderAction={renderAction} />
               </li>
             ))}
           </ul>
@@ -277,7 +334,7 @@ function CompactLayout({ categories, currency }: LayoutProps) {
 
 /* ── Grid ──────────────────────────────────────────────────────────────── */
 
-function GridLayout({ categories, currency }: LayoutProps) {
+function GridLayout({ categories, currency, renderAction }: LayoutProps) {
   return (
     <div>
       {categories.map((c) => (
@@ -287,7 +344,7 @@ function GridLayout({ categories, currency }: LayoutProps) {
             {c.items.map((item) => (
               <li
                 key={item.id}
-                className="overflow-hidden rounded-2xl border border-[color:var(--menu-line)]"
+                className="flex flex-col overflow-hidden rounded-2xl border border-[color:var(--menu-line)]"
               >
                 {item.photos[0] ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -300,7 +357,7 @@ function GridLayout({ categories, currency }: LayoutProps) {
                 ) : (
                   <div className="aspect-square w-full bg-[color:var(--accent-soft)]" />
                 )}
-                <div className="p-3">
+                <div className="flex flex-1 flex-col p-3">
                   <h3 className="flex items-start gap-1.5 text-[14px] font-medium leading-snug text-[color:var(--menu-ink)]">
                     <span className="mt-0.5">
                       <DietMark tag={item.dietTag} />
@@ -310,7 +367,16 @@ function GridLayout({ categories, currency }: LayoutProps) {
                   <div className="mt-1.5">
                     <Price item={item} currency={currency} />
                   </div>
-                  <VariantRow item={item} currency={currency} />
+                  <VariantRow
+                    item={item}
+                    currency={currency}
+                    renderAction={renderAction}
+                  />
+                  {/* Pushed to the bottom so cards in a row line up however
+                      long the names run. */}
+                  <div className="mt-auto">
+                    <ItemAction item={item} renderAction={renderAction} />
+                  </div>
                 </div>
               </li>
             ))}

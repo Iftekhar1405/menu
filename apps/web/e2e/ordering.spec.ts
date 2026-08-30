@@ -198,3 +198,49 @@ async function getTableTokens(page: Page): Promise<string[]> {
     return tables.map((t) => t.token);
   });
 }
+
+test("the ordering page uses the layout the owner chose", async ({ page, browser }) => {
+  await page.goto("/signup");
+  await page.getByLabel("Your name").fill("Layout Owner");
+  await page.getByLabel("Email or phone number").fill(`layout${Date.now()}@kumar.test`);
+  await typePin(page, "Choose a 6-digit PIN", PIN);
+  await page.getByLabel("Business name").fill("Layout Cafe");
+  await page.getByRole("button", { name: "Cafe" }).click();
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByRole("heading", { name: "Menu", exact: true })).toBeVisible();
+
+  await page.getByPlaceholder("Coffee").fill("Snacks");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Add a dish to Snacks" }).click();
+  await page.getByLabel("Name").fill("Samosa");
+  await page.getByPlaceholder("140").first().fill("40");
+  await page.getByRole("button", { name: "Add dish" }).click();
+  await expect(page.getByRole("button", { name: /^Samosa/ })).toBeVisible();
+
+  await page.getByRole("link", { name: "Tables" }).click();
+  await page.getByLabel("Add a table").fill("1");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.getByLabel(/Table name, currently 1/)).toBeVisible();
+  const token = await getTableToken(page);
+
+  // Editorial is the default: one dish per row, not a grid.
+  const diner = await (await browser.newContext()).newPage();
+  await diner.setViewportSize({ width: 420, height: 900 });
+  await diner.goto(`/t/${token}`);
+  await expect(diner.getByRole("button", { name: "Add Samosa" })).toBeVisible();
+  await expect(diner.locator("ul.grid")).toHaveCount(0);
+
+  // Switch to Grid, and the ordering page must follow.
+  await page.getByRole("link", { name: "Design" }).click();
+  await page.getByRole("button", { name: /Grid/ }).click();
+  await page.getByRole("button", { name: "Save design" }).click();
+  await expect(page.getByText("Your menu is updated.")).toBeVisible();
+
+  await diner.reload();
+  await expect(diner.locator("ul.grid")).toHaveCount(1);
+  await expect(diner.getByRole("button", { name: "Add Samosa" })).toBeVisible();
+
+  // Search comes from the shared layout, so the ordering page gained it too.
+  await expect(diner.getByLabel("Search the menu")).toBeVisible();
+  await diner.screenshot({ path: `${SHOTS}/22-ordering-grid.png`, fullPage: true });
+});

@@ -57,14 +57,43 @@ export function DietMark({ tag }: { tag: PublicItem["dietTag"] }) {
   );
 }
 
+/**
+ * Sizes and their prices.
+ *
+ * With `renderAction` each size becomes its own row with its own add control,
+ * because a size is what someone actually orders — "one Latte" is not an
+ * order until you know which. Without it, the sizes read as a compact inline
+ * list, which is right for a menu you are only reading.
+ */
 export function VariantRow({
   item,
   currency,
+  renderAction,
 }: {
   item: PublicItem;
   currency: string;
+  renderAction?: (item: PublicItem, variantId: string | null) => React.ReactNode;
 }) {
   if (item.variants.length === 0) return null;
+
+  if (renderAction) {
+    return (
+      <ul className="mt-2.5 space-y-1.5">
+        {item.variants.map((v) => (
+          <li key={v.id} className="flex items-center justify-between gap-3">
+            <span className="min-w-0 text-[13.5px] text-[color:var(--menu-muted)]">
+              {v.name}{" "}
+              <span className="tnum font-medium text-[color:var(--menu-ink)]">
+                {formatMoney(v.price, currency)}
+              </span>
+            </span>
+            {renderAction(item, v.id)}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
   return (
     <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
       {item.variants.map((v) => (

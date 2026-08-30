@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  displayPrice,
   formatMoney,
   googleFontsHref,
   themeCssVars,
@@ -10,7 +9,7 @@ import {
   type PublicMenu,
 } from "@menu/shared";
 import { Button, cx } from "../ui";
-import { DietMark } from "../templates/shared";
+import { MenuBody, menuVars } from "../templates";
 import { SiteFooter } from "../site-footer";
 import { BillAndRating } from "./bill-and-rating";
 
@@ -119,6 +118,9 @@ export function Ordering({
     [menu.theme.accent, menu.theme.fontPairing],
   );
 
+  const qtyFor = (itemId: string, variantId: string | null) =>
+    cart.find((l) => l.key === `${itemId}:${variantId ?? ""}`)?.quantity ?? 0;
+
   const cartTotal = cart.reduce((sum, l) => sum + Number(l.unitPrice) * l.quantity, 0);
   const cartCount = cart.reduce((sum, l) => sum + l.quantity, 0);
 
@@ -200,14 +202,7 @@ export function Ordering({
 
   return (
     <div
-      style={
-        {
-          ...vars,
-          "--menu-ink": "#17171a",
-          "--menu-muted": "#6b6f78",
-          "--menu-line": "#e8e9ec",
-        } as React.CSSProperties
-      }
+      style={menuVars(vars)}
       className="mx-auto min-h-screen max-w-[560px] bg-white pb-32"
     >
       <link rel="stylesheet" href={googleFontsHref(menu.theme.fontPairing)} />
@@ -239,7 +234,23 @@ export function Ordering({
       </header>
 
       {tab === "menu" ? (
-        <MenuList menu={menu} currency={business.currency} onAdd={addLine} cart={cart} />
+        /* The layout the owner chose in Design — Editorial, Compact or Grid —
+           with an add control threaded through it. This page used to render
+           its own list, which quietly ignored that choice. */
+        <MenuBody
+          menu={menu}
+          renderAction={(item, variantId) => (
+            <Stepper
+              quantity={qtyFor(item.id, variantId)}
+              onAdd={() => addLine(item, variantId)}
+              label={
+                variantId
+                  ? `${item.name}, ${item.variants.find((v) => v.id === variantId)?.name ?? ""}`
+                  : item.name
+              }
+            />
+          )}
+        />
       ) : (
         <>
           {/* Once the bill is up, "nothing ordered yet" would be nonsense —
@@ -299,94 +310,6 @@ function TabButton({
     >
       {children}
     </button>
-  );
-}
-
-function MenuList({
-  menu,
-  currency,
-  onAdd,
-  cart,
-}: {
-  menu: PublicMenu;
-  currency: string;
-  onAdd: (item: PublicItem, variantId: string | null) => void;
-  cart: CartLine[];
-}) {
-  const qtyFor = (itemId: string, variantId: string | null) =>
-    cart.find((l) => l.key === `${itemId}:${variantId ?? ""}`)?.quantity ?? 0;
-
-  return (
-    <div>
-      {menu.categories.map((category) => (
-        <section key={category.id}>
-          <h2 className="px-5 pb-2 pt-7 text-[12px] font-semibold uppercase tracking-[0.14em] text-[color:var(--accent)]">
-            {category.name}
-          </h2>
-          <ul className="px-5">
-            {category.items.map((item) => {
-              const price = displayPrice(item);
-              return (
-                <li
-                  key={item.id}
-                  className="border-t border-[color:var(--menu-line)] py-3.5 first:border-t-0"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <h3 className="flex items-center gap-2 text-[15.5px] font-medium text-[color:var(--menu-ink)]">
-                        <DietMark tag={item.dietTag} />
-                        {item.name}
-                      </h3>
-                      {item.description && (
-                        <p className="mt-0.5 text-[13px] leading-relaxed text-[color:var(--menu-muted)]">
-                          {item.description}
-                        </p>
-                      )}
-                    </div>
-                    {item.variants.length === 0 && price && (
-                      <span className="tnum shrink-0 text-[14.5px] font-semibold text-[color:var(--menu-ink)]">
-                        {formatMoney(price.amount, currency)}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* A dish priced by size has no single "add" — you pick the
-                      size, which is the same decision either way. */}
-                  {item.variants.length > 0 ? (
-                    <ul className="mt-2.5 space-y-1.5">
-                      {item.variants.map((v) => (
-                        <li key={v.id} className="flex items-center justify-between gap-3">
-                          <span className="text-[13.5px] text-[color:var(--menu-muted)]">
-                            {v.name}{" "}
-                            <span className="tnum font-medium text-[color:var(--menu-ink)]">
-                              {formatMoney(v.price, currency)}
-                            </span>
-                          </span>
-                          <Stepper
-                            quantity={qtyFor(item.id, v.id)}
-                            onAdd={() => onAdd(item, v.id)}
-                            label={`${item.name}, ${v.name}`}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <div className="mt-2.5 flex justify-end">
-                      <Stepper
-                        quantity={qtyFor(item.id, null)}
-                        onAdd={() => onAdd(item, null)}
-                        label={item.name}
-                      />
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
-      <div className="h-8" />
-    </div>
   );
 }
 
