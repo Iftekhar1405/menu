@@ -24,7 +24,8 @@ export async function uploadToTicket(ticket: UploadTicket, blob: Blob): Promise<
 
   const res = await fetch(ticket.uploadUrl, {
     method: "PUT",
-    headers: { "Content-Type": "image/webp" },
+    // The blob knows its own type — logos are PNG, photos are WebP.
+    headers: { "Content-Type": blob.type || "application/octet-stream" },
     body: blob,
   });
   if (!res.ok) throw new Error(`Upload failed (${res.status})`);

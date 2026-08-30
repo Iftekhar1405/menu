@@ -43,6 +43,7 @@ export default function OrdersPage() {
   const { current } = useSession();
   const confirm = useConfirm();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [past, setPast] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -50,8 +51,20 @@ export default function OrdersPage() {
   const load = useCallback(async () => {
     if (!current) return;
     try {
-      const data = await api.get<Order[]>(`/businesses/${current.id}/orders?scope=open`);
-      setOrders(data);
+      // Both scopes: the board shows what is still cooking, and the list
+      // below shows what has already gone out. A served order used to vanish
+      // from this screen entirely, which is no use to anyone reprinting a
+      // bill five minutes later.
+      const [open, today] = await Promise.all([
+        api.get<Order[]>(`/businesses/${current.id}/orders?scope=open`),
+        api.get<Order[]>(`/businesses/${current.id}/orders?scope=today`),
+      ]);
+      setOrders(open);
+      setPast(
+        today
+          .filter((o) => o.status === "completed" || o.status === "cancelled")
+          .sort((a, b) => b.dailyNumber - a.dailyNumber),
+      );
     } finally {
       setLoading(false);
     }
@@ -137,13 +150,17 @@ export default function OrdersPage() {
 
       {loading ? (
         <p className="text-[14px] text-faint">Loading…</p>
-      ) : orders.length === 0 ? (
+      ) : orders.length === 0 && past.length === 0 ? (
         <Empty
-          title="No open orders"
+          title="No orders today"
           body="When someone scans a table card and orders, it appears here straight away."
         />
+      ) : orders.length === 0 ? (
+        <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-center text-[13.5px] text-faint">
+          Nothing cooking right now.
+        </p>
       ) : (
-        <div className="grid gap-5 lg:grid-cols-3">
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {COLUMNS.map((column) => {
             const list = grouped.get(column.status) ?? [];
             return (
@@ -163,13 +180,13 @@ export default function OrdersPage() {
                       nextLabel={column.nextLabel}
                       onAdvance={() => column.next && void advance(order, column.next)}
                       onCancel={() => void advance(order, "cancelled")}
-                      onBill={async () => {
+                      onBill={async (format) => {
                         await api
                           .post(`/businesses/${current.id}/orders/${order.id}/bill`)
                           .catch(() => undefined);
                         await downloadFile(
-                          `/businesses/${current.id}/orders/${order.id}/bill/pdf`,
-                          `bill-table-${order.table.label}.pdf`,
+                          `/businesses/${current.id}/orders/${order.id}/bill/pdf?format=${format}`,
+                          `${format}-table-${order.table.label}.pdf`,
                         );
                       }}
                     />
@@ -185,7 +202,124 @@ export default function OrdersPage() {
           })}
         </div>
       )}
+
+      {past.length > 0 && (
+        <ServedToday
+          orders={past}
+          businessId={current.id}
+          currency={current.currency}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * What has already gone out today.
+ *
+ * Kept out of the board on purpose — a served order is not work in progress
+ * and would only crowd the columns staff are watching. But it has to be
+ * reachable, because reprinting a bill, or answering what table six had, is a
+ * normal thing to need a few minutes later.
+ */
+function ServedToday({
+  orders,
+  businessId,
+  currency,
+}: {
+  orders: Order[];
+  businessId: string;
+  currency: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function download(order: Order, format: "bill" | "receipt") {
+    setBusy(`${order.id}:${format}`);
+    try {
+      // Generating is idempotent: an order served before billing was set up
+      // still needs a document, and one already billed returns the same one.
+      await api
+        .post(`/businesses/${businessId}/orders/${order.id}/bill`)
+        .catch(() => undefined);
+      await downloadFile(
+        `/businesses/${businessId}/orders/${order.id}/bill/pdf?format=${format}`,
+        `${format}-table-${order.table.label}.pdf`,
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className="mt-10">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-baseline justify-between gap-3 border-t border-line pt-5 text-left"
+      >
+        <span className="text-[13px] font-semibold uppercase tracking-[0.12em] text-faint">
+          Earlier today
+          <span className="tnum ml-2 text-ink">{orders.length}</span>
+        </span>
+        <span className="text-[13px] text-muted">{open ? "Hide" : "Show"}</span>
+      </button>
+
+      {open && (
+        <ul className="mt-4 space-y-2">
+          {orders.map((order) => {
+            const total = order.items.reduce(
+              (sum, i) => sum + Number(i.unitPrice) * i.quantity,
+              0,
+            );
+            return (
+              <li
+                key={order.id}
+                className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-line bg-surface px-4 py-3"
+              >
+                <span className="text-[14px] font-medium">
+                  Table {order.table.label}
+                </span>
+                <span className="tnum text-[13px] text-faint">
+                  #{order.dailyNumber}
+                </span>
+                {order.status === "cancelled" ? (
+                  <span className="rounded-full bg-[#FDF3F2] px-2 py-0.5 text-[12px] font-medium text-[#8C1D18]">
+                    Cancelled
+                  </span>
+                ) : (
+                  <span className="text-[13px] text-muted">
+                    {order.items.reduce((n, i) => n + i.quantity, 0)} items
+                  </span>
+                )}
+                <span className="tnum ml-auto text-[14px] font-semibold">
+                  {formatMoney(String(total), currency)}
+                </span>
+                {order.status === "completed" && (
+                  <span className="flex gap-1.5">
+                    <Button
+                      size="sm"
+                      loading={busy === `${order.id}:bill`}
+                      onClick={() => void download(order, "bill")}
+                    >
+                      Bill
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      loading={busy === `${order.id}:receipt`}
+                      onClick={() => void download(order, "receipt")}
+                    >
+                      Receipt
+                    </Button>
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -206,7 +340,7 @@ function OrderCard({
   nextLabel?: string;
   onAdvance: () => void;
   onCancel: () => void;
-  onBill: () => void;
+  onBill: (format: "bill" | "receipt") => void;
 }) {
   const minutes = Math.max(0, Math.floor((now - new Date(order.placedAt).getTime()) / 60000));
 
@@ -265,7 +399,7 @@ function OrderCard({
           <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
             Cancel
           </Button>
-          <Button variant="ghost" size="sm" onClick={onBill} disabled={busy}>
+          <Button variant="ghost" size="sm" onClick={() => onBill("bill")} disabled={busy}>
             Bill
           </Button>
           {nextLabel && (

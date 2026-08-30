@@ -20,8 +20,24 @@ import {
   TableSessionGuard,
   type TableSession,
 } from "../tables/table-session";
-import { BillingService } from "./billing.service";
+import { MediaService } from "../media/media.service";
+import { BillingService, type Bill } from "./billing.service";
+import { buildBillPdf } from "./bill.pdf";
 import { buildReceiptPdf } from "./receipt.pdf";
+
+/**
+ * Two documents from one bill.
+ *
+ * `bill` is an A5 page — the one a diner emails themselves or hands to an
+ * accounts department. `receipt` is the 80mm till slip for the counter
+ * printer. They are different artefacts for different moments, and both
+ * carry the business's own logo.
+ */
+type DocFormat = "bill" | "receipt";
+
+function parseFormat(raw: string | undefined): DocFormat {
+  return raw === "receipt" ? "receipt" : "bill";
+}
 
 const taxSchema = z.object({
   taxEnabled: z.boolean().optional(),
@@ -43,7 +59,17 @@ const ratingSchema = z.object({
 /** Staff-facing billing. No time window: this is the owner's own record. */
 @Controller("businesses/:bid")
 export class BillingController {
-  constructor(private readonly billing: BillingService) {}
+  constructor(
+    private readonly billing: BillingService,
+    private readonly media: MediaService,
+  ) {}
+
+  private async render(bill: Bill, format: DocFormat): Promise<Buffer> {
+    const logo = await this.media.imageBytes(bill.business.logoPath);
+    return format === "receipt"
+      ? buildReceiptPdf(bill, logo)
+      : buildBillPdf(bill, logo);
+  }
 
   @Post("orders/:id/bill")
   generate(
@@ -69,13 +95,16 @@ export class BillingController {
     @Param("bid") bid: string,
     @Param("id") id: string,
     @Res() res: Response,
+    @Query("format") format?: string,
   ) {
+    const kind = parseFormat(format);
     const bill = await this.billing.forOrder(user.id, bid, id);
-    const pdf = await buildReceiptPdf(bill);
+    const pdf = await this.render(bill, kind);
+
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="bill-${bill.billNumber}.pdf"`,
+      `attachment; filename="${kind}-${bill.billNumber}.pdf"`,
     );
     res.send(pdf);
   }
@@ -123,7 +152,10 @@ export class BillingController {
  */
 @Controller("public/table")
 export class TableBillingController {
-  constructor(private readonly billing: BillingService) {}
+  constructor(
+    private readonly billing: BillingService,
+    private readonly media: MediaService,
+  ) {}
 
   @Public()
   @UseGuards(TableSessionGuard)
@@ -132,19 +164,29 @@ export class TableBillingController {
     return this.billing.billForTable(session.tableId);
   }
 
+  /** The diner gets both documents, same as the owner. */
   @Public()
   @UseGuards(TableSessionGuard)
   @Get("bill/pdf")
-  async billPdf(@CurrentTable() session: TableSession, @Res() res: Response) {
+  async billPdf(
+    @CurrentTable() session: TableSession,
+    @Res() res: Response,
+    @Query("format") format?: string,
+  ) {
+    const kind = parseFormat(format);
     const bill = await this.billing.billForTable(session.tableId);
     if (!bill) {
       throw new NotFoundException("That bill is no longer available to download");
     }
-    const pdf = await buildReceiptPdf(bill);
+
+    const logo = await this.media.imageBytes(bill.business.logoPath);
+    const pdf =
+      kind === "receipt" ? await buildReceiptPdf(bill, logo) : await buildBillPdf(bill, logo);
+
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="bill-${bill.billNumber}.pdf"`,
+      `attachment; filename="${kind}-${bill.billNumber}.pdf"`,
     );
     res.send(pdf);
   }

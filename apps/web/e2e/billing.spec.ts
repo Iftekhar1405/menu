@@ -114,6 +114,9 @@ test("a diner is billed, can decline the service charge, and can rate the meal",
   // Service charge 10% of net = 20, plus 5% tax on that = 1. Total 231.
   await expect(diner.getByText("₹200")).toBeVisible();
   await expect(diner.getByText("₹231")).toBeVisible();
+  // Both documents are the diner's to take, not just one.
+  await expect(diner.getByRole("button", { name: "Download bill" })).toBeVisible();
+  await expect(diner.getByRole("button", { name: "Receipt" })).toBeVisible();
   await diner.screenshot({ path: `${SHOTS}/16-diner-bill.png`, fullPage: true });
 
   // The diner declines the service charge, as they are entitled to.
@@ -148,4 +151,20 @@ test("a diner is billed, can decline the service charge, and can rate the meal",
   await expect(page.getByText("What diners said")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("Idli was cold when it arrived.")).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/18-owner-ratings.png`, fullPage: true });
+
+  // ── A served order stays reachable ───────────────────────────────────────
+  await page.getByRole("link", { name: "Orders" }).click();
+  await expect(page.getByRole("button", { name: /Earlier today/ })).toBeVisible();
+  await page.getByRole("button", { name: /Earlier today/ }).click();
+
+  const served = page.getByRole("listitem").filter({ hasText: "Table 3" });
+  await expect(served).toBeVisible();
+
+  for (const doc of ["Bill", "Receipt"] as const) {
+    const download = page.waitForEvent("download");
+    await served.getByRole("button", { name: doc }).click();
+    const file = await download;
+    expect(file.suggestedFilename()).toContain(doc.toLowerCase());
+  }
+  await page.screenshot({ path: `${SHOTS}/23-served-today.png`, fullPage: true });
 });

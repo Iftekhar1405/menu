@@ -127,15 +127,21 @@ export class OrdersService {
   async listForBusiness(userId: string, businessId: string, scope: "open" | "today") {
     await this.businesses.assertOwns(userId, businessId);
 
-    const day = new Date();
-    day.setHours(0, 0, 0, 0);
+    // `business_day` is written by Postgres with CURRENT_DATE, so "today" has
+    // to be asked of Postgres too. Building a local midnight in JS and
+    // comparing it to a DATE column resolves to the previous day in any
+    // timezone ahead of UTC — in IST that meant today's orders never matched
+    // and the history was always empty.
+    const [{ today }] = await this.prisma.db.$queryRaw<{ today: Date }[]>`
+      SELECT CURRENT_DATE AS today
+    `;
 
     return this.prisma.db.order.findMany({
       where: {
         businessId,
         ...(scope === "open"
           ? { status: { in: OPEN_STATUSES } }
-          : { businessDay: day }),
+          : { businessDay: today }),
       },
       orderBy: [{ status: "asc" }, { placedAt: "asc" }],
       include: {

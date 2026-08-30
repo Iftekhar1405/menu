@@ -51,7 +51,9 @@ export default function SettingsPage() {
 
   async function uploadLogo(file: File) {
     if (!current || !isImage(file)) return;
-    const blob = await prepareImage(file);
+    // PNG, and small: this logo is embedded into bills and printed QR cards,
+    // and a PDF cannot carry WebP.
+    const blob = await prepareImage(file, { format: "png", maxEdge: 512 });
     const ticket = await api.post<UploadTicket>(
       `/businesses/${current.id}/logo/upload-url`,
     );

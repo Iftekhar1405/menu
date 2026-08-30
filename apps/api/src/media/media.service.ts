@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { createHmac, randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadEnv, usesSupabaseStorage } from "../config/env";
 import { deliveryUrl, signUpload, usesCloudinary } from "./cloudinary";
@@ -46,9 +46,14 @@ export class MediaService {
       throw new BadRequestException("An item id is required for item photos");
     }
 
+    // Logos are PNG because they are embedded into bills and printed cards,
+    // and a PDF cannot carry WebP. Photos stay WebP — they are only ever
+    // shown in a browser, where WebP is smaller for the same quality.
+    const ext = kind === "logo" ? "png" : "webp";
+
     // Path is composed here, never taken from the client. The first segment
     // is the tenant boundary that storage policies check.
-    const filename = `${randomUUID()}.webp`;
+    const filename = `${randomUUID()}.${ext}`;
     const path =
       kind === "logo"
         ? `${businessId}/logo/${filename}`
@@ -58,7 +63,7 @@ export class MediaService {
     // per-request at delivery, which matters most on the diner's phone.
     if (usesCloudinary(this.env)) {
       // Cloudinary appends its own extension, so the public_id carries none.
-      const publicId = path.replace(/\.webp$/, "");
+      const publicId = path.replace(/\.(webp|png)$/, "");
       const ticket = signUpload(this.env, publicId);
       return {
         uploadUrl: ticket.uploadUrl,
@@ -124,6 +129,27 @@ export class MediaService {
 
   localFilePath(path: string): string {
     return join(this.localRoot, path);
+  }
+
+  /**
+   * The raw bytes of a stored image, for embedding into a PDF or an SVG.
+   * Returns null rather than throwing: a missing logo must never stop an
+   * owner printing a bill or a QR card.
+   */
+  async imageBytes(path: string | null): Promise<Buffer | null> {
+    if (!path) return null;
+    try {
+      if (usesCloudinary(this.env) || usesSupabaseStorage(this.env)) {
+        const url = this.publicUrl(path);
+        if (!url) return null;
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        return Buffer.from(await res.arrayBuffer());
+      }
+      return await readFile(this.localFilePath(path));
+    } catch {
+      return null;
+    }
   }
 
   /** Turns a stored path into something an <img> can load. */

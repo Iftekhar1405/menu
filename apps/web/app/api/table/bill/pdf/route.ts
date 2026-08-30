@@ -10,13 +10,18 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
  * out. The 30-minute window is the API's to enforce, so a late request comes
  * back as a 404 with a readable message rather than a broken download.
  */
-export async function GET() {
+export async function GET(request: Request) {
   const token = await getTableToken();
   if (!token) {
     return new Response("No table session", { status: 401 });
   }
 
-  const res = await fetch(`${API}/public/table/bill/pdf`, {
+  // "bill" is the A5 page, "receipt" the till slip. Both are the diner's to
+  // take, so the choice is passed straight through.
+  const format =
+    new URL(request.url).searchParams.get("format") === "receipt" ? "receipt" : "bill";
+
+  const res = await fetch(`${API}/public/table/bill/pdf?format=${format}`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
   }).catch(() => null);

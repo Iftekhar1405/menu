@@ -171,9 +171,16 @@ export function BillAndRating({
             </span>
           </div>
 
-          <a href="/api/table/bill/pdf" className="mt-4 block">
-            <Button className="w-full">Download bill</Button>
-          </a>
+          {/* Both documents, because they are for different things: the bill
+              is an A5 page to email or file, the receipt is the till slip. */}
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <a href="/api/table/bill/pdf?format=bill" download>
+              <Button className="w-full">Download bill</Button>
+            </a>
+            <a href="/api/table/bill/pdf?format=receipt" download>
+              <Button className="w-full">Receipt</Button>
+            </a>
+          </div>
 
           <p className="mt-2.5 text-[11.5px] leading-relaxed text-[color:var(--menu-muted)]">
             Available to download for 30 minutes. This is a receipt, not a GST tax
