@@ -324,15 +324,50 @@ minutes**. If the session survives a token refresh, `COOKIE_SAMESITE` is right.
 
 ---
 
-## Step 9 — Point Netlify at it
+## Step 9 — The web app
 
-Set `NEXT_PUBLIC_API_URL` in Netlify to the Vercel deployment URL.
+The web app is a **second Vercel project from the same repository**, with Root
+Directory `apps/web`. Vercel reads `vercel.json` from the Root Directory, so
+that project uses `apps/web/vercel.json` and never sees the one at the repo
+root — which is why the two can hold contradictory settings (`framework: null`
+here, `framework: "nextjs"` there) without interfering.
 
-Use a **stable custom domain**, not the generated `*.vercel.app` URL — that one
-changes on every deployment, and `CORS_ORIGINS` would need updating each time.
+| Setting | Value |
+| --- | --- |
+| Framework Preset | Next.js |
+| Root Directory | `apps/web` |
+| Install / Build Command | leave blank — `apps/web/vercel.json` supplies both |
+
+Its environment variables:
+
+| Variable | Value |
+| --- | --- |
+| `NEXT_PUBLIC_API_URL` | `https://api.menu.irad.solutions` |
+| `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME` | the cloud name — public by design, it appears in every delivery URL |
+| `PUBLIC_MENU_BASE_URL` | this app's own origin; `/t/[token]` builds redirect URLs from it |
+| `REVALIDATE_SECRET` | **the same value as the API's** |
 
 `REVALIDATE_SECRET` must match on both sides: the API posts to
-`${WEB_ORIGIN}/api/revalidate` with it when a menu changes.
+`${WEB_ORIGIN}/api/revalidate` with it whenever a menu changes, and the route
+compares it against its own copy.
+
+Use a **stable custom domain**, not the generated `*.vercel.app` URL — that one
+changes on every deployment, and the API's `CORS_ORIGINS` would need updating
+each time.
+
+### SameSite, once both are on irad.solutions
+
+`COOKIE_SAMESITE` must be `none` while the web app is on a `*.vercel.app`
+address: `vercel.app` is on the Public Suffix List, so `something.vercel.app`
+and `api.menu.irad.solutions` are different *sites*, and a Lax cookie is not
+sent between them.
+
+Once the web app answers on `menu.irad.solutions`, that stops being true. Both
+hosts then share the registrable domain `irad.solutions`, which makes them
+same-site — different origins, so CORS is still required, but Lax cookies flow.
+**Set `COOKIE_SAMESITE=lax` at that point.** It is the stricter setting and
+costs nothing once it works, whereas `none` keeps the cookie eligible on
+genuinely cross-site requests for no remaining benefit.
 
 ---
 
@@ -366,6 +401,7 @@ click.
 | Owner sees no data at all, no error | `APP_DATABASE_URL` points at a role that RLS denies, or at the wrong database |
 | Owner sees **other tenants'** data | `APP_DATABASE_URL` points at `postgres`. Stop and fix immediately — superusers bypass RLS |
 | `FUNCTION_INVOCATION_TIMEOUT` on QR sheet or bill PDF | Generation exceeded `maxDuration: 30`. Raise it, or reduce the batch |
+| Web build: `PageNotFoundError: Cannot find module for page: /_document` | Stale `.next` cache. Redeploy without the build cache |
 
 ---
 
