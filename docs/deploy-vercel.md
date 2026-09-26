@@ -138,7 +138,7 @@ Then, before the first build, set:
 
 | Setting | Value |
 | --- | --- |
-| Framework Preset | **Other** |
+| Framework Preset | **Other** — `vercel.json` pins this, see below |
 | Root Directory | **`./`** — the repo root, *not* `apps/api` |
 | Node.js Version | **22.x** |
 | Install Command | leave blank |
@@ -147,6 +147,18 @@ Then, before the first build, set:
 
 The three blank commands are supplied by `vercel.json`; overriding them in the
 dashboard silently wins over the file, which makes for a confusing afternoon.
+
+`"framework": null` in `vercel.json` holds the preset at Other. Vercel's import
+scans the monorepo, finds Next in `apps/web`, and offers the Next.js preset —
+which then runs its own builder against the repo root and fails with:
+
+```
+Error: No Next.js version detected. Make sure your package.json has "next" ...
+```
+
+Truthfully so: the root `package.json` is a workspace manifest, and the install
+command skips `apps/web` anyway. The setting lives in the file rather than the
+dashboard so a re-import cannot reintroduce it.
 
 **Vercel will suggest `api` as the Root Directory. Change it.** The import
 screen sees the `api/` folder at the repo root and offers it — accept that and
@@ -342,6 +354,7 @@ click.
 | --- | --- |
 | Import rejected: `functions.api/index.ts.includeFiles should be string` | `includeFiles` was given an array. It takes one string; use brace expansion |
 | Build fails immediately, cannot find the workspace | Root Directory is `api` (Vercel's suggestion) instead of the repo root |
+| `Error: No Next.js version detected` after a clean install | Framework Preset is Next.js. `"framework": null` pins it to Other |
 | Build fails: `ERR_PNPM_OUTDATED_LOCKFILE` | `pnpm-lock.yaml` not committed alongside a dependency change |
 | Function 500s on every request, logs show a DI error | Something imported the TS source instead of `dist/`. `api/index.ts` must re-export `../apps/api/dist/serverless` |
 | First query fails, `PrismaClientInitializationError` | Missing `rhel-openssl-3.0.x` in `binaryTargets`, or the engine was not included in the bundle |
