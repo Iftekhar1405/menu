@@ -1,0 +1,19 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "pnpm install --frozen-lockfile --filter=@menu/api...",
+  "buildCommand": "pnpm --filter @menu/shared build && pnpm --filter @menu/api exec prisma generate && pnpm --filter @menu/api build",
+  "outputDirectory": "public",
+  "regions": ["bom1"],
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 30,
+      "includeFiles": [
+        "node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client/*",
+        "node_modules/.pnpm/pdfkit@*/node_modules/pdfkit/js/data/**",
+        "node_modules/.pnpm/@resvg+resvg-js-linux-*/node_modules/@resvg/*/*.node",
+        "node_modules/.pnpm/@node-rs+argon2-linux-*/node_modules/@node-rs/*/*.node"
+      ]
+    }
+  },
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }]
+}

@@ -10,11 +10,23 @@
 
 generator client {
   provider = "prisma-client-js"
+  // "native" keeps local dev working; the rhel target is the one Vercel's
+  // Amazon Linux 2023 runtime loads. Without it the deployed function starts
+  // fine and then fails on the first query, which is the worst way to find out.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
   provider = "postgresql"
+  // Runtime connection. On Vercel this must be Supabase's transaction pooler
+  // (port 6543, ?pgbouncer=true): a serverless instance opens a connection per
+  // cold start, and direct connections run out long before traffic does. The
+  // RLS session is set with set_config(..., true), which is transaction-scoped,
+  // so transaction pooling does not break isolation.
   url      = env("DATABASE_URL")
+  // Migrations and introspection need a real session (port 5432); the pooler
+  // cannot run them. Point both at the same direct URL for local dev.
+  directUrl = env("DIRECT_URL")
 }
 
 enum UserRole {

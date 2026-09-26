@@ -1,0 +1,11 @@
+# Keep apps/web in the upload: pnpm's frozen lockfile check fails if a
+# workspace package listed in pnpm-lock.yaml has no package.json on disk.
+# Its dependencies are still skipped — installCommand filters to @menu/api.
+apps/web/.next
+apps/web/node_modules
+apps/web/e2e
+apps/api/node_modules
+apps/api/dist
+apps/api/.uploads
+packages/shared/dist
+node_modules

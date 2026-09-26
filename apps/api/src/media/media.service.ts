@@ -77,6 +77,16 @@ export class MediaService {
       return { uploadUrl: await this.signSupabaseUpload(path), path, driver: "supabase" };
     }
 
+    // Serverless filesystems are read-only outside /tmp, and /tmp does not
+    // survive between invocations — so in production the local driver is not a
+    // fallback, it is a misconfiguration. Say so here rather than handing back
+    // a ticket pointing at localhost.
+    if (this.env.NODE_ENV === "production") {
+      throw new Error(
+        "No image storage configured: set CLOUDINARY_* (or SUPABASE_*) in production.",
+      );
+    }
+
     // The local driver has no cloud signing service, so the ticket carries an
     // HMAC the upload route verifies. Same property as a cloud signed URL:
     // short-lived, bound to one path, unforgeable by the client.

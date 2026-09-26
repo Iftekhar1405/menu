@@ -22,17 +22,5 @@
   "devDependencies": {
     "prettier": "^3.4.2",
     "typescript": "^5.7.3"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@nestjs/core",
-      "@prisma/client",
-      "@prisma/engines",
-      "@swc/core",
-      "esbuild",
-      "prisma",
-      "@node-rs/argon2",
-      "sharp"
-    ]
   }
 }

@@ -23,7 +23,7 @@ import {
 } from "@menu/shared";
 import { CurrentUser, Public } from "../common/decorators";
 import { ZodBody } from "../common/zod.pipe";
-import { loadEnv } from "../config/env";
+import { loadEnv, refreshCookieFlags } from "../config/env";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthService } from "./auth.service";
 import type { RequestUser } from "./jwt.strategy";
@@ -41,15 +41,17 @@ export class AuthController {
   ) {}
 
   /**
-   * httpOnly so script cannot read it, secure in production, and Lax rather
-   * than None because the web app and API are same-site in deployment. Path
-   * is scoped to /auth so it is not attached to every ordinary API call.
+   * httpOnly so script cannot read it. SameSite comes from the environment
+   * rather than being hard-coded: it is "lax" when the browser talks to a
+   * single origin, and must be "none" once the web app and the API are on
+   * different sites — which is the case with the web app on Netlify and this
+   * on Vercel. Path is scoped to /auth so it is not attached to every
+   * ordinary API call.
    */
   private setRefreshCookie(res: Response, tokens: IssuedTokens): void {
     res.cookie(REFRESH_COOKIE, tokens.refreshToken, {
       httpOnly: true,
-      secure: this.env.NODE_ENV === "production",
-      sameSite: "lax",
+      ...refreshCookieFlags(this.env),
       expires: tokens.refreshExpiresAt,
       path: "/auth",
     });
@@ -95,7 +97,13 @@ export class AuthController {
   @Post("logout")
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     await this.auth.logout(req.cookies?.[REFRESH_COOKIE]);
-    res.clearCookie(REFRESH_COOKIE, { path: "/auth" });
+    // The flags must match the ones the cookie was set with, or the browser
+    // treats it as a different cookie and leaves the original in place.
+    res.clearCookie(REFRESH_COOKIE, {
+      httpOnly: true,
+      ...refreshCookieFlags(this.env),
+      path: "/auth",
+    });
   }
 
   @Public()

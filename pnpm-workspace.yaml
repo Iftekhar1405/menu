@@ -1,3 +1,16 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# pnpm 10 reads this from the workspace file, not package.json — left in
+# package.json it is silently ignored and postinstall scripts never run,
+# which surfaces as a missing native binary at runtime, not at install.
+onlyBuiltDependencies:
+  - "@nestjs/core"
+  - "@prisma/client"
+  - "@prisma/engines"
+  - "@swc/core"
+  - esbuild
+  - prisma
+  - "@node-rs/argon2"
+  - sharp

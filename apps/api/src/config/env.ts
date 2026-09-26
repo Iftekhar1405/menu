@@ -14,8 +14,30 @@ const envSchema = z.object({
    * Falls back to DATABASE_URL so tooling still works.
    */
   APP_DATABASE_URL: z.string().default(""),
+  /**
+   * A direct (non-pooled) connection for `prisma migrate` and `prisma studio`,
+   * which need a real session. DATABASE_URL is the pooled one in production, so
+   * the two genuinely differ there; locally they are the same string.
+   */
+  DIRECT_URL: z.string().default(""),
   API_PORT: z.coerce.number().int().positive().default(4000),
   WEB_ORIGIN: z.string().url().default("http://localhost:3000"),
+  /**
+   * Browser origins allowed to call the API with credentials, comma-separated.
+   * Separate from WEB_ORIGIN because that one is a single URL the API calls
+   * back (the revalidate webhook), while CORS needs to admit several — the
+   * production site plus however many Netlify preview domains are in play.
+   * Empty means "just WEB_ORIGIN".
+   */
+  CORS_ORIGINS: z.string().default(""),
+  /**
+   * The refresh cookie's SameSite mode. "lax" is right when the browser talks
+   * to one origin; set it to "none" once the web app and the API live on
+   * different sites (Netlify and Vercel, say), or the cookie is never sent and
+   * every session dies at the first refresh. "none" implies Secure, which is
+   * applied below, so it cannot be used over plain http.
+   */
+  COOKIE_SAMESITE: z.enum(["lax", "none"]).default("lax"),
   PUBLIC_MENU_BASE_URL: z.string().url().default("http://localhost:3000"),
 
   JWT_ACCESS_SECRET: z.string().min(8),
@@ -77,6 +99,29 @@ export function loadEnv(): Env {
   }
   cached = parsed.data;
   return cached;
+}
+
+/** The origins CORS should admit: CORS_ORIGINS if set, else just WEB_ORIGIN. */
+export function corsOrigins(env: Env): string[] {
+  const listed = env.CORS_ORIGINS.split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+  return listed.length > 0 ? listed : [env.WEB_ORIGIN];
+}
+
+/**
+ * Cookie flags for the refresh token. Secure is forced on whenever SameSite is
+ * "none" — browsers drop such a cookie outright otherwise, and a cookie that is
+ * silently discarded looks exactly like a bug in the auth code.
+ */
+export function refreshCookieFlags(env: Env): {
+  secure: boolean;
+  sameSite: "lax" | "none";
+} {
+  return {
+    sameSite: env.COOKIE_SAMESITE,
+    secure: env.NODE_ENV === "production" || env.COOKIE_SAMESITE === "none",
+  };
 }
 
 /** True when Supabase Storage is configured; otherwise uploads go to local disk. */
