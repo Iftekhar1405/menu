@@ -3,7 +3,7 @@
   "installCommand": "pnpm install --frozen-lockfile --filter=@menu/api...",
   "buildCommand": "pnpm --filter @menu/shared build && pnpm --filter @menu/api exec prisma generate && pnpm --filter @menu/api build",
   "outputDirectory": "public",
-  "regions": ["bom1"],
+  "regions": ["syd1"],
   "functions": {
     "api/index.ts": {
       "maxDuration": 30,

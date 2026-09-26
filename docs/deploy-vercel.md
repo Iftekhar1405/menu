@@ -235,10 +235,19 @@ Map the Supabase region you noted in step 1:
 | --- | --- |
 | `ap-south-1` (Mumbai) | `bom1` |
 | `ap-southeast-1` (Singapore) | `sin1` |
+| `ap-southeast-2` (Sydney) | `syd1` |
 | `eu-central-1` (Frankfurt) | `fra1` |
 | `us-east-1` (N. Virginia) | `iad1` |
 
-The committed value is `bom1`. Change it if your project is elsewhere.
+The committed value is `syd1`, because the Supabase project currently sits in
+`ap-southeast-2`. You can read the region straight off the pooler hostname —
+`aws-0-<region>.pooler.supabase.com` — without opening the dashboard.
+
+That pairing is internally consistent but probably not what you want long term:
+a diner in India scanning a QR code is served from Sydney. Moving the database
+to `ap-south-1` means creating a new Supabase project and migrating into it,
+which is far cheaper now than after real orders exist. If you do move it,
+change this to `bom1` in the same commit.
 
 On the Hobby plan only one region may be listed; listing several requires Pro.
 
