@@ -1,5 +1,11 @@
 import { z } from "zod";
 import { BUSINESS_TYPES, DIET_TAGS, OTP_PURPOSES } from "./enums";
+import {
+  SHEET_ORIENTATIONS,
+  SHEET_PAPERS,
+  SHEET_SIZES,
+  SHEET_STYLES,
+} from "./qr-sheet";
 import { THEME_LAYOUTS } from "./theme-tokens";
 
 /**
@@ -177,3 +183,22 @@ export const menuItemSchema = z
     },
   );
 export type MenuItemInput = z.infer<typeof menuItemSchema>;
+
+/**
+ * A batch of table cards laid out for printing.
+ *
+ * The table ids are checked against the business server-side as well — this
+ * only establishes that they are ids at all, so a malformed one fails at the
+ * edge rather than somewhere inside the PDF writer.
+ */
+export const qrSheetSchema = z.object({
+  tableIds: z
+    .array(z.string().uuid())
+    .min(1, "Select at least one table")
+    .max(500, "Print at most 500 tables at a time"),
+  paper: z.enum(SHEET_PAPERS).default("a4"),
+  orientation: z.enum(SHEET_ORIENTATIONS).default("portrait"),
+  size: z.enum(SHEET_SIZES).default("medium"),
+  style: z.enum(SHEET_STYLES).default("card"),
+});
+export type QrSheetInput = z.infer<typeof qrSheetSchema>;

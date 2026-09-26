@@ -52,6 +52,7 @@
     "@types/node": "^22.10.5",
     "@types/passport-jwt": "^4.0.1",
     "@types/pdfkit": "^0.13.9",
+    "@types/pngjs": "^6.0.5",
     "@types/qrcode": "^1.5.5",
     "jsqr": "^1.4.0",
     "pngjs": "^7.0.0",

@@ -13,6 +13,7 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { z } from "zod";
+import { qrSheetSchema, type QrSheetInput } from "@menu/shared";
 import type { RequestUser } from "../auth/jwt.strategy";
 import { CurrentUser } from "../common/decorators";
 import { ZodBody } from "../common/zod.pipe";
@@ -94,6 +95,30 @@ export class TablesController {
     @Param("id") id: string,
   ) {
     await this.tables.remove(user.id, bid, id);
+  }
+
+  /**
+   * Many tables' cards tiled onto printable pages.
+   *
+   * POST rather than GET because the selection is the request: eighty table
+   * ids do not belong in a query string, and this is not a URL anyone should
+   * be bookmarking or sharing anyway.
+   */
+  @Post("qr-sheet")
+  @HttpCode(200)
+  async qrSheet(
+    @CurrentUser() user: RequestUser,
+    @Param("bid") bid: string,
+    @Body(new ZodBody(qrSheetSchema)) body: QrSheetInput,
+    @Res() res: Response,
+  ) {
+    const pdf = await this.qr.tableSheetPdf(user.id, bid, body);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="table-qr-sheet-${body.tableIds.length}.pdf"`,
+    );
+    res.send(pdf);
   }
 
   /**

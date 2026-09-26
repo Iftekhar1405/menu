@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
+import type { QrSheetInput } from "@menu/shared";
+import { planSheet } from "@menu/shared";
 import { Resvg } from "@resvg/resvg-js";
 import PDFDocument from "pdfkit";
 import SVGtoPDF from "svg-to-pdfkit";
@@ -9,6 +11,8 @@ import { loadEnv, usesSupabaseStorage } from "../config/env";
 import { MediaService } from "../media/media.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { buildCardSvg } from "./card.svg";
+import { buildCompactCellSvg } from "./compact.svg";
+import { renderSheetPdf } from "./sheet.pdf";
 
 /** A6 at 300 DPI: 105mm wide is 1240px. */
 const PRINT_WIDTH_PX = 1240;
@@ -70,27 +74,6 @@ export class QrService {
   }
 
   /**
-   * A card for any business's table, without the ownership check.
-   *
-   * Used only by the platform admin fulfilling a merchandise order, where
-   * printing someone else's table cards is the entire job. The gate is the
-   * role check on the calling route — this method must never be reachable
-   * from an owner-facing controller.
-   */
-  async adminTableSvg(businessId: string, tableId: string): Promise<string> {
-    const business = await this.prismaBusiness(businessId);
-    const table = await this.prismaTable(businessId, tableId);
-
-    return buildCardSvg({
-      businessName: business.name,
-      tableLabel: table.label,
-      url: `${this.env.PUBLIC_MENU_BASE_URL}/t/${table.token}`,
-      logoDataUri: await this.logoDataUri(business.logoPath),
-      accent: business.themeAccent,
-    });
-  }
-
-  /**
    * One PDF, one page per table, in table order — what actually goes to the
    * print vendor. Sending twenty separate files is how a restaurant ends up
    * with two cards for table 7 and none for table 12.
@@ -99,11 +82,77 @@ export class QrService {
     businessId: string,
     tableIds: string[],
   ): Promise<Buffer> {
-    const svgs: string[] = [];
-    for (const tableId of tableIds) {
-      svgs.push(await this.adminTableSvg(businessId, tableId));
+    const business = await this.prismaBusiness(businessId);
+    const tables = await Promise.all(
+      tableIds.map((id) => this.prismaTable(businessId, id)),
+    );
+    return this.toMultiPagePdf(await this.cardCells(business, tables));
+  }
+
+  /**
+   * A batch of table cards laid out to be printed and cut up.
+   *
+   * The whole selection is rendered from one business read and one logo
+   * fetch. Building these a card at a time re-fetched the logo per table,
+   * which for a forty-table restaurant on remote storage was forty identical
+   * round trips before a single page was drawn.
+   */
+  async tableSheetPdf(
+    userId: string,
+    businessId: string,
+    input: QrSheetInput,
+  ): Promise<Buffer> {
+    const business = await this.businesses.assertOwns(userId, businessId);
+
+    const tables = await this.prisma.db.table.findMany({
+      where: { id: { in: input.tableIds }, businessId },
+      orderBy: { position: "asc" },
+    });
+
+    // Scoping the query to the business already makes a foreign id return
+    // nothing; saying so beats printing a short sheet and leaving the owner
+    // to notice a table is missing after it has been cut up.
+    if (tables.length !== input.tableIds.length) {
+      throw new NotFoundException("Some of those tables are not in this business");
     }
-    return this.toMultiPagePdf(svgs);
+
+    const cells =
+      input.style === "compact"
+        ? await Promise.all(
+            tables.map((table) =>
+              buildCompactCellSvg({
+                url: this.tableUrl(table.token),
+                tableLabel: table.label,
+                accent: business.themeAccent,
+              }),
+            ),
+          )
+        : await this.cardCells(business, tables);
+
+    return renderSheetPdf(cells, planSheet(input, cells.length));
+  }
+
+  /** Full cards for one business, sharing a single logo fetch. */
+  private async cardCells(
+    business: { name: string; logoPath: string | null; themeAccent: string },
+    tables: { label: string; token: string }[],
+  ): Promise<string[]> {
+    const logoDataUri = await this.logoDataUri(business.logoPath);
+    return Promise.all(
+      tables.map((table) =>
+        buildCardSvg({
+          businessName: business.name,
+          tableLabel: table.label,
+          url: this.tableUrl(table.token),
+          logoDataUri,
+          accent: business.themeAccent,
+        }),
+      ),
+    );
+  }
+
+  private tableUrl(token: string): string {
+    return `${this.env.PUBLIC_MENU_BASE_URL}/t/${token}`;
   }
 
   private async prismaBusiness(businessId: string) {

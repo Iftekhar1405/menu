@@ -1,10 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type SheetOrientation,
+  type SheetPaper,
+  type SheetSize,
+  type SheetStyle,
+  planSheet,
+} from "@menu/shared";
 import { ApiError, api, downloadFile } from "@/lib/api-client";
 import { useSession } from "@/components/session";
 import { useConfirm } from "@/components/confirm";
-import { Banner, Button, Empty, Field, Input, cx } from "@/components/ui";
+import { Banner, Button, Empty, Field, Input, Select, cx } from "@/components/ui";
 
 interface TableRow {
   id: string;
@@ -24,6 +31,27 @@ export default function TablesPage() {
   const [showRange, setShowRange] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [sheet, setSheet] = useState<{
+    paper: SheetPaper;
+    orientation: SheetOrientation;
+    size: SheetSize;
+    style: SheetStyle;
+  }>({ paper: "a4", orientation: "portrait", size: "medium", style: "card" });
+  const [printing, setPrinting] = useState(false);
+
+  /**
+   * The same arithmetic the API lays the PDF out with, so the count shown
+   * here cannot disagree with the file that arrives.
+   */
+  const plan = useMemo(() => {
+    if (selected.length === 0) return null;
+    try {
+      return planSheet(sheet, selected.length);
+    } catch {
+      return null;
+    }
+  }, [sheet, selected.length]);
 
   const load = useCallback(async () => {
     if (!current) return;
@@ -93,6 +121,33 @@ export default function TablesPage() {
     if (!ok) return;
     await api.del(`/businesses/${current.id}/tables/${table.id}`);
     await load();
+  }
+
+  function toggleSelected(id: string) {
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+
+  async function printSheet() {
+    if (!current || selected.length === 0) return;
+    setError(null);
+    setPrinting(true);
+    try {
+      // Selection order is whatever they clicked in; the API prints in table
+      // order regardless, so the stack comes out sorted.
+      await downloadFile(
+        `/businesses/${current.id}/tables/qr-sheet`,
+        `table-qr-sheet-${selected.length}.pdf`,
+        { ...sheet, tableIds: selected },
+      );
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : "Could not build that print sheet.",
+      );
+    } finally {
+      setPrinting(false);
+    }
   }
 
   async function download(table: TableRow, format: "png" | "pdf") {
@@ -197,12 +252,124 @@ export default function TablesPage() {
           body="Add one table to try it, or add a range if you already know how many you have."
         />
       ) : (
+        <>
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-[13.5px] text-muted">
+            <input
+              type="checkbox"
+              className="size-4 accent-[var(--accent)]"
+              checked={selected.length === tables.length && tables.length > 0}
+              // Half-selected is its own state: the box should not claim
+              // "all" when it would clear a partial selection.
+              ref={(el) => {
+                if (el) el.indeterminate = selected.length > 0 && selected.length < tables.length;
+              }}
+              onChange={(e) =>
+                setSelected(e.target.checked ? tables.map((t) => t.id) : [])
+              }
+            />
+            Select all
+          </label>
+          {selected.length > 0 && (
+            <span className="text-[13.5px] text-faint">
+              {selected.length} selected
+            </span>
+          )}
+        </div>
+
+        {selected.length > 0 && (
+          <div className="mb-6 rounded-2xl border border-line bg-surface p-4">
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="w-32">
+                <Field label="Paper">
+                  <Select
+                    value={sheet.paper}
+                    onChange={(e) =>
+                      setSheet({ ...sheet, paper: e.target.value as SheetPaper })
+                    }
+                  >
+                    <option value="a4">A4</option>
+                    <option value="a3">A3</option>
+                    <option value="letter">Letter</option>
+                  </Select>
+                </Field>
+              </div>
+              <div className="w-36">
+                <Field label="Orientation">
+                  <Select
+                    value={sheet.orientation}
+                    onChange={(e) =>
+                      setSheet({
+                        ...sheet,
+                        orientation: e.target.value as SheetOrientation,
+                      })
+                    }
+                  >
+                    <option value="portrait">Portrait</option>
+                    <option value="landscape">Landscape</option>
+                  </Select>
+                </Field>
+              </div>
+              <div className="w-36">
+                <Field label="Card size">
+                  <Select
+                    value={sheet.size}
+                    onChange={(e) =>
+                      setSheet({ ...sheet, size: e.target.value as SheetSize })
+                    }
+                  >
+                    <option value="small">Small — 53mm</option>
+                    <option value="medium">Medium — 74mm</option>
+                    <option value="large">Large — 105mm</option>
+                  </Select>
+                </Field>
+              </div>
+              <div className="w-40">
+                <Field label="Style">
+                  <Select
+                    value={sheet.style}
+                    onChange={(e) =>
+                      setSheet({ ...sheet, style: e.target.value as SheetStyle })
+                    }
+                  >
+                    <option value="card">Full card</option>
+                    <option value="compact">QR and label only</option>
+                  </Select>
+                </Field>
+              </div>
+              <Button
+                variant="primary"
+                className="mb-[1px] self-end"
+                loading={printing}
+                onClick={() => void printSheet()}
+              >
+                Download PDF
+              </Button>
+            </div>
+            {plan && (
+              <p className="mt-3 text-[13px] text-faint">
+                {selected.length} {selected.length === 1 ? "card" : "cards"} ·{" "}
+                {plan.perPage} per page ·{" "}
+                {plan.pages === 1 ? "1 page" : `${plan.pages} pages`}. Cut along
+                the light guides.
+              </p>
+            )}
+          </div>
+        )}
+
         <ul className="overflow-hidden rounded-2xl border border-line bg-surface">
           {tables.map((table) => (
             <li
               key={table.id}
               className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-3 first:border-t-0"
             >
+              <input
+                type="checkbox"
+                className="size-4 accent-[var(--accent)]"
+                checked={selected.includes(table.id)}
+                onChange={() => toggleSelected(table.id)}
+                aria-label={`Select ${table.label} for printing`}
+              />
               <input
                 defaultValue={table.label}
                 onBlur={(e) => void rename(table, e.target.value)}
@@ -233,6 +400,7 @@ export default function TablesPage() {
             </li>
           ))}
         </ul>
+        </>
       )}
     </div>
   );

@@ -105,10 +105,24 @@ export function apiOrigin(): string {
   return API;
 }
 
-/** Downloads a file the API streams (QR card). */
-export async function downloadFile(path: string, filename: string): Promise<void> {
+/**
+ * Downloads a file the API streams (QR card, print sheet).
+ *
+ * Pass `body` when the request is a selection rather than an address — a
+ * print sheet is a POST because eighty table ids do not belong in a URL.
+ */
+export async function downloadFile(
+  path: string,
+  filename: string,
+  body?: unknown,
+): Promise<void> {
   const res = await fetch(`${API}${path}`, {
-    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    method: body === undefined ? "GET" : "POST",
+    headers: {
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
     credentials: "include",
   });
   if (!res.ok) throw new ApiError(res.status, "Could not prepare the download");

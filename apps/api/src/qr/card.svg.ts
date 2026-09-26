@@ -1,4 +1,4 @@
-import QRCode from "qrcode";
+import { escapeXml, qrPath, round, truncate } from "./qr-path";
 
 /**
  * The QR card an owner downloads and prints.
@@ -40,28 +40,10 @@ export async function buildCardSvg(opts: CardOptions): Promise<string> {
   const caption =
     opts.caption ?? (opts.tableLabel ? "Scan to order" : "Scan for menu");
 
-  // Error-correction level H tolerates roughly 30% damage, which is what
-  // makes the card survive a centre logo, a scuffed table, and cheap printing.
-  const qr = QRCode.create(opts.url, { errorCorrectionLevel: "H" });
-  const modules = qr.modules;
-  const count = modules.size;
-
   const qrSize = 62;
   const qrX = (W - qrSize) / 2;
   const qrY = 52;
-  const module = qrSize / count;
-
-  // One path for every dark module beats thousands of <rect> elements: far
-  // smaller output and much faster to rasterise.
-  let d = "";
-  for (let row = 0; row < count; row++) {
-    for (let col = 0; col < count; col++) {
-      if (!modules.get(row, col)) continue;
-      const x = qrX + col * module;
-      const y = qrY + row * module;
-      d += `M${round(x)} ${round(y)}h${round(module)}v${round(module)}h-${round(module)}z`;
-    }
-  }
+  const d = await qrPath(opts.url, { x: qrX, y: qrY, size: qrSize });
 
   const tableBlock = opts.tableLabel
     ? `<rect x="${W / 2 - 16}" y="${nameYFor(opts) + 3}" width="32" height="11" rx="5.5"
@@ -144,19 +126,5 @@ function nameYFor(opts: CardOptions): number {
   return opts.logoDataUri ? 45 : 34;
 }
 
-function round(n: number): string {
-  return n.toFixed(3).replace(/\.?0+$/, "");
-}
 
-function truncate(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
-}
 
-function escapeXml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => {
-    const map: Record<string, string> = {
-      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;",
-    };
-    return map[c] ?? c;
-  });
-}
