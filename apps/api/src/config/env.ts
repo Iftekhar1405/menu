@@ -86,6 +86,26 @@ const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>;
 
+/**
+ * Names whose values must never reach a log. Connection URLs are on the list
+ * because they carry the password inline.
+ */
+const SENSITIVE = /SECRET|PASSWORD|TOKEN|_KEY|DATABASE_URL|DIRECT_URL/;
+
+/**
+ * The offending value, for the message below.
+ *
+ * "WEB_ORIGIN: Invalid url" is true and still costs a deploy cycle to act on,
+ * because the one thing it withholds is what the variable actually contained —
+ * usually an unsubstituted placeholder that looks right at a glance.
+ */
+function showValue(key: string): string {
+  const raw = process.env[key];
+  if (raw === undefined) return "nothing";
+  if (SENSITIVE.test(key)) return "<redacted>";
+  return JSON.stringify(raw);
+}
+
 let cached: Env | null = null;
 
 export function loadEnv(): Env {
@@ -93,7 +113,10 @@ export function loadEnv(): Env {
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {
     const issues = parsed.error.issues
-      .map((i) => `  ${i.path.join(".")}: ${i.message}`)
+      .map((i) => {
+        const key = i.path.join(".");
+        return `  ${key}: ${i.message} (received ${showValue(key)})`;
+      })
       .join("\n");
     throw new Error(`Invalid environment:\n${issues}`);
   }
