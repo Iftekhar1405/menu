@@ -100,9 +100,18 @@ test("owner signs up, builds a menu, and a diner can read it", async ({ page }) 
   // ── QR ───────────────────────────────────────────────────────────────────
   await page.getByRole("link", { name: "QR code" }).click();
   await expect(page.getByRole("heading", { name: "QR code" })).toBeVisible();
-  await expect(page.locator("svg").first()).toBeVisible();
-  // Exactly one nav item is current, whatever the fade looks like mid-transition.
-  await expect(page.locator('nav a[aria-current="page"]')).toHaveCount(1);
+  await expect(page.locator("svg:visible").first()).toBeVisible();
+  /*
+   * Exactly one nav item is current, whatever the fade looks like
+   * mid-transition.
+   *
+   * `:visible`, because the dashboard now ships both of its navigations in
+   * the markup and hides one with CSS — the sidebar above `lg`, the bottom
+   * tab bar below it. Only one is ever displayed, and `display: none` keeps
+   * the other out of the accessibility tree, so a screen reader sees one
+   * too; a bare CSS selector is the only thing here that would see both.
+   */
+  await expect(page.locator('nav a[aria-current="page"]:visible')).toHaveCount(1);
   await expect(page.getByRole("link", { name: "QR code" })).toHaveAttribute(
     "aria-current",
     "page",

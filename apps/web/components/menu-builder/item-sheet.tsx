@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { DIET_TAGS, DIET_TAG_LABEL, SPICE_LEVEL_LABEL } from "@menu/shared";
 import type { Category, Item } from "@/lib/types";
-import { Button, Field, Input, Select, Textarea, cx } from "../ui";
+import { Button, Field, Input, Select, Sheet, Textarea, cx } from "../ui";
 import { PhotoUploader } from "./photo-uploader";
 import { useConfirm } from "../confirm";
 
@@ -114,31 +114,17 @@ export function ItemSheet({
   const set = <K extends keyof ItemDraft>(key: K, value: ItemDraft[K]) =>
     onChange({ ...draft, [key]: value });
 
-  useEffect(() => {
-    const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onEsc);
-    return () => window.removeEventListener("keydown", onEsc);
-  }, [onClose]);
-
   const pricedByVariant = draft.variants.length > 0;
 
+  /* Escape, the scrim, and the scroll lock all live in Sheet now. */
   return (
-    <div className="fixed inset-0 z-40 flex justify-end">
-      {/* Presentational: clicking outside closes, but assistive tech already
-          has the Close button and Escape, and announcing a second "Close"
-          control here would just be noise. */}
-      <div
-        aria-hidden="true"
-        onClick={onClose}
-        className="absolute inset-0 bg-[rgba(17,17,19,0.28)]"
-      />
-
-      <div
-        role="dialog"
-        aria-label={isNew ? "Add a dish" : `Edit ${draft.name || "dish"}`}
-        className="relative flex h-full w-full max-w-[460px] flex-col bg-surface shadow-lift"
-      >
-        <header className="chrome-blur sticky top-0 z-10 flex items-center justify-between border-b border-line px-5 py-3.5">
+    <Sheet
+      label={isNew ? "Add a dish" : `Edit ${draft.name || "dish"}`}
+      onClose={onClose}
+      side="side"
+    >
+      <div className="flex h-full min-h-0 flex-col">
+        <header className="chrome-blur sticky top-0 z-10 flex items-center justify-between border-b border-line px-5 pb-3.5 pt-[calc(0.875rem+env(safe-area-inset-top,0px))]">
           <h2 className="font-display text-[16px] font-semibold">
             {isNew ? "Add a dish" : "Edit dish"}
           </h2>
@@ -456,7 +442,10 @@ export function ItemSheet({
           </div>
         </div>
 
-        <footer className="flex items-center justify-between gap-3 border-t border-line px-5 py-3.5">
+        {/* The bottom inset is added to the padding rather than replacing it:
+            on a phone this bar sits directly on the home indicator, and Save
+            would otherwise be half underneath it. */}
+        <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-line bg-surface px-5 pt-3.5 pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))]">
           {onDelete ? (
             <Button variant="danger" size="sm" onClick={onDelete}>
               Delete
@@ -469,6 +458,6 @@ export function ItemSheet({
           </Button>
         </footer>
       </div>
-    </div>
+    </Sheet>
   );
 }

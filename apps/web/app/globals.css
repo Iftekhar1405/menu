@@ -79,6 +79,98 @@ h1, h2, h3, h4 {
   -webkit-backdrop-filter: saturate(1.6) blur(14px);
 }
 
+/*
+ * Phone hardware.
+ *
+ * The viewport is declared `viewport-fit=cover` so the page paints under the
+ * notch and the home indicator. That is only correct if the chrome sitting
+ * against those edges pays the inset back — which is what these do. On a
+ * screen without insets every one resolves to 0 and costs nothing.
+ *
+ * These set padding outright, so they are only for edges that have no padding
+ * of their own: defined after Tailwind's utilities, they win, and a `pb-safe`
+ * next to a `py-4` silently deletes the `py-4` on that side. Where an element
+ * needs both, the call site adds them itself with
+ * `pb-[calc(<base>+env(safe-area-inset-bottom,0px))]`, which says so plainly.
+ */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.px-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/*
+ * Horizontal room for chrome that runs edge to edge: the page gutter, or the
+ * display cutout, whichever is larger. Not the cutout alone — that is zero on
+ * most phones, which would leave the content flush against the glass.
+ */
+.px-edge {
+  padding-left: max(1.25rem, env(safe-area-inset-left, 0px));
+  padding-right: max(1.25rem, env(safe-area-inset-right, 0px));
+}
+
+/*
+ * How much room the bottom tab bar needs. Pages add this to their own bottom
+ * padding so the last row of content clears the bar rather than hiding under
+ * it. Zero once the sidebar takes over.
+ */
+:root {
+  --tab-bar: 0px;
+}
+@media (max-width: 1023.98px) {
+  :root {
+    --tab-bar: calc(58px + env(safe-area-inset-bottom, 0px));
+  }
+}
+.pb-tabs {
+  padding-bottom: calc(var(--tab-bar) + 1.5rem);
+}
+
+body {
+  /*
+   * Removes the 300ms Safari spends deciding whether a tap was the first half
+   * of a double-tap-to-zoom. Every control here is a single tap.
+   */
+  touch-action: manipulation;
+}
+
+/*
+ * Rubber-banding the whole document under a fixed tab bar looks like the bar
+ * has come loose. Overscroll stays inside whichever pane is really scrolling.
+ */
+.overscroll-contain-y {
+  overscroll-behavior-y: contain;
+}
+
+/* A sheet rising from the bottom edge, and a scrim fading in behind it. */
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.animate-sheet-up {
+  animation: sheet-up 280ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.animate-fade-in {
+  animation: fade-in 160ms ease-out;
+}
+
 /* Focus is always visible and always the accent. Keyboard users get the same
  * signal the pointer users get from hover. */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {

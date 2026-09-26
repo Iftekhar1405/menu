@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatMoney } from "@menu/shared";
 import { api, downloadFile } from "@/lib/api-client";
+import { createFreshness } from "@/lib/freshness";
 import { useSession } from "@/components/session";
 import { useConfirm } from "@/components/confirm";
-import { Button, Empty, cx } from "@/components/ui";
+import { Button, Empty, Segmented, cx } from "@/components/ui";
 
 type Status = "placed" | "preparing" | "ready" | "completed" | "cancelled";
 
@@ -47,9 +48,20 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  /** Which column the phone is showing. Ignored from `sm:` up. */
+  const [lane, setLane] = useState<Status>("placed");
+
+  /*
+   * The board polls and also moves cards optimistically, which is several
+   * ways for an old answer to arrive after a new one. Every read is stamped
+   * and every write is announced, so a response the world has moved past is
+   * dropped rather than applied — see lib/freshness.ts.
+   */
+  const fresh = useRef(createFreshness());
 
   const load = useCallback(async () => {
     if (!current) return;
+    const token = fresh.current.begin();
     try {
       // Both scopes: the board shows what is still cooking, and the list
       // below shows what has already gone out. A served order used to vanish
@@ -59,6 +71,7 @@ export default function OrdersPage() {
         api.get<Order[]>(`/businesses/${current.id}/orders?scope=open`),
         api.get<Order[]>(`/businesses/${current.id}/orders?scope=today`),
       ]);
+      if (!fresh.current.accepts(token)) return;
       setOrders(open);
       setPast(
         today
@@ -112,6 +125,13 @@ export default function OrdersPage() {
 
     setBusy(order.id);
 
+    // From here until the write settles, no polled answer is trusted: a read
+    // already in flight describes the order before this tap, and one issued
+    // during the write may be answered before it commits. Either would put
+    // the card back where it was for a poll interval — which is the flicker
+    // staff were seeing on every Start.
+    const written = fresh.current.mutating();
+
     if (status === "completed") {
       await api
         .post(`/businesses/${current.id}/orders/${order.id}/bill`)
@@ -125,20 +145,29 @@ export default function OrdersPage() {
         ? prev.filter((o) => o.id !== order.id)
         : prev.map((o) => (o.id === order.id ? { ...o, status } : o)),
     );
+
     try {
       await api.patch(`/businesses/${current.id}/orders/${order.id}/status`, { status });
     } catch {
-      await load();
+      // Swallowed on purpose: the reload below is what corrects an optimistic
+      // move the server refused.
     } finally {
+      written();
       setBusy(null);
+      // Reconcile now rather than waiting out the poll interval. A served
+      // order also has to reach the list below, and another device may have
+      // touched the board meanwhile.
+      await load();
     }
   }
 
   return (
-    <div className="px-6 py-10 lg:px-10 lg:py-12">
-      <header className="mb-8 flex items-baseline justify-between gap-4">
+    <div className="px-5 py-8 sm:px-6 sm:py-10 lg:px-10 lg:py-12">
+      <header className="mb-6 flex items-baseline justify-between gap-4 sm:mb-8">
         <div>
-          <h1 className="text-[30px] font-semibold leading-tight tracking-tight">Orders</h1>
+          <h1 className="text-[26px] font-semibold leading-tight tracking-tight sm:text-[30px]">
+            Orders
+          </h1>
           <p className="mt-1 text-[14.5px] text-muted">
             Updates every few seconds. Leave this open during service.
           </p>
@@ -160,47 +189,79 @@ export default function OrdersPage() {
           Nothing cooking right now.
         </p>
       ) : (
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {COLUMNS.map((column) => {
-            const list = grouped.get(column.status) ?? [];
-            return (
-              <section key={column.status}>
-                <h2 className="mb-2.5 flex items-baseline gap-2 text-[13px] font-semibold uppercase tracking-[0.12em] text-faint">
-                  {column.title}
-                  <span className="tnum text-ink">{list.length}</span>
-                </h2>
-                <div className="space-y-3">
-                  {list.map((order) => (
-                    <OrderCard
-                      key={order.id}
-                      order={order}
-                      now={now}
-                      currency={current.currency}
-                      busy={busy === order.id}
-                      nextLabel={column.nextLabel}
-                      onAdvance={() => column.next && void advance(order, column.next)}
-                      onCancel={() => void advance(order, "cancelled")}
-                      onBill={async (format) => {
-                        await api
-                          .post(`/businesses/${current.id}/orders/${order.id}/bill`)
-                          .catch(() => undefined);
-                        await downloadFile(
-                          `/businesses/${current.id}/orders/${order.id}/bill/pdf?format=${format}`,
-                          `${format}-table-${order.table.label}.pdf`,
-                        );
-                      }}
-                    />
-                  ))}
-                  {list.length === 0 && (
-                    <p className="rounded-2xl border border-dashed border-line px-4 py-6 text-center text-[13px] text-faint">
-                      Nothing here
-                    </p>
-                  )}
-                </div>
-              </section>
-            );
-          })}
-        </div>
+        <>
+          {/*
+           * A phone cannot show three columns side by side, and stacking them
+           * puts Ready — the one staff reach for most — below everything
+           * being made. So on a phone the board becomes one column at a time,
+           * chosen from a segmented control that keeps all three counts in
+           * view. From `sm:` up the real board returns.
+           */}
+          <div className="mb-4 sm:hidden">
+            <Segmented
+              label="Order status"
+              value={lane}
+              onChange={setLane}
+              options={COLUMNS.map((c) => ({
+                value: c.status,
+                label: c.title,
+                badge: (grouped.get(c.status) ?? []).length,
+              }))}
+            />
+          </div>
+
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {COLUMNS.map((column) => {
+              const list = grouped.get(column.status) ?? [];
+              const shown = column.status === lane;
+              return (
+                <section
+                  key={column.status}
+                  // The two roles are for the phone's segmented control. From
+                  // `sm:` up every column is on screen at once and the tab
+                  // relationship stops being true, so it is dropped.
+                  role={shown ? "tabpanel" : undefined}
+                  id={`segpanel-${column.status}`}
+                  aria-labelledby={shown ? `seg-${column.status}` : undefined}
+                  className={cx(shown ? "block" : "hidden", "sm:block")}
+                >
+                  <h2 className="mb-2.5 hidden items-baseline gap-2 text-[13px] font-semibold uppercase tracking-[0.12em] text-faint sm:flex">
+                    {column.title}
+                    <span className="tnum text-ink">{list.length}</span>
+                  </h2>
+                  <div className="space-y-3">
+                    {list.map((order) => (
+                      <OrderCard
+                        key={order.id}
+                        order={order}
+                        now={now}
+                        currency={current.currency}
+                        busy={busy === order.id}
+                        nextLabel={column.nextLabel}
+                        onAdvance={() => column.next && void advance(order, column.next)}
+                        onCancel={() => void advance(order, "cancelled")}
+                        onBill={async (format) => {
+                          await api
+                            .post(`/businesses/${current.id}/orders/${order.id}/bill`)
+                            .catch(() => undefined);
+                          await downloadFile(
+                            `/businesses/${current.id}/orders/${order.id}/bill/pdf?format=${format}`,
+                            `${format}-table-${order.table.label}.pdf`,
+                          );
+                        }}
+                      />
+                    ))}
+                    {list.length === 0 && (
+                      <p className="rounded-2xl border border-dashed border-line px-4 py-6 text-center text-[13px] text-faint">
+                        Nothing here
+                      </p>
+                    )}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        </>
       )}
 
       {past.length > 0 && (
@@ -391,11 +452,11 @@ function OrderCard({
         </div>
       ))}
 
-      <footer className="mt-4 flex items-center justify-between gap-2 border-t border-line pt-3">
+      <footer className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
         <span className="tnum text-[14px] font-semibold">
           {formatMoney(String(total), currency)}
         </span>
-        <span className="flex gap-1.5">
+        <span className="flex flex-1 justify-end gap-1.5">
           <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
             Cancel
           </Button>

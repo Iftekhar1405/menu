@@ -24,8 +24,7 @@ import { toPreviewMenu } from "@/lib/preview";
 import type { Category, Item } from "@/lib/types";
 import { useSession } from "@/components/session";
 import { useConfirm } from "@/components/confirm";
-import { MenuView } from "@/components/templates";
-import { PhoneFrame } from "@/components/phone-frame";
+import { PreviewButton, PreviewRail } from "@/components/menu-preview";
 import { Banner, Button, Empty, Input, cx } from "@/components/ui";
 import {
   ItemSheet,
@@ -69,15 +68,41 @@ export default function MenuPage() {
 
   if (!current) return null;
 
+  /**
+   * Runs a write, and says so when it fails.
+   *
+   * A rejected promise in an event handler is invisible: React logs it and
+   * the screen keeps whatever state it had. What the owner sees is a button
+   * that did nothing — no message, no spinner, the text still sitting in the
+   * field — and the only reasonable response is to press it again. On the
+   * wifi in a busy restaurant that is a regular occurrence, not an edge case.
+   *
+   * Reloading afterwards is what puts an optimistic change back when the
+   * server refused it.
+   */
+  async function write(what: string, run: () => Promise<void>) {
+    setError(null);
+    try {
+      await run();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : `Could not ${what}. Try again.`);
+      await load().catch(() => undefined);
+    }
+  }
+
   async function addCategory(e: React.FormEvent) {
     e.preventDefault();
     if (!newCategory.trim() || !current) return;
-    await api.post(`/businesses/${current.id}/categories`, {
-      name: newCategory.trim(),
-      isVisible: true,
+    await write("add that section", async () => {
+      await api.post(`/businesses/${current.id}/categories`, {
+        name: newCategory.trim(),
+        isVisible: true,
+      });
+      // Cleared only once it is saved, so a failed write leaves the name in
+      // the field to try again with rather than discarding what was typed.
+      setNewCategory("");
+      await load();
     });
-    setNewCategory("");
-    await load();
   }
 
   async function saveDraft() {
@@ -132,9 +157,11 @@ export default function MenuPage() {
       confirmLabel: "Delete dish",
     });
     if (!ok) return;
-    await api.del(`/businesses/${current.id}/items/${draft.id}`);
-    setDraft(null);
-    await load();
+    await write("delete that dish", async () => {
+      await api.del(`/businesses/${current.id}/items/${draft.id}`);
+      setDraft(null);
+      await load();
+    });
   }
 
   async function reorder(categoryId: string, event: DragEndEvent) {
@@ -169,9 +196,14 @@ export default function MenuPage() {
     setCategories((prev) =>
       prev.map((c) => (c.id === category.id ? { ...c, isVisible: !c.isVisible } : c)),
     );
-    await api.patch(`/businesses/${current.id}/categories/${category.id}`, {
-      isVisible: !category.isVisible,
-    });
+    await write(
+      category.isVisible ? "hide that section" : "show that section",
+      async () => {
+        await api.patch(`/businesses/${current.id}/categories/${category.id}`, {
+          isVisible: !category.isVisible,
+        });
+      },
+    );
   }
 
   async function deleteCategory(category: Category) {
@@ -182,18 +214,29 @@ export default function MenuPage() {
       confirmLabel: "Delete section",
     });
     if (!ok) return;
-    await api.del(`/businesses/${current.id}/categories/${category.id}`);
-    await load();
+    await write("delete that section", async () => {
+      await api.del(`/businesses/${current.id}/categories/${category.id}`);
+      await load();
+    });
   }
 
   return (
-    <div className="grid min-h-screen xl:grid-cols-[minmax(0,1fr)_380px]">
-      <div className="mx-auto w-full max-w-2xl px-6 py-10 lg:px-10 lg:py-12">
-        <header className="mb-8">
-          <h1 className="text-[30px] font-semibold leading-tight tracking-tight">Menu</h1>
-          <p className="mt-1 text-[14.5px] text-muted">
-            Changes go live as soon as you save.
-          </p>
+    <div className="xl:grid xl:min-h-[100dvh] xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="mx-auto w-full max-w-2xl px-5 py-8 sm:px-6 sm:py-10 lg:px-10 lg:py-12">
+        <header className="mb-6 flex items-start justify-between gap-4 sm:mb-8">
+          <div className="min-w-0">
+            <h1 className="text-[26px] font-semibold leading-tight tracking-tight sm:text-[30px]">
+              Menu
+            </h1>
+            <p className="mt-1 text-[14.5px] text-muted">
+              Changes go live as soon as you save.
+            </p>
+          </div>
+          {/* Below `xl` there is no room for the rail beside the builder, so
+              the preview moves behind a button. */}
+          <div className="shrink-0 xl:hidden">
+            <PreviewButton menu={previewMenu} />
+          </div>
         </header>
 
         {error && (
@@ -314,15 +357,12 @@ export default function MenuPage() {
 
       {/* The preview is the point of the page: an owner is designing something
           that only ever gets read on a phone. */}
-      <aside className="hidden border-l border-line bg-surface xl:block">
-        <div className="sticky top-0 flex h-screen flex-col items-center justify-center px-6">
-          {previewMenu && (
-            <PhoneFrame scale={0.78} label="What diners see">
-              <MenuView menu={previewMenu} compactChrome />
-            </PhoneFrame>
-          )}
-        </div>
-      </aside>
+      <PreviewRail
+        menu={previewMenu}
+        scale={0.78}
+        label="What diners see"
+        className="hidden border-l border-line bg-surface xl:block"
+      />
 
       {draft && (
         <ItemSheet

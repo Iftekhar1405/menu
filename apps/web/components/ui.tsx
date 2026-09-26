@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef } from "react";
+import { forwardRef, useEffect } from "react";
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
@@ -59,7 +59,12 @@ function Spinner() {
   );
 }
 
-/* ── Field + Input ─────────────────────────────────────────────────────── */
+/* ── Field + Input ───────────────────────────────────────────────────────
+ * Every field is 16px on a phone and 15px from `sm:` up. That is not a
+ * typographic preference: iOS Safari zooms the whole viewport when a field
+ * smaller than 16px takes focus, and the page never zooms back out. The
+ * denser 15px returns at a width where no browser does that.
+ */
 
 export function Field({
   label,
@@ -96,7 +101,7 @@ export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTML
       <input
         ref={ref}
         className={cx(
-          "spring h-11 w-full rounded-xl border border-line bg-surface px-3 text-[15px] text-ink",
+          "spring h-11 w-full rounded-xl border border-line bg-surface px-3 text-[16px] text-ink sm:text-[15px]",
           "placeholder:text-faint hover:border-[#d6d9de] focus:border-[var(--accent)]",
           className,
         )}
@@ -114,7 +119,7 @@ export const Textarea = forwardRef<
     <textarea
       ref={ref}
       className={cx(
-        "spring w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-[15px] text-ink",
+        "spring w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-[16px] text-ink sm:text-[15px]",
         "placeholder:text-faint hover:border-[#d6d9de] focus:border-[var(--accent)]",
         className,
       )}
@@ -131,7 +136,7 @@ export const Select = forwardRef<
     <select
       ref={ref}
       className={cx(
-        "spring h-11 w-full appearance-none rounded-xl border border-line bg-surface px-3 text-[15px] text-ink",
+        "spring h-11 w-full appearance-none rounded-xl border border-line bg-surface px-3 text-[16px] text-ink sm:text-[15px]",
         "hover:border-[#d6d9de] focus:border-[var(--accent)]",
         className,
       )}
@@ -186,4 +191,170 @@ export function Empty({
       {action && <div className="mt-5 flex justify-center">{action}</div>}
     </div>
   );
+}
+
+/* ── Segmented ─────────────────────────────────────────────────────────────
+ * One choice out of three or four, shown as a single control rather than a
+ * row of buttons. It exists because a phone cannot show the order board's
+ * three columns side by side, and stacking them buries Ready under all of
+ * Preparing — the thing staff are most often reaching for.
+ *
+ * A real tablist: arrow keys move between tabs and only the selected tab is
+ * in the tab order, which is what a screen reader user expects from
+ * something that looks like this.
+ */
+export function Segmented<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { value: T; label: string; badge?: React.ReactNode }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  function onKeyDown(e: React.KeyboardEvent) {
+    const delta = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (!delta) return;
+    e.preventDefault();
+    const i = options.findIndex((o) => o.value === value);
+    const next = options[(i + delta + options.length) % options.length]!;
+    onChange(next.value);
+  }
+
+  return (
+    <div
+      role="tablist"
+      aria-label={label}
+      onKeyDown={onKeyDown}
+      className="flex gap-1 rounded-xl bg-[rgba(17,17,19,0.05)] p-1"
+    >
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <button
+            key={option.value}
+            role="tab"
+            type="button"
+            id={`seg-${option.value}`}
+            aria-selected={active}
+            aria-controls={`segpanel-${option.value}`}
+            tabIndex={active ? 0 : -1}
+            onClick={() => onChange(option.value)}
+            className={cx(
+              "spring flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 text-[13.5px] font-medium",
+              active
+                ? "bg-surface text-ink shadow-card"
+                : "text-muted hover:text-ink",
+            )}
+          >
+            <span className="truncate">{option.label}</span>
+            {option.badge != null && (
+              <span className={cx("tnum text-[12.5px]", active ? "text-muted" : "text-faint")}>
+                {option.badge}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── Sheet ─────────────────────────────────────────────────────────────────
+ * A panel over the page. It arrives from the bottom edge and fills the phone;
+ * from `sm:` up it becomes whatever the surrounding layout already wanted —
+ * a side panel for the dish editor, a centred card for a confirmation.
+ *
+ * Bottom, rather than the side, because a phone held one-handed has its
+ * dismiss gesture and its thumb at the bottom of the screen.
+ */
+export function Sheet({
+  label,
+  onClose,
+  side = "bottom",
+  children,
+  className,
+}: {
+  label: string;
+  onClose: () => void;
+  /** `side` slides in from the right on a tablet and up; `bottom` stays full-screen. */
+  side?: "bottom" | "side";
+  children: React.ReactNode;
+  className?: string;
+}) {
+  useEscape(onClose);
+  useScrollLock();
+
+  return (
+    <div
+      className={cx(
+        "fixed inset-0 z-40 flex",
+        side === "side" ? "sm:justify-end" : "items-end sm:items-center sm:justify-center",
+      )}
+    >
+      {/* Presentational: closing is already offered by the sheet's own Done
+          button and by Escape, and a second announced "Close" here would only
+          be noise. */}
+      <div
+        aria-hidden="true"
+        onClick={onClose}
+        className="animate-fade-in absolute inset-0 bg-[rgba(17,17,19,0.32)]"
+      />
+
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={label}
+        className={cx(
+          "animate-sheet-up overscroll-contain-y relative flex max-h-full w-full flex-col bg-surface shadow-lift",
+          side === "side"
+            ? "h-full sm:max-w-[460px]"
+            : "max-h-[92dvh] rounded-t-[20px] sm:max-h-[86dvh] sm:max-w-[520px] sm:rounded-2xl",
+          className,
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The grab handle at the top of a bottom sheet. Decorative — it is the visual
+ * cue that the sheet is dismissable, and it is hidden once the sheet stops
+ * being a sheet.
+ */
+export function SheetGrabber() {
+  return (
+    <div aria-hidden="true" className="flex justify-center pt-2 sm:hidden">
+      <div className="h-1 w-9 rounded-full bg-[rgba(17,17,19,0.16)]" />
+    </div>
+  );
+}
+
+function useEscape(onClose: () => void) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+}
+
+/**
+ * While a sheet is up the page behind it must not scroll. Without this, a
+ * flick that starts on the sheet's own scroll edge drags the dashboard
+ * underneath instead, and the sheet appears to come unstuck.
+ */
+function useScrollLock() {
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
 }

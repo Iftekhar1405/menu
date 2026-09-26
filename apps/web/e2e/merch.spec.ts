@@ -38,8 +38,11 @@ test("an owner requests printed cards and only the platform admin sees it", asyn
 
   await page.getByRole("link", { name: "Tables" }).click();
   await page.getByRole("button", { name: "Add several" }).click();
-  await page.getByLabel("From").fill("1");
-  await page.getByLabel("To").fill("6");
+  // `exact`, because getByLabel matches on substring by default and "To"
+  // is inside "Open Next.js Dev Tools" — the dev overlay's own button, which
+  // is present on every page in development.
+  await page.getByLabel("From", { exact: true }).fill("1");
+  await page.getByLabel("To", { exact: true }).fill("6");
   await page.getByRole("button", { name: "Create" }).click();
   await expect(page.getByLabel(/Table name, currently 6/)).toBeVisible();
 

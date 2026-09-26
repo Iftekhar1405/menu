@@ -10,8 +10,11 @@ import { Wordmark } from "@/components/brand";
  */
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
-      <main className="flex items-center justify-center px-6 py-12">
+    // 100dvh, not 100vh: mobile Safari's 100vh is the height the viewport has
+    // *without* its own chrome, so a centred layout sits partly under the
+    // address bar until you scroll.
+    <div className="grid min-h-[100dvh] lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
+      <main className="flex items-center justify-center px-5 pt-[calc(2.5rem+env(safe-area-inset-top,0px))] pb-[calc(2.5rem+env(safe-area-inset-bottom,0px))] sm:px-6 sm:py-12">
         <div className="w-full max-w-[380px]">
           <div className="mb-9">
             <Wordmark full size={21} />

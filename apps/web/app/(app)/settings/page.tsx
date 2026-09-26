@@ -95,9 +95,9 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10 lg:px-10 lg:py-12">
+    <div className="mx-auto max-w-2xl px-5 py-8 sm:px-6 sm:py-10 lg:px-10 lg:py-12">
       <header className="mb-8">
-        <h1 className="text-[30px] font-semibold leading-tight tracking-tight">Settings</h1>
+        <h1 className="text-[26px] font-semibold leading-tight tracking-tight sm:text-[30px]">Settings</h1>
         <p className="mt-1 text-[14.5px] text-muted">
           Signed in as {me?.email ?? me?.phone}.
         </p>
@@ -228,8 +228,13 @@ export default function SettingsPage() {
           </div>
         </fieldset>
 
-        <div className={cx("flex items-center gap-3 border-t border-line pt-6")}>
-          <Button type="submit" variant="primary" loading={saving}>
+        <div className={cx("flex flex-wrap items-center gap-3 border-t border-line pt-6")}>
+          <Button
+            type="submit"
+            variant="primary"
+            className="w-full sm:w-auto"
+            loading={saving}
+          >
             Save changes
           </Button>
           {saved && <span className="text-[13.5px] text-muted">Saved.</span>}

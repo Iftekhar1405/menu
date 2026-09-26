@@ -95,10 +95,33 @@ export default function TablesPage() {
     }
   }
 
+  /**
+   * Runs a write, and says so when it fails.
+   *
+   * A rejected promise in an event handler is invisible: React logs it and
+   * the screen keeps whatever state it had. Renaming a table to something
+   * the server rejects would otherwise leave the new name sitting in the
+   * input as though it had saved — and it is the printed card that would
+   * eventually disagree. Reloading is what puts the real value back.
+   */
+  async function write(what: string, run: () => Promise<void>) {
+    setError(null);
+    try {
+      await run();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : `Could not ${what}. Try again.`);
+      await load().catch(() => undefined);
+    }
+  }
+
   async function rename(table: TableRow, next: string) {
     if (!current || next === table.label || !next.trim()) return;
-    await api.patch(`/businesses/${current.id}/tables/${table.id}`, { label: next.trim() });
-    await load();
+    await write("rename that table", async () => {
+      await api.patch(`/businesses/${current.id}/tables/${table.id}`, {
+        label: next.trim(),
+      });
+      await load();
+    });
   }
 
   async function toggle(table: TableRow) {
@@ -106,8 +129,10 @@ export default function TablesPage() {
     setTables((prev) =>
       prev.map((t) => (t.id === table.id ? { ...t, isActive: !t.isActive } : t)),
     );
-    await api.patch(`/businesses/${current.id}/tables/${table.id}`, {
-      isActive: !table.isActive,
+    await write(table.isActive ? "pause that table" : "resume that table", async () => {
+      await api.patch(`/businesses/${current.id}/tables/${table.id}`, {
+        isActive: !table.isActive,
+      });
     });
   }
 
@@ -119,8 +144,10 @@ export default function TablesPage() {
       confirmLabel: "Delete table",
     });
     if (!ok) return;
-    await api.del(`/businesses/${current.id}/tables/${table.id}`);
-    await load();
+    await write("delete that table", async () => {
+      await api.del(`/businesses/${current.id}/tables/${table.id}`);
+      await load();
+    });
   }
 
   function toggleSelected(id: string) {
@@ -164,9 +191,11 @@ export default function TablesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10 lg:px-10 lg:py-12">
-      <header className="mb-8">
-        <h1 className="text-[30px] font-semibold leading-tight tracking-tight">Tables</h1>
+    <div className="mx-auto max-w-3xl px-5 py-8 sm:px-6 sm:py-10 lg:px-10 lg:py-12">
+      <header className="mb-6 sm:mb-8">
+        <h1 className="text-[26px] font-semibold leading-tight tracking-tight sm:text-[30px]">
+          Tables
+        </h1>
         <p className="mt-1 text-[14.5px] leading-relaxed text-muted">
           Each table gets its own card. Scanning one puts that diner&apos;s order on that
           table — they never see a table number in the address, so nobody can browse to
@@ -180,9 +209,12 @@ export default function TablesPage() {
         </div>
       )}
 
-      <div className="mb-8 flex flex-wrap items-end gap-2">
+      {/* Fixed field widths are a desktop luxury: at 390px four of them wrap
+          into a staircase. Below `sm` every control takes the full width and
+          stacks, which is also the only way the 44px targets survive. */}
+      <div className="mb-8 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
         <form onSubmit={addOne} className="flex gap-2">
-          <div className="w-44">
+          <div className="min-w-0 flex-1 sm:w-44 sm:flex-none">
             <Field label="Add a table">
               <Input
                 value={label}
@@ -196,7 +228,7 @@ export default function TablesPage() {
           </Button>
         </form>
         <Button
-          className="mb-[1px] self-end"
+          className="w-full sm:mb-[1px] sm:w-auto sm:self-end"
           onClick={() => setShowRange((s) => !s)}
           aria-expanded={showRange}
         >
@@ -207,9 +239,9 @@ export default function TablesPage() {
       {showRange && (
         <form
           onSubmit={addRange}
-          className="mb-8 flex flex-wrap items-end gap-2 rounded-2xl border border-line bg-surface p-4"
+          className="mb-8 grid grid-cols-2 items-end gap-2 rounded-2xl border border-line bg-surface p-4 sm:flex sm:flex-wrap"
         >
-          <div className="w-28">
+          <div className="col-span-2 sm:w-28">
             <Field label="Prefix" optional>
               <Input
                 value={range.prefix}
@@ -218,7 +250,7 @@ export default function TablesPage() {
               />
             </Field>
           </div>
-          <div className="w-24">
+          <div className="sm:w-24">
             <Field label="From">
               <Input
                 value={range.from}
@@ -228,7 +260,7 @@ export default function TablesPage() {
               />
             </Field>
           </div>
-          <div className="w-24">
+          <div className="sm:w-24">
             <Field label="To">
               <Input
                 value={range.to}
@@ -238,7 +270,11 @@ export default function TablesPage() {
               />
             </Field>
           </div>
-          <Button type="submit" variant="primary" className="mb-[1px] self-end">
+          <Button
+            type="submit"
+            variant="primary"
+            className="col-span-2 w-full sm:mb-[1px] sm:w-auto sm:self-end"
+          >
             Create
           </Button>
         </form>
@@ -254,10 +290,12 @@ export default function TablesPage() {
       ) : (
         <>
         <div className="mb-3 flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-[13.5px] text-muted">
+          {/* The box stays 16px because a big checkbox looks wrong; the
+              label around it carries the 44px the finger needs. */}
+          <label className="-my-2 flex min-h-[44px] items-center gap-2 py-2 text-[13.5px] text-muted">
             <input
               type="checkbox"
-              className="size-4 accent-[var(--accent)]"
+              className="size-4 shrink-0 accent-[var(--accent)]"
               checked={selected.length === tables.length && tables.length > 0}
               // Half-selected is its own state: the box should not claim
               // "all" when it would clear a partial selection.
@@ -279,8 +317,8 @@ export default function TablesPage() {
 
         {selected.length > 0 && (
           <div className="mb-6 rounded-2xl border border-line bg-surface p-4">
-            <div className="flex flex-wrap items-end gap-2">
-              <div className="w-32">
+            <div className="grid grid-cols-2 items-end gap-2 sm:flex sm:flex-wrap">
+              <div className="sm:w-32">
                 <Field label="Paper">
                   <Select
                     value={sheet.paper}
@@ -294,7 +332,7 @@ export default function TablesPage() {
                   </Select>
                 </Field>
               </div>
-              <div className="w-36">
+              <div className="sm:w-36">
                 <Field label="Orientation">
                   <Select
                     value={sheet.orientation}
@@ -310,7 +348,7 @@ export default function TablesPage() {
                   </Select>
                 </Field>
               </div>
-              <div className="w-36">
+              <div className="col-span-2 sm:w-36">
                 <Field label="Card size">
                   <Select
                     value={sheet.size}
@@ -324,7 +362,7 @@ export default function TablesPage() {
                   </Select>
                 </Field>
               </div>
-              <div className="w-40">
+              <div className="col-span-2 sm:w-40">
                 <Field label="Style">
                   <Select
                     value={sheet.style}
@@ -339,7 +377,7 @@ export default function TablesPage() {
               </div>
               <Button
                 variant="primary"
-                className="mb-[1px] self-end"
+                className="col-span-2 w-full sm:mb-[1px] sm:w-auto sm:self-end"
                 loading={printing}
                 onClick={() => void printSheet()}
               >
@@ -359,31 +397,41 @@ export default function TablesPage() {
 
         <ul className="overflow-hidden rounded-2xl border border-line bg-surface">
           {tables.map((table) => (
+            /*
+             * Two rows on a phone — the table and its state above, the four
+             * things you can do to it below. Wrapping them into one row puts
+             * four buttons in about 180px, which is how you end up tapping
+             * Delete when you meant Pause.
+             */
             <li
               key={table.id}
-              className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-3 first:border-t-0"
+              className="flex flex-col gap-2 border-t border-line px-4 py-3 first:border-t-0 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
             >
-              <input
-                type="checkbox"
-                className="size-4 accent-[var(--accent)]"
-                checked={selected.includes(table.id)}
-                onChange={() => toggleSelected(table.id)}
-                aria-label={`Select ${table.label} for printing`}
-              />
-              <input
-                defaultValue={table.label}
-                onBlur={(e) => void rename(table, e.target.value)}
-                aria-label={`Table name, currently ${table.label}`}
-                className={cx(
-                  "w-24 rounded-lg border border-transparent bg-transparent px-2 py-1 text-[14.5px] font-medium",
-                  "hover:border-line focus:border-[var(--accent)] focus:bg-surface",
-                  !table.isActive && "text-faint line-through",
+              <div className="flex min-w-0 items-center gap-3">
+                <label className="-m-3 flex shrink-0 cursor-pointer p-3">
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-[var(--accent)]"
+                    checked={selected.includes(table.id)}
+                    onChange={() => toggleSelected(table.id)}
+                    aria-label={`Select ${table.label} for printing`}
+                  />
+                </label>
+                <input
+                  defaultValue={table.label}
+                  onBlur={(e) => void rename(table, e.target.value)}
+                  aria-label={`Table name, currently ${table.label}`}
+                  className={cx(
+                    "w-24 min-w-0 rounded-lg border border-transparent bg-transparent px-2 py-1 text-[16px] font-medium sm:text-[14.5px]",
+                    "hover:border-line focus:border-[var(--accent)] focus:bg-surface",
+                    !table.isActive && "text-faint line-through",
+                  )}
+                />
+                {!table.isActive && (
+                  <span className="text-[12px] text-faint">Not taking orders</span>
                 )}
-              />
-              {!table.isActive && (
-                <span className="text-[12px] text-faint">Not taking orders</span>
-              )}
-              <span className="ml-auto flex flex-wrap gap-1.5">
+              </div>
+              <span className="flex flex-wrap gap-1.5 sm:ml-auto">
                 <Button size="sm" loading={busy === table.id} onClick={() => void download(table, "png")}>
                   PNG
                 </Button>

@@ -24,6 +24,10 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: "#ffffff",
+  // The dashboard's chrome sits against the top and bottom edges of a phone,
+  // so the page paints under the notch and home indicator and pays the inset
+  // back itself — see the .pt-safe / .pb-safe utilities in globals.css.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

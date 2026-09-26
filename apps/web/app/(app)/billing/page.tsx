@@ -54,9 +54,9 @@ export default function BillingPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10 lg:px-10 lg:py-12">
+    <div className="mx-auto max-w-2xl px-5 py-8 sm:px-6 sm:py-10 lg:px-10 lg:py-12">
       <header className="mb-8">
-        <h1 className="text-[30px] font-semibold leading-tight tracking-tight">Billing</h1>
+        <h1 className="text-[26px] font-semibold leading-tight tracking-tight sm:text-[30px]">Billing</h1>
         <p className="mt-1 text-[14.5px] leading-relaxed text-muted">
           How bills are calculated and what appears on them.
         </p>
@@ -163,7 +163,7 @@ export default function BillingPage() {
           />
 
           {config.serviceChargeEnabled && (
-            <div className="mt-4 w-40 border-l-2 border-line pl-4">
+            <div className="mt-4 w-full border-l-2 border-line pl-4 sm:w-40">
               <Field label="Rate (%)">
                 <Input
                   value={String(config.serviceChargeRate)}
@@ -192,8 +192,13 @@ export default function BillingPage() {
           </Field>
         </section>
 
-        <div className="flex items-center gap-3 border-t border-line pt-6">
-          <Button type="submit" variant="primary" loading={saving}>
+        <div className="flex flex-wrap items-center gap-3 border-t border-line pt-6">
+          <Button
+            type="submit"
+            variant="primary"
+            className="w-full sm:w-auto"
+            loading={saving}
+          >
             Save
           </Button>
           {saved && <span className="text-[13.5px] text-muted">Saved.</span>}
@@ -221,7 +226,9 @@ function Toggle({
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className="flex items-center gap-3 text-left"
+        // The switch itself is 24px tall. The row around it is what gets
+        // tapped, so it carries the 44px.
+        className="-my-2 flex min-h-[44px] w-full items-center gap-3 py-2 text-left"
       >
         <span
           className={cx(

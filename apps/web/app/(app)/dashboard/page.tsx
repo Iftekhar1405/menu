@@ -32,9 +32,9 @@ export default function DashboardPage() {
   const empty = summary?.items === 0;
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10 lg:px-10 lg:py-12">
+    <div className="mx-auto max-w-3xl px-5 py-8 sm:px-6 sm:py-10 lg:px-10 lg:py-12">
       <header className="mb-9">
-        <h1 className="text-[30px] font-semibold leading-tight tracking-tight">
+        <h1 className="text-[26px] font-semibold leading-tight tracking-tight sm:text-[30px]">
           {current.name}
         </h1>
         <p className="mt-1 text-[14.5px] text-muted">

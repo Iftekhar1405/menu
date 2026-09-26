@@ -139,9 +139,9 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10 lg:px-10 lg:py-12">
+    <div className="mx-auto max-w-4xl px-5 py-8 sm:px-6 sm:py-10 lg:px-10 lg:py-12">
       <header className="mb-8">
-        <h1 className="text-[30px] font-semibold leading-tight tracking-tight">
+        <h1 className="text-[26px] font-semibold leading-tight tracking-tight sm:text-[30px]">
           Card orders
         </h1>
         <p className="mt-1 text-[14.5px] text-muted">

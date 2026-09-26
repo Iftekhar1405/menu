@@ -113,13 +113,25 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
       {children}
 
       {options && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-6">
+        /*
+         * An action sheet on a phone, a centred alert on a desktop. Same
+         * markup either way: on a phone the two buttons are stacked and
+         * full-width against the bottom edge, because that is where the
+         * thumb already is and because a 400px card floating in the middle
+         * of a 390px screen is a desktop dialog that has been shrunk rather
+         * than a phone control.
+         *
+         * The destructive action is on top of the stack and Cancel beneath
+         * it — the same order iOS uses, and the one that puts the button you
+         * usually want nearest the thumb.
+         */
+        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:px-6">
           {/* Presentational, same reasoning as the sheet: the dialog's own
               Cancel button and Escape are the accessible paths. */}
           <div
             aria-hidden="true"
             onClick={() => close(false)}
-            className="absolute inset-0 bg-[rgba(17,17,19,0.32)]"
+            className="animate-fade-in absolute inset-0 bg-[rgba(17,17,19,0.32)]"
           />
           <div
             ref={dialogRef}
@@ -127,8 +139,12 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             aria-modal="true"
             aria-labelledby="confirm-title"
             aria-describedby={options.body ? "confirm-body" : undefined}
-            className="relative w-full max-w-[400px] rounded-2xl bg-surface p-5 shadow-lift"
+            className="animate-sheet-up relative w-full rounded-t-[20px] bg-surface p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] shadow-lift sm:max-w-[400px] sm:rounded-2xl sm:pb-5"
           >
+            <div aria-hidden="true" className="mb-3 flex justify-center sm:hidden">
+              <div className="h-1 w-9 rounded-full bg-[rgba(17,17,19,0.16)]" />
+            </div>
+
             <h2
               id="confirm-title"
               className="font-display text-[17px] font-semibold text-ink"
@@ -144,12 +160,17 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
               </p>
             )}
 
-            <div className="mt-5 flex justify-end gap-2">
-              <Button ref={cancelRef} onClick={() => close(false)}>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                ref={cancelRef}
+                className="w-full sm:w-auto"
+                onClick={() => close(false)}
+              >
                 {options.cancelLabel ?? "Cancel"}
               </Button>
               <Button
                 variant={options.tone === "normal" ? "primary" : "danger"}
+                className="w-full sm:w-auto"
                 onClick={() => close(true)}
               >
                 {options.confirmLabel ?? "Delete"}

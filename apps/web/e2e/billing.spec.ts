@@ -123,7 +123,13 @@ test("a diner is billed, can decline the service charge, and can rate the meal",
   await diner
     .getByRole("button", { name: /Service charge is optional/ })
     .click();
-  await expect(diner.getByText("₹210")).toBeVisible();
+  // The span beside the "Total" label, not the first ₹210 on the page: the
+  // same figure is also the line total for 2 × ₹105 and the pre-tax subtotal
+  // once the service charge comes off, so a bare text match is ambiguous and
+  // would pass on the wrong one.
+  await expect(
+    diner.getByText("Total", { exact: true }).locator("xpath=following-sibling::span"),
+  ).toHaveText("₹210");
   await expect(diner.getByText(/Service charge \(/)).toHaveCount(0);
 
   // ── Rating ───────────────────────────────────────────────────────────────

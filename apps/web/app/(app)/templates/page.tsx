@@ -8,14 +8,13 @@ import {
   THEME_LAYOUTS,
   type ThemeLayout,
 } from "@menu/shared";
-import { api } from "@/lib/api-client";
+import { ApiError, api } from "@/lib/api-client";
 import { toPreviewMenu } from "@/lib/preview";
 import { sampleMenu } from "@/lib/sample-menu";
 import type { Category } from "@/lib/types";
 import { useSession } from "@/components/session";
-import { MenuView } from "@/components/templates";
-import { PhoneFrame } from "@/components/phone-frame";
-import { Button, cx } from "@/components/ui";
+import { PreviewButton, PreviewRail } from "@/components/menu-preview";
+import { Banner, Button, cx } from "@/components/ui";
 
 /**
  * Three knobs, one live phone. The owner is choosing how their menu reads at
@@ -30,6 +29,7 @@ export default function TemplatesPage() {
   const [font, setFont] = useState<string>(FONT_PAIRINGS[0]!.id);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!current) return;
@@ -76,26 +76,51 @@ export default function TemplatesPage() {
   async function save() {
     if (!current) return;
     setSaving(true);
-    await api.patch(`/businesses/${current.id}`, {
-      themeLayout: layout,
-      themeAccent: accent,
-      themeFont: font,
-    });
-    await refreshBusinesses();
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2200);
+    setError(null);
+    try {
+      await api.patch(`/businesses/${current.id}`, {
+        themeLayout: layout,
+        themeAccent: accent,
+        themeFont: font,
+      });
+      await refreshBusinesses();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2200);
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : "Could not save that design. Try again.",
+      );
+    } finally {
+      // In the `finally`, because without it a failed save left the button
+      // spinning for the rest of the session with nothing said about why.
+      setSaving(false);
+    }
   }
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_400px]">
-      <div className="mx-auto w-full max-w-2xl px-6 py-10 lg:px-10 lg:py-12">
-        <header className="mb-8">
-          <h1 className="text-[30px] font-semibold leading-tight tracking-tight">Design</h1>
-          <p className="mt-1 text-[14.5px] text-muted">
-            Three choices. The phone updates as you go.
-          </p>
+    <div className="lg:grid lg:min-h-[100dvh] lg:grid-cols-[minmax(0,1fr)_400px]">
+      <div className="mx-auto w-full max-w-2xl px-5 py-8 sm:px-6 sm:py-10 lg:px-10 lg:py-12">
+        <header className="mb-6 flex items-start justify-between gap-4 sm:mb-8">
+          <div className="min-w-0">
+            <h1 className="text-[26px] font-semibold leading-tight tracking-tight sm:text-[30px]">
+              Design
+            </h1>
+            <p className="mt-1 text-[14.5px] text-muted">
+              Three choices. The phone updates as you go.
+            </p>
+          </div>
+          {/* Below `lg` the rail is gone, so the promise the line above makes
+              is kept by a button instead. */}
+          <div className="shrink-0 lg:hidden">
+            <PreviewButton menu={preview} />
+          </div>
         </header>
+
+        {error && (
+          <div className="mb-6">
+            <Banner>{error}</Banner>
+          </div>
+        )}
 
         <section className="mb-9">
           <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-[0.12em] text-faint">
@@ -190,23 +215,25 @@ export default function TemplatesPage() {
           </div>
         </section>
 
-        <div className="flex items-center gap-3">
-          <Button variant="primary" onClick={() => void save()} loading={saving} disabled={!dirty}>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="primary"
+            className="w-full sm:w-auto"
+            onClick={() => void save()}
+            loading={saving}
+            disabled={!dirty}
+          >
             {dirty ? "Save design" : "Saved"}
           </Button>
           {saved && <span className="text-[13.5px] text-muted">Your menu is updated.</span>}
         </div>
       </div>
 
-      <aside className="hidden border-l border-line bg-surface lg:block">
-        <div className="sticky top-0 flex h-screen items-center justify-center px-6">
-          {preview && (
-            <PhoneFrame scale={0.82}>
-              <MenuView menu={preview} compactChrome />
-            </PhoneFrame>
-          )}
-        </div>
-      </aside>
+      <PreviewRail
+        menu={preview}
+        scale={0.82}
+        className="hidden border-l border-line bg-surface lg:block"
+      />
     </div>
   );
 }
