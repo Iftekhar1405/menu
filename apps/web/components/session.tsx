@@ -22,6 +22,9 @@ interface SessionValue {
   /** Applies a theme change locally before the save lands, so the picker feels instant. */
   previewAccent: (hex: string | null) => void;
   loading: boolean;
+  /** Set when the account could not be loaded at all. `retry` tries again. */
+  error: string | null;
+  retry: () => void;
 }
 
 const Ctx = createContext<SessionValue | null>(null);
@@ -39,26 +42,46 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
+  /*
+   * Every exit from this has to either finish loading or say why it could
+   * not. Without the catch, one dropped request left `loading` true forever
+   * and the whole dashboard sat on "Loading…" with no way out but a reload —
+   * which, on a phone on restaurant wifi, is not a rare event.
+   */
   const load = useCallback(async () => {
-    // The access token lives in memory, so a reload always starts by trading
-    // the httpOnly refresh cookie for a new one.
-    const ok = await restoreSession();
-    if (!ok) {
-      router.replace("/login");
-      return;
+    setError(null);
+    try {
+      // The access token lives in memory, so a reload always starts by
+      // trading the httpOnly refresh cookie for a new one.
+      const ok = await restoreSession();
+      if (!ok) {
+        // Deliberately leaves `loading` true: the redirect is already on its
+        // way, and dropping into the shell first would flash an empty one.
+        router.replace("/login");
+        return;
+      }
+      const [meRes, bizRes] = await Promise.all([
+        api.get<Me>("/auth/me"),
+        api.get<Business[]>("/businesses/mine"),
+      ]);
+      setMe(meRes);
+      setBusinesses(bizRes);
+      setCurrentId((prev) => prev ?? bizRes[0]?.id ?? null);
+      setLoading(false);
+    } catch {
+      setError("We couldn't reach your account just now.");
+      setLoading(false);
     }
-    const [meRes, bizRes] = await Promise.all([
-      api.get<Me>("/auth/me"),
-      api.get<Business[]>("/businesses/mine"),
-    ]);
-    setMe(meRes);
-    setBusinesses(bizRes);
-    setCurrentId((prev) => prev ?? bizRes[0]?.id ?? null);
-    setLoading(false);
   }, [router]);
 
   useEffect(() => {
+    void load();
+  }, [load]);
+
+  const retry = useCallback(() => {
+    setLoading(true);
     void load();
   }, [load]);
 
@@ -98,6 +121,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     refreshBusinesses,
     previewAccent: setPreview,
     loading,
+    error,
+    retry,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

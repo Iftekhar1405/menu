@@ -37,12 +37,50 @@ interface RequestOptions {
   raw?: boolean;
 }
 
+/**
+ * How long to wait before deciding a request is not coming back.
+ *
+ * Generous, because a write against a hosted database legitimately takes
+ * several seconds. Finite, because nothing else here is: a phone on the wifi
+ * in a busy restaurant does not get a refused connection, it gets an open
+ * socket nobody ever answers, and the browser will wait on that one for
+ * minutes. The dashboard's own failure states cannot help until something
+ * decides the request has failed.
+ */
+const REQUEST_DEADLINE_MS = 30_000;
+
+/**
+ * `fetch` with a deadline, and with the resulting error named after what
+ * happened. `AbortError` reads as something the application chose to do,
+ * which is exactly wrong when what it means is that the server never replied.
+ *
+ * Exported for its own tests; everything else goes through `request`.
+ */
+export async function fetchWithDeadline(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number = REQUEST_DEADLINE_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new ApiError(0, "The server took too long to reply. Check your connection.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {};
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
-  const res = await fetch(`${API}${path}`, {
+  const res = await fetchWithDeadline(`${API}${path}`, {
     method: opts.method ?? "GET",
     headers,
     credentials: "include",
@@ -52,7 +90,9 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   // One transparent retry: a 15-minute access token will expire mid-session
   // and the owner should never see that happen.
   if (res.status === 401 && !opts.noRetry) {
-    const refreshed = await restoreSession();
+    // A refresh that could not be attempted leaves the original 401 to be
+    // reported below, which is the more useful of the two errors here.
+    const refreshed = await restoreSession().catch(() => false);
     if (refreshed) return request<T>(path, { ...opts, noRetry: true });
   }
 
@@ -78,20 +118,60 @@ export const api = {
   del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };
 
-/** Trades the httpOnly refresh cookie for a fresh access token. */
-export async function restoreSession(): Promise<boolean> {
-  try {
-    const res = await fetch(`${API}/auth/refresh`, {
-      method: "POST",
-      credentials: "include",
-    });
-    if (!res.ok) return false;
-    const data = (await res.json()) as { accessToken: string };
-    accessToken = data.accessToken;
-    return true;
-  } catch {
-    return false;
-  }
+/**
+ * Trades the httpOnly refresh cookie for a fresh access token, and at most
+ * one refresh is ever in flight.
+ *
+ * The refresh token is rotated on every use, so a second concurrent
+ * presentation of the same cookie is refused by the API — and a refused
+ * `restoreSession()` is what sends an owner back to the sign-in screen. Two
+ * callers at once is the normal case, not an edge one: the dashboard loads
+ * `/auth/me` and `/businesses/mine` together, so a single expired access
+ * token produces two 401s and two retries in the same tick.
+ *
+ * Callers that arrive while a refresh is running await that one instead of
+ * starting another.
+ */
+let inFlight: Promise<boolean> | null = null;
+
+export function restoreSession(): Promise<boolean> {
+  if (inFlight) return inFlight;
+
+  inFlight = (async () => {
+    try {
+      const res = await fetchWithDeadline(`${API}/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      if (res.ok) {
+        const data = (await res.json()) as { accessToken: string };
+        accessToken = data.accessToken;
+        return true;
+      }
+
+      /*
+       * `false` is reserved for the one thing it is acted on as: the server
+       * looked at the cookie and said this session is not valid, so the owner
+       * has to sign in again.
+       *
+       * A 500, a 503 or a dropped connection is not that. Reporting those as
+       * `false` signs someone out of a perfectly good account because the
+       * database hiccuped — which, on the wifi in a busy restaurant, is not a
+       * rare event. They are raised instead, so the caller can say "we
+       * couldn't reach your account" and offer to retry.
+       */
+      if (res.status === 401 || res.status === 403) return false;
+      throw new ApiError(res.status, "We couldn't reach your account just now.");
+    } finally {
+      // Cleared whatever the outcome: the next refresh is a new event, and a
+      // cached result — success or failure — would strand a session that has
+      // since changed.
+      inFlight = null;
+    }
+  })();
+
+  return inFlight;
 }
 
 export async function logout(): Promise<void> {
