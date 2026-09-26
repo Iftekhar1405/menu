@@ -38,7 +38,22 @@ Append pooler options to the runtime URL:
 
 ```
 postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=5
+             ^^^^^^^^^^^^^
 ```
+
+**The username carries the project ref, and it is not decoration.** Supavisor
+routes by username, splitting on the last dot into `<db-user>.<project-ref>`.
+Without the suffix it has no tenant to route to and refuses the connection:
+
+```
+FATAL: (ENOIDENTIFIER) no tenant identifier provided (external_id or sni_hostname required)
+```
+
+This bites hardest in step 2, where the role changes and the suffix is easy to
+drop along with it. `DIRECT_URL` takes no suffix — it connects straight to
+Postgres with no pooler in front.
+
+Percent-encode the password if it contains `@ : / ? # &`.
 
 `connection_limit=5` is Prisma's own pool size **per serverless instance**, not
 a global cap. Keep it small — the pooler multiplexes, so a large per-instance
@@ -78,7 +93,14 @@ ALTER ROLE menu_app PASSWORD '<a long random password>';
 ```
 
 `APP_DATABASE_URL` is then the **pooled** URL with `menu_app` and that password
-in place of `postgres`.
+in place of `postgres` — keeping the project-ref suffix on the username:
+
+```
+postgresql://menu_app.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=5
+```
+
+Replacing the whole username with a bare `menu_app` is the single most common
+way to get `ENOIDENTIFIER` on the first deploy.
 
 ---
 
@@ -314,6 +336,7 @@ click.
 | Build fails: `ERR_PNPM_OUTDATED_LOCKFILE` | `pnpm-lock.yaml` not committed alongside a dependency change |
 | Function 500s on every request, logs show a DI error | Something imported the TS source instead of `dist/`. `api/index.ts` must re-export `../apps/api/dist/serverless` |
 | First query fails, `PrismaClientInitializationError` | Missing `rhel-openssl-3.0.x` in `binaryTargets`, or the engine was not included in the bundle |
+| Bootstrap 500s, `ENOIDENTIFIER: no tenant identifier provided` | The pooled URL's username lost its `.<project-ref>` suffix |
 | Requests hang, then time out at 30s | `DATABASE_URL` is the direct IPv6 host, not the pooler |
 | Login works, session dies ~15 min later | `COOKIE_SAMESITE` is not `none` |
 | Browser console: blocked by CORS | The Netlify origin is missing from `CORS_ORIGINS` |
