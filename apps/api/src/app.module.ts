@@ -4,6 +4,8 @@ import { AuthModule } from "./auth/auth.module";
 import { BusinessesController } from "./businesses/businesses.controller";
 import { BusinessesService } from "./businesses/businesses.service";
 import { JwtAuthGuard, RolesGuard } from "./common/guards";
+import { HealthController } from "./health/health.controller";
+import { HealthService } from "./health/health.service";
 import { TenantInterceptor } from "./common/tenant.interceptor";
 import { MediaController } from "./media/media.controller";
 import { MediaService } from "./media/media.service";
@@ -30,6 +32,7 @@ import { MerchService } from "./merch/merch.service";
 @Module({
   imports: [PrismaModule, NotificationsModule, AuthModule, JwtModule.register({})],
   controllers: [
+    HealthController,
     BusinessesController,
     MenuController,
     MediaController,
@@ -44,6 +47,7 @@ import { MerchService } from "./merch/merch.service";
     AdminMerchController,
   ],
   providers: [
+    HealthService,
     BusinessesService,
     MenuService,
     MediaService,
