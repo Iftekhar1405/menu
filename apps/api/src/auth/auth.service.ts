@@ -16,6 +16,10 @@ import { loadEnv } from "../config/env";
 import { generatePublicCode } from "../businesses/public-code";
 import { OtpService } from "../otp/otp.service";
 import { PrismaService } from "../prisma/prisma.service";
+import {
+  TENANT_TX_MAX_WAIT_MS,
+  TENANT_TX_TIMEOUT_MS,
+} from "../prisma/tenant-context";
 import { Identifier, identifierWhere, maskIdentifier, parseIdentifier } from "./identifier";
 import { PinService } from "./pin.service";
 import { IssuedTokens, TokenService } from "./token.service";
@@ -105,7 +109,16 @@ export class AuthService {
       });
 
       return created;
-    });
+    },
+    /*
+     * The same budget every other write gets, and for the same reason.
+     * Prisma's default is 5s; this transaction is four round trips — create
+     * the user, adopt its identity, mint a unique public code, create the
+     * business — and against a hosted database four round trips do not fit
+     * in five seconds. Left at the default it failed outright often enough
+     * that signing up was a coin toss. See tenant-context.ts.
+     */
+    { timeout: TENANT_TX_TIMEOUT_MS, maxWait: TENANT_TX_MAX_WAIT_MS });
 
     if (!skipVerification) {
       // Delivery failure must not strand a new account — they can ask for
