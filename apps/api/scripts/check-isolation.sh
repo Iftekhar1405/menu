@@ -18,7 +18,10 @@ set -uo pipefail
 API="${1:-http://localhost:4000}"
 FAILURES=0
 
-rand_phone() { echo "+9198$(shuf -i 10000000-99999999 -n 1)"; }
+# $RANDOM rather than shuf: shuf is GNU coreutils and absent on macOS, where
+# this check gets run by hand most often. Two draws, since $RANDOM tops out at
+# 32767 and a subscriber number needs eight digits.
+rand_phone() { echo "+9198$(( (RANDOM * 32768 + RANDOM) % 90000000 + 10000000 ))"; }
 rand_email() { echo "iso$(date +%s)$RANDOM@example.test"; }
 
 json_field() { python3 -c "import sys,json;print(json.load(sys.stdin)$1)"; }
