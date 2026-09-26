@@ -179,10 +179,19 @@ bill once ordering lands.
 
 ## Going to production
 
+The API deploys to Vercel and the web app to Netlify.
+**[docs/deploy-vercel.md](docs/deploy-vercel.md) is the step-by-step runbook** —
+connection strings, the environment variables, the region, and the two settings
+whose absence fails silently rather than loudly.
+
+The short version of what production needs:
+
 1. Point `DATABASE_URL` at Supabase (migrations, as `postgres`) and create an
    equivalent non-superuser role for `APP_DATABASE_URL`.
-2. Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to move uploads off local
-   disk.
+2. Set `CLOUDINARY_*` to move uploads off local disk — or `SUPABASE_URL` and
+   `SUPABASE_SERVICE_ROLE_KEY` for Supabase Storage. Cloudinary wins when both
+   are set. On serverless the local driver is not a fallback but a
+   misconfiguration, and it now says so rather than failing obscurely.
 3. Set `WHATSAPP_*` (Meta Cloud API, approved authentication template) and
    `RESEND_API_KEY`, then set `AUTH_SKIP_VERIFICATION=false`.
 4. Rotate `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `REVALIDATE_SECRET`, and
