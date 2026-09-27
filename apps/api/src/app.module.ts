@@ -11,7 +11,7 @@ import { MediaController } from "./media/media.controller";
 import { MediaService } from "./media/media.service";
 import { MenuController } from "./menu/menu.controller";
 import { MenuService } from "./menu/menu.service";
-// import { NotificationsModule } from "./notifications/notifications.module";
+import { NotificationsModule } from "./notifications/notifications.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { PublicController } from "./public/public.controller";
 import { PublicService } from "./public/public.service";
@@ -31,7 +31,7 @@ import { MerchService } from "./merch/merch.service";
 
 @Module({
   imports: [PrismaModule, 
-    // NotificationsModule, 
+    NotificationsModule, 
     AuthModule, JwtModule.register({})],
   controllers: [
     HealthController,
