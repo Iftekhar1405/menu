@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { requestOrigin } from "@/lib/table-claim";
 import { TABLE_COOKIE, tableCookieOptions } from "@/lib/table-session";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -18,10 +19,11 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
  * tamper with, and the session is somewhere client script cannot reach.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
+  const origin = requestOrigin(request);
 
   const res = await fetch(`${API}/public/tables/resolve`, {
     method: "POST",
@@ -33,18 +35,14 @@ export async function GET(
   if (!res || !res.ok) {
     // An unknown or retired card sends them to the scanner rather than an
     // error page — they are holding a physical card and can try again.
-    return NextResponse.redirect(new URL("/order?bad=1", getOrigin()));
+    return NextResponse.redirect(new URL("/order?bad=1", origin));
   }
 
   const data = (await res.json()) as { sessionToken: string };
 
-  const response = NextResponse.redirect(new URL("/order", getOrigin()));
+  const response = NextResponse.redirect(new URL("/order", origin));
   response.cookies.set(TABLE_COOKIE, data.sessionToken, tableCookieOptions());
   return response;
-
-  function getOrigin() {
-    return process.env.PUBLIC_MENU_BASE_URL ?? "http://localhost:3000";
-  }
 }
 
 export async function POST() {

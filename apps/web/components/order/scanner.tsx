@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { tableClaimPath } from "@/lib/table-claim";
 import { Button, Input, cx } from "../ui";
 
 /**
@@ -58,10 +59,12 @@ export function Scanner({ hadBadCard }: { hadBadCard?: boolean }) {
         if (stopped || !videoRef.current) return;
         try {
           const codes = await detector.detect(videoRef.current);
-          const hit = codes.find((c) => c.rawValue.includes("/t/"));
-          if (hit) {
+          const path = codes
+            .map((c) => tableClaimPath(c.rawValue))
+            .find((p): p is string => p !== null);
+          if (path) {
             stopped = true;
-            window.location.href = hit.rawValue;
+            window.location.href = path;
             return;
           }
         } catch {

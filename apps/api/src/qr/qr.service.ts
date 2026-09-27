@@ -17,6 +17,8 @@ import { renderSheetPdf } from "./sheet.pdf";
 /** A6 at 300 DPI: 105mm wide is 1240px. */
 const PRINT_WIDTH_PX = 1240;
 
+const PUBLIC_SITE = "https://menu.irad.solutions";
+
 @Injectable()
 export class QrService {
   private readonly env = loadEnv();
@@ -29,7 +31,7 @@ export class QrService {
   ) {}
 
   private menuUrl(publicCode: string): string {
-    return `${this.env.PUBLIC_MENU_BASE_URL}/m/${publicCode}`;
+    return `${PUBLIC_SITE}/m/${publicCode}`;
   }
 
   async svg(userId: string, businessId: string): Promise<string> {
@@ -59,7 +61,7 @@ export class QrService {
     return buildCardSvg({
       businessName: business.name,
       tableLabel: table.label,
-      url: `${this.env.PUBLIC_MENU_BASE_URL}/t/${table.token}`,
+      url: this.tableUrl(table.token),
       logoDataUri: await this.logoDataUri(business.logoPath),
       accent: business.themeAccent,
     });
@@ -152,7 +154,7 @@ export class QrService {
   }
 
   private tableUrl(token: string): string {
-    return `${this.env.PUBLIC_MENU_BASE_URL}/t/${token}`;
+    return `${PUBLIC_SITE}/t/${token}`;
   }
 
   private async prismaBusiness(businessId: string) {

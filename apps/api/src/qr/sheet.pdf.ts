@@ -6,7 +6,7 @@ import SVGtoPDF from "svg-to-pdfkit";
 /** PostScript points per millimetre. Everything above this file is in mm. */
 export const MM_TO_PT = 72 / 25.4;
 
-/** Light enough not to compete with the cards, dark enough to cut along. */
+/** Light ~enough not to compete with the cards, dark enough to cut along. */
 const GUIDE_COLOUR = "#D4D4D4";
 const GUIDE_WIDTH_PT = 0.25;
 
@@ -18,7 +18,7 @@ const GUIDE_WIDTH_PT = 0.25;
  * these on a press both get geometry rather than pixels, and a QR that was
  * never resampled is a QR that always scans.
  *
- * Takes a plan rather than options so the page count an owner was shown
+* Takes a plan rather than options so the page count an owner was shown
  * before clicking download is the page count they get.
  */
 export async function renderSheetPdf(cells: string[], plan: SheetPlan): Promise<Buffer> {
