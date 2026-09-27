@@ -11,7 +11,7 @@ import { MediaController } from "./media/media.controller";
 import { MediaService } from "./media/media.service";
 import { MenuController } from "./menu/menu.controller";
 import { MenuService } from "./menu/menu.service";
-import { NotificationsModule } from "./notifications/notifications.module";
+import { OtpChannelsModule } from "./otp/channels/otp-channels.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { PublicController } from "./public/public.controller";
 import { PublicService } from "./public/public.service";
@@ -28,11 +28,13 @@ import { BillingController, TableBillingController } from "./billing/billing.con
 import { BillingService } from "./billing/billing.service";
 import { AdminMerchController, MerchController } from "./merch/merch.controller";
 import { MerchService } from "./merch/merch.service";
+import { NotificationsController } from "./notifications/notifications.controller";
+import { NotificationsService } from "./notifications/notifications.service";
+import { RealtimeBroadcaster } from "./notifications/realtime.broadcast";
+import { WebPushSender } from "./notifications/web-push.sender";
 
 @Module({
-  imports: [PrismaModule, 
-    NotificationsModule, 
-    AuthModule, JwtModule.register({})],
+  imports: [PrismaModule, OtpChannelsModule, AuthModule, JwtModule.register({})],
   controllers: [
     HealthController,
     BusinessesController,
@@ -47,6 +49,7 @@ import { MerchService } from "./merch/merch.service";
     TableBillingController,
     MerchController,
     AdminMerchController,
+    NotificationsController,
   ],
   providers: [
     HealthService,
@@ -62,6 +65,9 @@ import { MerchService } from "./merch/merch.service";
     TableSessionGuard,
     BillingService,
     MerchService,
+    NotificationsService,
+    RealtimeBroadcaster,
+    WebPushSender,
     // Authenticated by default: a new controller is protected unless it
     // explicitly opts out with @Public.
     { provide: APP_GUARD, useClass: JwtAuthGuard },

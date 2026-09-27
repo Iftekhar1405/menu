@@ -41,6 +41,7 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "svg-to-pdfkit": "^0.1.8",
+    "web-push": "^3.6.7",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -54,6 +55,7 @@
     "@types/pdfkit": "^0.13.9",
     "@types/pngjs": "^6.0.5",
     "@types/qrcode": "^1.5.5",
+    "@types/web-push": "^3.6.4",
     "jsqr": "^1.4.0",
     "pngjs": "^7.0.0",
     "prisma": "^5.22.0",

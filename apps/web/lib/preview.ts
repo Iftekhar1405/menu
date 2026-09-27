@@ -88,13 +88,16 @@ export function mediaUrl(path: string): string {
   if (/^https?:\/\//.test(path)) return path;
 
   const cloud = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+
   if (cloud) {
     // f_auto,q_auto lets Cloudinary pick format and quality per request.
     return `https://res.cloudinary.com/${cloud}/image/upload/f_auto,q_auto/${path}`;
   }
 
   const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const bucket = process.env.NEXT_PUBLIC_SUPABASE_BUCKET ?? "business-assets";
+  const bucket =
+    process.env.NEXT_PUBLIC_SUPABASE_BUCKET ?? "business-assets";
+
   if (supabase) {
     return `${supabase}/storage/v1/object/public/${bucket}/${path}`;
   }

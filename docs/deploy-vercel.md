@@ -344,8 +344,14 @@ Its environment variables:
 | --- | --- |
 | `NEXT_PUBLIC_API_URL` | `https://api.menu.irad.solutions` |
 | `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME` | the cloud name — public by design, it appears in every delivery URL |
-| `PUBLIC_MENU_BASE_URL` | this app's own origin; `/t/[token]` builds redirect URLs from it |
 | `REVALIDATE_SECRET` | **the same value as the API's** |
+
+`PUBLIC_MENU_BASE_URL` is deliberately **not** in that list. It belongs to the
+API, which stamps it into every QR code; the web app derives its own origin
+from the incoming request instead. Setting it here once meant a scan on the
+live domain redirected to whatever that variable said — and because the scan
+response is what sets the table cookie, a redirect to any other host arrived
+with no session at all.
 
 `REVALIDATE_SECRET` must match on both sides: the API posts to
 `${WEB_ORIGIN}/api/revalidate` with it whenever a menu changes, and the route

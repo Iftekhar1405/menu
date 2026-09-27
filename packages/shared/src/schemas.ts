@@ -1,5 +1,13 @@
 import { z } from "zod";
-import { BUSINESS_TYPES, DIET_TAGS, OTP_PURPOSES } from "./enums";
+import {
+  BUSINESS_TYPES,
+  CANCELLABLE_STATUSES,
+  CANCELLATION_REASONS,
+  DIET_TAGS,
+  OTP_PURPOSES,
+  RUNNING_ORDER_WINDOW,
+  cancellationRemarkRequired,
+} from "./enums";
 import {
   SHEET_ORIENTATIONS,
   SHEET_PAPERS,
@@ -98,8 +106,58 @@ export const businessUpdateSchema = z.object({
   themeAccent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   themeFont: z.string().max(60).optional(),
   vanitySlug: vanitySlugSchema.nullish(),
+
+  cancellationEnabled: z.boolean().optional(),
+  // Minutes, and capped at two hours. A window longer than that is not a
+  // change-of-mind window, it is an unbilled order waiting to happen.
+  cancellationWindowMins: z.number().int().min(1).max(120).optional(),
+  // An empty array is allowed and means nobody can cancel, which is a
+  // coherent thing for an owner to have ticked their way into.
+  cancellationStatuses: z.array(z.enum(CANCELLABLE_STATUSES)).max(3).optional(),
+  cancellationItemsEnabled: z.boolean().optional(),
+
+  runningOrderEnabled: z.boolean().optional(),
+  // Minutes. The bounds are what keep the flag meaningful rather than
+  // arbitrary: below RUNNING_ORDER_WINDOW.min nothing ever qualifies, above
+  // its max every table does, and a priority that fires on everything is not
+  // a priority. The database carries the same range as a CHECK.
+  runningOrderWindowMins: z
+    .number()
+    .int()
+    .min(RUNNING_ORDER_WINDOW.min, `Use at least ${RUNNING_ORDER_WINDOW.min} minutes`)
+    .max(RUNNING_ORDER_WINDOW.max, `Use at most ${RUNNING_ORDER_WINDOW.max} minutes`)
+    .optional(),
 });
 export type BusinessUpdateInput = z.infer<typeof businessUpdateSchema>;
+
+/**
+ * What a diner sends to call an order back.
+ *
+ * `lines` absent means the whole order. The API re-checks the window, the
+ * order's status and the owner's settings inside the same transaction that
+ * writes the cancellation — nothing here is load-bearing for safety, it only
+ * makes the phone say the right thing a moment sooner.
+ */
+export const cancelOrderSchema = z
+  .object({
+    lines: z
+      .array(
+        z.object({
+          orderItemId: z.string().uuid(),
+          quantity: z.number().int().min(1).max(99),
+        }),
+      )
+      .min(1)
+      .max(60)
+      .nullish(),
+    reason: z.enum(CANCELLATION_REASONS),
+    remark: z.string().trim().max(300).nullish(),
+  })
+  .refine((v) => !cancellationRemarkRequired(v.reason) || Boolean(v.remark), {
+    message: "Tell us what happened",
+    path: ["remark"],
+  });
+export type CancelOrderInput = z.infer<typeof cancelOrderSchema>;
 
 export const categorySchema = z.object({
   name: z.string().trim().min(1, "Category needs a name").max(80),

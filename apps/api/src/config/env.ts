@@ -60,9 +60,33 @@ const envSchema = z.object({
     .default("true")
     .transform((v) => v === "true"),
 
+  /**
+   * The Supabase project URL. Used for two unrelated things — Realtime
+   * broadcast and (optionally) Storage — which is why `usesSupabaseStorage`
+   * below is explicit about the precedence rather than leaving it to the
+   * order call sites happen to check things in.
+   */
   SUPABASE_URL: z.string().default(""),
   SUPABASE_SERVICE_ROLE_KEY: z.string().default(""),
+  /** Public key, safe in the browser. Realtime subscribe needs it. */
+  SUPABASE_ANON_KEY: z.string().default(""),
   SUPABASE_STORAGE_BUCKET: z.string().default("business-assets"),
+
+  /**
+   * Signs Realtime topic names. A business id is not a secret — it is in
+   * every dashboard URL — so the topic is an HMAC of it rather than the id
+   * itself. See notifications/channel-name.ts.
+   */
+  REALTIME_CHANNEL_SECRET: z.string().min(8).default("dev-realtime-channel-secret"),
+
+  /**
+   * Web Push (VAPID). Inert until both keys are set, at which case staff
+   * devices can be pushed to while the dashboard is closed. Generate with
+   * `npx web-push generate-vapid-keys`.
+   */
+  VAPID_PUBLIC_KEY: z.string().default(""),
+  VAPID_PRIVATE_KEY: z.string().default(""),
+  VAPID_SUBJECT: z.string().default("mailto:support@irad.solutions"),
 
   /**
    * Cloudinary. Preferred over Supabase Storage when set, because it
@@ -147,7 +171,28 @@ export function refreshCookieFlags(env: Env): {
   };
 }
 
-/** True when Supabase Storage is configured; otherwise uploads go to local disk. */
+/**
+ * True when Supabase Storage is the active driver.
+ *
+ * Cloudinary wins when both are configured. That was already the behaviour,
+ * but only because every call site happened to test Cloudinary first — an
+ * ordering, not a rule. It is stated here because SUPABASE_URL now also
+ * enables Realtime: without this, switching notifications on would quietly
+ * move where every image is served from.
+ */
 export function usesSupabaseStorage(env: Env): boolean {
+  if (env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET) {
+    return false;
+  }
   return env.SUPABASE_URL.length > 0 && env.SUPABASE_SERVICE_ROLE_KEY.length > 0;
+}
+
+/** True when the API can broadcast Realtime pings. */
+export function usesRealtime(env: Env): boolean {
+  return env.SUPABASE_URL.length > 0 && env.SUPABASE_SERVICE_ROLE_KEY.length > 0;
+}
+
+/** True when staff devices can be pushed to with the dashboard closed. */
+export function usesWebPush(env: Env): boolean {
+  return env.VAPID_PUBLIC_KEY.length > 0 && env.VAPID_PRIVATE_KEY.length > 0;
 }

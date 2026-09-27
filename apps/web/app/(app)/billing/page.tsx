@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api-client";
 import { useSession } from "@/components/session";
-import { Banner, Button, Field, Input, Textarea, cx } from "@/components/ui";
+import { Banner, Button, Field, Input, Textarea, Toggle, cx } from "@/components/ui";
 
 interface TaxConfig {
   taxEnabled: boolean;
@@ -208,44 +208,3 @@ export default function BillingPage() {
   );
 }
 
-function Toggle({
-  checked,
-  onChange,
-  label,
-  hint,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-  hint?: string;
-}) {
-  return (
-    <div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        // The switch itself is 24px tall. The row around it is what gets
-        // tapped, so it carries the 44px.
-        className="-my-2 flex min-h-[44px] w-full items-center gap-3 py-2 text-left"
-      >
-        <span
-          className={cx(
-            "spring flex h-6 w-10 shrink-0 items-center rounded-full px-0.5",
-            checked ? "bg-[var(--accent)]" : "bg-line",
-          )}
-        >
-          <span
-            className={cx(
-              "spring h-5 w-5 rounded-full bg-white shadow-card",
-              checked && "translate-x-4",
-            )}
-          />
-        </span>
-        <span className="text-[14.5px] font-medium text-ink">{label}</span>
-      </button>
-      {hint && <p className="ml-[52px] mt-1 text-[12.5px] leading-relaxed text-faint">{hint}</p>}
-    </div>
-  );
-}

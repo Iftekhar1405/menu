@@ -1,6 +1,11 @@
 import { defineConfig } from "vitest/config";
+import { resolve } from "node:path";
 
 export default defineConfig({
+  // The same "@/" the app and tsconfig use. Without it a module under test
+  // cannot import anything by its normal path, which pushes logic out of
+  // the files it belongs in purely to keep it testable.
+  resolve: { alias: { "@": resolve(__dirname) } },
   test: {
     /*
      * `lib` and `components` only. Without an explicit include, vitest's

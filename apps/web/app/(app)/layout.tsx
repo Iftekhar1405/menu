@@ -8,6 +8,9 @@ import { logout } from "@/lib/api-client";
 import { Button, cx, Sheet, SheetGrabber } from "@/components/ui";
 import { Wordmark } from "@/components/brand";
 import { ConfirmProvider, useConfirm } from "@/components/confirm";
+import { NotificationsProvider } from "@/components/notifications/provider";
+import { NotificationBell } from "@/components/notifications/bell";
+import { NotificationToasts } from "@/components/notifications/toasts";
 
 /**
  * The first four are what an owner touches during a service; the rest are
@@ -100,6 +103,11 @@ function Shell({ children }: { children: React.ReactNode }) {
    * above it, so exactly one is ever in the accessibility tree.
    */
   return (
+    // Inside Shell rather than around it: the provider needs the current
+    // business id, and that only exists once SessionProvider has resolved.
+    // Keying on it tears the feed and socket down when an owner switches
+    // restaurants, which is correct — the two inboxes are not the same one.
+    <NotificationsProvider key={current?.id ?? "none"} businessId={current?.id ?? null}>
     <div className="min-w-0 lg:grid lg:min-h-[100dvh] lg:grid-cols-[232px_minmax(0,1fr)]">
       {/* Phone: a slim bar that says where you are and whose menu you are
           editing, and nothing else. Everything actionable is at the bottom,
@@ -108,17 +116,21 @@ function Shell({ children }: { children: React.ReactNode }) {
         <Link href="/dashboard" className="flex h-14 items-center">
           <Wordmark size={18} />
         </Link>
-        {current && (
-          <span className="min-w-0 truncate text-[13px] text-muted">{current.name}</span>
-        )}
+        <div className="flex min-w-0 items-center gap-1">
+          {current && (
+            <span className="min-w-0 truncate text-[13px] text-muted">{current.name}</span>
+          )}
+          <NotificationBell className="-mr-1.5" />
+        </div>
       </header>
 
       <aside className="hidden min-w-0 border-line bg-surface lg:block lg:border-r">
         <div className="flex h-full min-w-0 flex-col p-5">
-          <div className="mb-6">
+          <div className="mb-6 flex items-center justify-between gap-2 pr-1">
             <Link href="/dashboard" className="block px-2">
               <Wordmark size={19} />
             </Link>
+            <NotificationBell />
           </div>
 
           {/* Only shown when it is a real choice. A single-restaurant owner
@@ -274,7 +286,10 @@ function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </Sheet>
       )}
+
+      <NotificationToasts />
     </div>
+    </NotificationsProvider>
   );
 }
 

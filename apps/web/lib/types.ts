@@ -1,4 +1,9 @@
-import type { BusinessType, DietTag, ThemeLayout } from "@menu/shared";
+import type {
+  BusinessType,
+  CancellableStatus,
+  DietTag,
+  ThemeLayout,
+} from "@menu/shared";
 
 /** Shapes the API returns to the dashboard. */
 
@@ -28,6 +33,10 @@ export interface Business {
   themeLayout: ThemeLayout;
   themeAccent: string;
   themeFont: string;
+  cancellationEnabled: boolean;
+  cancellationWindowMins: number;
+  cancellationStatuses: CancellableStatus[];
+  cancellationItemsEnabled: boolean;
 }
 
 export interface Variant {

@@ -1,10 +1,10 @@
 import { Global, Logger, Module } from "@nestjs/common";
-import { loadEnv } from "../config/env";
-import { ConsoleDriver } from "src/otp/channels/console.driver";
-import { NOTIFICATION_CHANNELS, NotificationChannel } from "src/otp/channels/notification.channel";
-import { WhatsAppDriver } from "src/otp/channels/whatsapp.driver";
-import { EmailDriver } from "src/otp/channels/email.driver";
-import { NotificationDispatcher } from "src/otp/channels/dispatcher";
+import { loadEnv } from "../../config/env";
+import { ConsoleDriver } from "./console.driver";
+import { NotificationDispatcher } from "./dispatcher";
+import { EmailDriver } from "./email.driver";
+import { NOTIFICATION_CHANNELS, NotificationChannel } from "./notification.channel";
+import { WhatsAppDriver } from "./whatsapp.driver";
 
 /**
  * Picks a driver per channel based on which credentials exist. Absent
@@ -18,7 +18,7 @@ import { NotificationDispatcher } from "src/otp/channels/dispatcher";
       provide: NOTIFICATION_CHANNELS,
       useFactory: (): NotificationChannel[] => {
         const env = loadEnv();
-        const logger = new Logger("NotificationsModule");
+        const logger = new Logger("OtpChannelsModule");
         const channels: NotificationChannel[] = [];
 
         if (env.WHATSAPP_PHONE_NUMBER_ID && env.WHATSAPP_ACCESS_TOKEN) {
@@ -42,4 +42,4 @@ import { NotificationDispatcher } from "src/otp/channels/dispatcher";
   ],
   exports: [NotificationDispatcher, NOTIFICATION_CHANNELS],
 })
-export class NotificationsModule {}
+export class OtpChannelsModule {}

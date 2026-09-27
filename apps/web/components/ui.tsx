@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect } from "react";
+import { forwardRef, useEffect, useSyncExternalStore } from "react";
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
@@ -146,6 +146,52 @@ export const Select = forwardRef<
     </select>
   );
 });
+
+/**
+ * A setting that is on or off.
+ *
+ * The switch is 24px tall; the row around it carries the 44px, because on a
+ * phone the thing people aim at is the label, not the pill.
+ */
+export function Toggle({
+  checked,
+  onChange,
+  label,
+  hint,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  hint?: string;
+}) {
+  return (
+    <div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className="-my-2 flex min-h-[44px] w-full items-center gap-3 py-2 text-left"
+      >
+        <span
+          className={cx(
+            "spring flex h-6 w-10 shrink-0 items-center rounded-full px-0.5",
+            checked ? "bg-[var(--accent)]" : "bg-line",
+          )}
+        >
+          <span
+            className={cx(
+              "spring h-5 w-5 rounded-full bg-white shadow-card",
+              checked && "translate-x-4",
+            )}
+          />
+        </span>
+        <span className="text-[14.5px] font-medium text-ink">{label}</span>
+      </button>
+      {hint && <p className="ml-[52px] mt-1 text-[12.5px] leading-relaxed text-faint">{hint}</p>}
+    </div>
+  );
+}
 
 /* ── Feedback ──────────────────────────────────────────────────────────── */
 
@@ -357,4 +403,38 @@ function useScrollLock() {
       document.body.style.overflow = previous;
     };
   }, []);
+}
+
+/**
+ * Whether the viewport is narrower than Tailwind's `sm` breakpoint.
+ *
+ * For ARIA, not for layout. Layout stays in CSS, where a media query costs
+ * nothing and cannot flash: a component that decides its own shape in
+ * JavaScript renders the wrong one until hydration catches up, which on a
+ * phone is a visible jump.
+ *
+ * Some semantics cannot be expressed that way, though. The order board's
+ * three columns are one-at-a-time behind a segmented control on a phone and
+ * side by side above it — so below `sm` a column genuinely is a tab panel,
+ * and above it, where the control is hidden and all three are on screen, it
+ * genuinely is not. Marking one of three visible columns as a panel of a
+ * tablist nobody can see is worse than marking none.
+ *
+ * `useSyncExternalStore` rather than an effect, so the server snapshot is
+ * explicit. Flipping an attribute after hydration moves nothing on screen.
+ */
+export function useIsNarrow(): boolean {
+  return useSyncExternalStore(subscribeToNarrow, isNarrowNow, () => false);
+}
+
+const NARROW = "(max-width: 639.98px)";
+
+function subscribeToNarrow(onChange: () => void): () => void {
+  const query = window.matchMedia(NARROW);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
+function isNarrowNow(): boolean {
+  return window.matchMedia(NARROW).matches;
 }

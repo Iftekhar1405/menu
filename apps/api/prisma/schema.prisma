@@ -155,7 +155,7 @@ model Business {
   /// A table that orders again this soon after being served is mid-meal, and
   /// its new order is flagged and sorted to the top of the board. Decided by
   /// `place_table_round` when the order row is created — see the migration.
-  runningOrderEnabled    Boolean @default(true) @map("running_order_enabled")
+  runningOrderEnabled    Boolean? @default(true) @map("running_order_enabled")
   /// Minutes, 5–180 (checked in the database). Roughly a starters-then-mains
   /// gap by default.
   runningOrderWindowMins Int     @default(45) @map("running_order_window_mins")

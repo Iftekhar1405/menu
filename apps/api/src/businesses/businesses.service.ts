@@ -68,6 +68,24 @@ export class BusinessesService {
         ...(patch.themeAccent !== undefined && { themeAccent: patch.themeAccent }),
         ...(patch.themeFont !== undefined && { themeFont: patch.themeFont }),
         ...(patch.vanitySlug !== undefined && { vanitySlug: patch.vanitySlug }),
+        ...(patch.runningOrderEnabled !== undefined && {
+          runningOrderEnabled: patch.runningOrderEnabled,
+        }),
+        ...(patch.runningOrderWindowMins !== undefined && {
+          runningOrderWindowMins: patch.runningOrderWindowMins,
+        }),
+        ...(patch.cancellationEnabled !== undefined && {
+          cancellationEnabled: patch.cancellationEnabled,
+        }),
+        ...(patch.cancellationWindowMins !== undefined && {
+          cancellationWindowMins: patch.cancellationWindowMins,
+        }),
+        ...(patch.cancellationStatuses !== undefined && {
+          cancellationStatuses: patch.cancellationStatuses,
+        }),
+        ...(patch.cancellationItemsEnabled !== undefined && {
+          cancellationItemsEnabled: patch.cancellationItemsEnabled,
+        }),
         menuUpdatedAt: new Date(),
       },
     });

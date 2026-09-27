@@ -171,6 +171,42 @@ body {
   animation: fade-in 160ms ease-out;
 }
 
+/*
+ * A toast arriving.
+ *
+ * Deliberately not `sheet-up`, which travels its own full height — correct
+ * for a panel coming off the bottom edge, far too much movement for a card
+ * that simply appears. This is the shortest distance that still reads as an
+ * arrival rather than a repaint. The reduced-motion block below flattens it
+ * along with everything else.
+ */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-toast-in {
+  animation: toast-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (min-width: 1024px) {
+  /* Bottom-right on a desktop, so it rises into place instead. */
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.99);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+}
+
 /* Focus is always visible and always the accent. Keyboard users get the same
  * signal the pointer users get from hover. */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
