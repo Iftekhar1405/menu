@@ -9,6 +9,10 @@ import { BusinessesService } from "../businesses/businesses.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TenantContext } from "../prisma/tenant-context";
 import { cleanPgMessage } from "../common/pg-message";
+import { NotificationsService } from "../notifications/notifications.service";
+import type { CancelledLine, PlacedOrder } from "../notifications/events";
+import type { CancelOrderInput } from "@menu/shared";
+import { ALLOWED_TRANSITIONS, OPEN_STATUSES } from "./transitions";
 
 export interface PlaceLine {
   itemId: string;
@@ -16,16 +20,21 @@ export interface PlaceLine {
   quantity: number;
 }
 
-/** What a diner is allowed to move an order to: nothing. Staff only. */
-const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  placed: ["preparing", "ready", "completed", "cancelled"],
-  preparing: ["ready", "completed", "cancelled"],
-  ready: ["completed", "cancelled"],
-  completed: [],
-  cancelled: [],
-};
+/** What `cancel_table_order` hands back, in the one round trip. */
+export interface CancellationResult {
+  orderId: string;
+  /** True when nothing was left, so the order itself is cancelled too. */
+  orderCancelled: boolean;
+  dailyNumber: number;
+  tableLabel: string;
+  currency: string;
+  reason: CancelOrderInput["reason"];
+  remark: string | null;
+  lines: CancelledLine[];
+  /** The order as it now stands, or null once it is cancelled outright. */
+  order: PlacedOrder | null;
+}
 
-const OPEN_STATUSES: OrderStatus[] = ["placed", "preparing", "ready"];
 
 @Injectable()
 export class OrdersService {
@@ -33,6 +42,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly businesses: BusinessesService,
     private readonly tenant: TenantContext,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ── Diner side ────────────────────────────────────────────────────────────
@@ -56,7 +66,7 @@ export class OrdersService {
     businessId: string,
     tableId: string,
     lines: PlaceLine[],
-  ): Promise<unknown> {
+  ): Promise<PlacedOrder | null> {
     if (lines.length === 0) throw new BadRequestException("Add something first");
 
     const payload = JSON.stringify(
@@ -67,10 +77,10 @@ export class OrdersService {
       })),
     );
 
-    return this.tenant.withoutTenant(async (db) => {
+    const order = await this.tenant.withoutTenant(async (db) => {
       try {
         const rows = await db.$queryRaw<
-          { place_table_round: unknown }[]
+          { place_table_round: PlacedOrder | null }[]
         >`SELECT place_table_round(${tableId}::uuid, ${businessId}::uuid, ${payload}::jsonb) AS place_table_round`;
         return rows[0]?.place_table_round ?? null;
       } catch (err) {
@@ -83,6 +93,85 @@ export class OrdersService {
         throw err;
       }
     });
+
+    // Awaited, not fired and forgotten. On a serverless runtime the instance
+    // can be frozen the moment the response is written, so work left running
+    // past that point is not slow — it simply never happens. The method
+    // swallows its own failures, so this cannot cost the diner their order.
+    if (order) await this.notifications.announceRound(businessId, tableId, order);
+
+    return order;
+  }
+
+  /**
+   * Cancels a diner's whole order, or some units of some of its lines.
+   *
+   * Every rule the owner set — the switch, the window, which statuses still
+   * allow it, whether single dishes may go at all — is checked inside
+   * `cancel_table_order`, against that transaction's own clock and the
+   * settings as they are at that instant. Nothing sent from the phone is
+   * load-bearing: the deadlines it was given are there so it can hide a
+   * button that would fail, not so it can decide the answer.
+   *
+   * The same advisory lock `place_table_round` takes serialises this against
+   * a round arriving on the same table.
+   */
+  async cancelForTable(
+    businessId: string,
+    tableId: string,
+    input: CancelOrderInput,
+  ): Promise<CancellationResult> {
+    const lines = input.lines
+      ? JSON.stringify(
+          input.lines.map((l) => ({
+            orderItemId: l.orderItemId,
+            quantity: l.quantity,
+          })),
+        )
+      : null;
+
+    const result = await this.tenant.withoutTenant(async (db) => {
+      try {
+        const rows = await db.$queryRaw<
+          { cancel_table_order: CancellationResult }[]
+        >`SELECT cancel_table_order(${tableId}::uuid, ${lines}::jsonb, ${input.reason}::text, ${
+          input.remark ?? null
+        }::text) AS cancel_table_order`;
+        return rows[0]?.cancel_table_order ?? null;
+      } catch (err) {
+        // The function raises check_violation for everything a diner could
+        // have done differently — too late, already being made, cancelling
+        // more than they ordered. Those are 400s carrying the message as
+        // written, because the message is the whole answer.
+        const message = err instanceof Error ? err.message : "";
+        const match = /ERROR: (.+)/.exec(message);
+        if (match) throw new BadRequestException(cleanPgMessage(match[1]!));
+        throw err;
+      }
+    });
+
+    if (!result) throw new NotFoundException("You have no open order");
+
+    // Awaited rather than fired and forgotten: on a serverless runtime the
+    // instance can be frozen the moment the response is written. This is the
+    // one notification the kitchen may be mid-dish for, so losing it is worse
+    // than the milliseconds it costs.
+    await this.notifications.announceCancellation(
+      businessId,
+      tableId,
+      result.orderId,
+      {
+        tableLabel: result.tableLabel,
+        dailyNumber: result.dailyNumber,
+        currency: result.currency,
+        orderCancelled: result.orderCancelled,
+        lines: result.lines,
+        reason: result.reason,
+        remark: result.remark,
+      },
+    );
+
+    return result;
   }
 
   /** The table's open order, or null. Completed orders are gone from here. */
@@ -143,10 +232,97 @@ export class OrdersService {
           ? { status: { in: OPEN_STATUSES } }
           : { businessDay: today }),
       },
-      orderBy: [{ status: "asc" }, { placedAt: "asc" }],
+      // Running orders first. The board groups by status in the browser, so
+      // the effect is that a table that has come back sits at the top of
+      // whichever column it is in rather than behind tables seated after it.
+      orderBy: [{ isRunning: "desc" }, { status: "asc" }, { placedAt: "asc" }],
       include: {
         table: { select: { id: true, label: true } },
         items: { orderBy: [{ batch: "asc" }, { createdAt: "asc" }] },
+        // A cancelled line is deleted from `items` outright, so without this
+        // the board would show an order quietly shrinking with no account of
+        // why — and staff would go on cooking what is no longer there.
+        cancellations: { orderBy: { createdAt: "asc" } },
+      },
+    });
+  }
+
+  /**
+   * One order's timeline.
+   *
+   * A route of its own rather than a field on the board's response. The board
+   * polls both scopes every five seconds; embedding six-ish rows per order in
+   * both, forever, to fill a panel that is collapsed by default is a poor
+   * trade. This is called when a card is expanded and after it advances.
+   */
+  async listEvents(userId: string, businessId: string, orderId: string) {
+    await this.businesses.assertOwns(userId, businessId);
+
+    const order = await this.prisma.db.order.findFirst({
+      where: { id: orderId, businessId },
+      select: { id: true },
+    });
+    if (!order) throw new NotFoundException("Order not found");
+
+    const events = await this.prisma.db.orderEvent.findMany({
+      where: { orderId },
+      // By id, not by `at`: two events in the same millisecond must still
+      // render in the order they happened.
+      orderBy: { id: "asc" },
+    });
+
+    // BigInt does not survive JSON.stringify, and the id is only ever a React
+    // key on the way out.
+    return events.map((e) => ({
+      id: Number(e.id),
+      kind: e.kind,
+      at: e.at.toISOString(),
+      data: e.data,
+    }));
+  }
+
+  /**
+   * Staff's override on the running-order flag.
+   *
+   * Per order, not per table. Clearing table 5's flag says "this one is
+   * wrong", not "never flag table 5 again" — a table-level mute would be a
+   * second piece of state with its own lifetime and no obvious end, and the
+   * next party seated there would inherit it.
+   *
+   * Open orders only. A served order's flag is a record of what was true
+   * when it arrived, and the same reasoning that stops `setStatus` reopening
+   * a completed order stops this rewriting one.
+   *
+   * No notification: this is staff correcting their own board, and the diner
+   * was never told about the flag in the first place.
+   */
+  async setRunning(
+    userId: string,
+    businessId: string,
+    orderId: string,
+    running: boolean,
+  ) {
+    await this.businesses.assertOwns(userId, businessId);
+
+    const order = await this.prisma.db.order.findFirst({
+      where: { id: orderId, businessId },
+      select: { id: true, status: true },
+    });
+    if (!order) throw new NotFoundException("Order not found");
+
+    if (!OPEN_STATUSES.includes(order.status)) {
+      throw new ConflictException(
+        `An order that is ${order.status} can no longer be changed`,
+      );
+    }
+
+    return this.prisma.db.order.update({
+      where: { id: orderId },
+      data: { isRunning: running },
+      include: {
+        table: { select: { id: true, label: true } },
+        items: { orderBy: [{ batch: "asc" }, { createdAt: "asc" }] },
+        cancellations: { orderBy: { createdAt: "asc" } },
       },
     });
   }
@@ -173,7 +349,7 @@ export class OrdersService {
       );
     }
 
-    return this.prisma.db.order.update({
+    const updated = await this.prisma.db.order.update({
       where: { id: orderId },
       data: {
         status: next,
@@ -183,8 +359,16 @@ export class OrdersService {
       include: {
         table: { select: { id: true, label: true } },
         items: { orderBy: [{ batch: "asc" }, { createdAt: "asc" }] },
+        cancellations: { orderBy: { createdAt: "asc" } },
       },
     });
+
+    // The diner's screen is listening on its table's topic. Nothing is
+    // stored for them: they need the order's current state, which
+    // get_table_order already returns, not a log of how it got there.
+    await this.notifications.announceStatus(updated.tableId);
+
+    return updated;
   }
 }
 

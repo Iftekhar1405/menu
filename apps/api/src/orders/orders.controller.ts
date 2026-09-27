@@ -10,8 +10,8 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { OrderStatus } from "@prisma/client";
 import { z } from "zod";
+import { cancelOrderSchema, type CancelOrderInput } from "@menu/shared";
 import type { RequestUser } from "../auth/jwt.strategy";
 import { CurrentUser, Public } from "../common/decorators";
 import { ZodBody } from "../common/zod.pipe";
@@ -22,7 +22,10 @@ import {
   TableSessionService,
   type TableSession,
 } from "../tables/table-session";
+import { tableChannel } from "../notifications/channel-name";
+import { loadEnv } from "../config/env";
 import { OrdersService } from "./orders.service";
+import { ORDER_STATUSES } from "./transitions";
 
 const resolveSchema = z.object({ token: z.string().min(8).max(128) });
 
@@ -40,8 +43,10 @@ const placeSchema = z.object({
 });
 
 const statusSchema = z.object({
-  status: z.enum(["placed", "preparing", "ready", "completed", "cancelled"]),
+  status: z.enum(ORDER_STATUSES),
 });
+
+const runningSchema = z.object({ running: z.boolean() });
 
 /**
  * Diner-facing ordering.
@@ -108,6 +113,23 @@ export class TableOrderController {
   }
 
   /**
+   * Cancels the whole order, or units of named lines.
+   *
+   * A POST rather than a DELETE: this writes a record — who cancelled what,
+   * why, and in their own words — which is the part the owner keeps. The
+   * order rows going away is a consequence, not the point.
+   */
+  @Public()
+  @UseGuards(TableSessionGuard)
+  @Post("table/order/cancel")
+  async cancel(
+    @CurrentTable() session: TableSession,
+    @Body(new ZodBody(cancelOrderSchema)) body: CancelOrderInput,
+  ) {
+    return this.orders.cancelForTable(session.businessId, session.tableId, body);
+  }
+
+  /**
    * Resolves the session's table for display, and re-checks it is still
    * active. A session minted this morning must stop working if staff have
    * since taken that table out of service.
@@ -127,6 +149,10 @@ export class TableOrderController {
         publicCode: ctx.publicCode,
         currency: ctx.currency,
       },
+      // The Realtime topic this diner may listen on. Handed out rather than
+      // derived client-side: it is an HMAC of the table id, which is what
+      // stops a leaked id from becoming a subscription.
+      channel: tableChannel(ctx.tableId, loadEnv().REALTIME_CHANNEL_SECRET),
     };
   }
 }
@@ -154,8 +180,36 @@ export class OrdersController {
     @CurrentUser() user: RequestUser,
     @Param("bid") bid: string,
     @Param("id") id: string,
-    @Body(new ZodBody(statusSchema)) body: { status: OrderStatus },
+    @Body(new ZodBody(statusSchema)) body: z.infer<typeof statusSchema>,
   ) {
     return this.orders.setStatus(user.id, bid, id, body.status);
+  }
+
+  /**
+   * Clears — or sets — the running-order flag on one order.
+   *
+   * The body carries a boolean both ways although only the clearing action
+   * is on screen. A "make this running" button would ask staff to decide
+   * what the word means, and the point of the flag is that the system
+   * already knows; the symmetric route costs nothing and keeps the endpoint
+   * honest about what it does.
+   */
+  @Patch(":id/running")
+  setRunning(
+    @CurrentUser() user: RequestUser,
+    @Param("bid") bid: string,
+    @Param("id") id: string,
+    @Body(new ZodBody(runningSchema)) body: { running: boolean },
+  ) {
+    return this.orders.setRunning(user.id, bid, id, body.running);
+  }
+
+  @Get(":id/events")
+  events(
+    @CurrentUser() user: RequestUser,
+    @Param("bid") bid: string,
+    @Param("id") id: string,
+  ) {
+    return this.orders.listEvents(user.id, bid, id);
   }
 }
