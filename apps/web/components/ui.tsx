@@ -338,7 +338,7 @@ export function Sheet({
       className={cx(
         "fixed inset-0 z-40 flex",
         side === "side"
-          ? "items-end sm:items-stretch sm:justify-end"
+          ? "items-start sm:items-stretch sm:justify-end"
           : "items-end sm:items-center sm:justify-center",
       )}
     >
@@ -356,9 +356,9 @@ export function Sheet({
         aria-modal="true"
         aria-label={label}
         className={cx(
-          "animate-sheet-up overscroll-contain-y relative flex max-h-full w-full flex-col bg-surface shadow-lift",
+          "animate-sheet-up overscroll-contain-y relative flex w-full flex-col bg-surface shadow-lift",
           side === "side"
-            ? "h-full sm:max-w-[460px]"
+            ? "h-[92dvh] rounded-b-[20px] sm:h-full sm:max-h-full sm:max-w-[460px] sm:rounded-none"
             : "max-h-[92dvh] rounded-t-[20px] sm:max-h-[86dvh] sm:max-w-[520px] sm:rounded-2xl",
           className,
         )}
