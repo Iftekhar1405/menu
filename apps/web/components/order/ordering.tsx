@@ -12,13 +12,16 @@ import { Button, cx } from "../ui";
 import { MenuBody, menuVars } from "../templates";
 import { SiteFooter } from "../site-footer";
 import { BillAndRating } from "./bill-and-rating";
+import { buildTimeline, type OrderEvent, type OrderStatus } from "@/lib/order-timeline";
+import { OrderTimeline } from "./timeline";
 
 interface CurrentOrder {
   id: string;
-  status: "placed" | "preparing" | "ready" | "completed" | "cancelled";
+  status: OrderStatus;
   dailyNumber: number;
   placedAt: string;
   total: string;
+  events: OrderEvent[];
   items: {
     id: string;
     name: string;
@@ -40,7 +43,8 @@ interface CartLine {
 }
 
 const STATUS_COPY: Record<CurrentOrder["status"], { label: string; hint: string }> = {
-  placed: { label: "Sent to the kitchen", hint: "They've got it." },
+  placed: { label: "Sent to the kitchen", hint: "Waiting for them to accept." },
+  accepted: { label: "Accepted", hint: "They're on it." },
   preparing: { label: "Being made", hint: "Won't be long." },
   ready: { label: "Ready", hint: "On its way over." },
   completed: { label: "Served", hint: "Enjoy." },
@@ -455,6 +459,19 @@ function OrderPanel({
         <p className="mt-0.5 text-[13.5px] text-[color:var(--accent-strong)] opacity-80">
           {status.hint} Order #{order.dailyNumber}.
         </p>
+      </div>
+
+      {/* Always on, never behind a tap. This is the thing they are waiting
+          on, and the whole point of the accept step is that a diner sees it
+          happen. */}
+      <div className="mt-4 px-1">
+        <OrderTimeline
+          steps={buildTimeline(order.events ?? [], {
+            status: order.status,
+            showUpcoming: true,
+          })}
+          tone="diner"
+        />
       </div>
 
       {batches.map(([batch, items]) => (
