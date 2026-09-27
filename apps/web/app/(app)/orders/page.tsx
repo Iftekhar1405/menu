@@ -7,14 +7,17 @@ import { createFreshness } from "@/lib/freshness";
 import { useSession } from "@/components/session";
 import { useConfirm } from "@/components/confirm";
 import { Button, Empty, Segmented, cx } from "@/components/ui";
+import { buildTimeline, type OrderEvent, type OrderStatus } from "@/lib/order-timeline";
+import { OrderTimeline } from "@/components/order/timeline";
 
-type Status = "placed" | "preparing" | "ready" | "completed" | "cancelled";
+type Status = OrderStatus;
 
 interface Order {
   id: string;
   status: Status;
   dailyNumber: number;
   placedAt: string;
+  isRunning: boolean;
   table: { id: string; label: string };
   items: {
     id: string;
@@ -27,7 +30,8 @@ interface Order {
 }
 
 const COLUMNS: { status: Status; title: string; next?: Status; nextLabel?: string }[] = [
-  { status: "placed", title: "New", next: "preparing", nextLabel: "Start" },
+  { status: "placed", title: "New", next: "accepted", nextLabel: "Accept" },
+  { status: "accepted", title: "Accepted", next: "preparing", nextLabel: "Start" },
   { status: "preparing", title: "Being made", next: "ready", nextLabel: "Ready" },
   { status: "ready", title: "Ready", next: "completed", nextLabel: "Served" },
 ];
@@ -191,10 +195,10 @@ export default function OrdersPage() {
       ) : (
         <>
           {/*
-           * A phone cannot show three columns side by side, and stacking them
+           * A phone cannot show four columns side by side, and stacking them
            * puts Ready — the one staff reach for most — below everything
            * being made. So on a phone the board becomes one column at a time,
-           * chosen from a segmented control that keeps all three counts in
+           * chosen from a segmented control that keeps all four counts in
            * view. From `sm:` up the real board returns.
            */}
           <div className="mb-4 sm:hidden">
@@ -204,13 +208,18 @@ export default function OrdersPage() {
               onChange={setLane}
               options={COLUMNS.map((c) => ({
                 value: c.status,
-                label: c.title,
+                // Shortened labels for the phone segmented control — four
+                // options at full width clips at 360px.
+                label: c.status === "placed" ? "New"
+                  : c.status === "accepted" ? "Taken"
+                  : c.status === "preparing" ? "Making"
+                  : "Ready",
                 badge: (grouped.get(c.status) ?? []).length,
               }))}
             />
           </div>
 
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {COLUMNS.map((column) => {
               const list = grouped.get(column.status) ?? [];
               const shown = column.status === lane;
@@ -237,6 +246,7 @@ export default function OrdersPage() {
                         now={now}
                         currency={current.currency}
                         busy={busy === order.id}
+                        businessId={current.id}
                         nextLabel={column.nextLabel}
                         onAdvance={() => column.next && void advance(order, column.next)}
                         onCancel={() => void advance(order, "cancelled")}
@@ -334,48 +344,15 @@ function ServedToday({
               0,
             );
             return (
-              <li
+              <ServedOrderRow
                 key={order.id}
-                className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-line bg-surface px-4 py-3"
-              >
-                <span className="text-[14px] font-medium">
-                  Table {order.table.label}
-                </span>
-                <span className="tnum text-[13px] text-faint">
-                  #{order.dailyNumber}
-                </span>
-                {order.status === "cancelled" ? (
-                  <span className="rounded-full bg-[#FDF3F2] px-2 py-0.5 text-[12px] font-medium text-[#8C1D18]">
-                    Cancelled
-                  </span>
-                ) : (
-                  <span className="text-[13px] text-muted">
-                    {order.items.reduce((n, i) => n + i.quantity, 0)} items
-                  </span>
-                )}
-                <span className="tnum ml-auto text-[14px] font-semibold">
-                  {formatMoney(String(total), currency)}
-                </span>
-                {order.status === "completed" && (
-                  <span className="flex gap-1.5">
-                    <Button
-                      size="sm"
-                      loading={busy === `${order.id}:bill`}
-                      onClick={() => void download(order, "bill")}
-                    >
-                      Bill
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      loading={busy === `${order.id}:receipt`}
-                      onClick={() => void download(order, "receipt")}
-                    >
-                      Receipt
-                    </Button>
-                  </span>
-                )}
-              </li>
+                order={order}
+                total={total}
+                currency={currency}
+                businessId={businessId}
+                busy={busy}
+                onDownload={download}
+              />
             );
           })}
         </ul>
@@ -384,11 +361,108 @@ function ServedToday({
   );
 }
 
+function ServedOrderRow({
+  order,
+  total,
+  currency,
+  businessId,
+  busy,
+  onDownload,
+}: {
+  order: Order;
+  total: number;
+  currency: string;
+  businessId: string;
+  busy: string | null;
+  onDownload: (order: Order, format: "bill" | "receipt") => void;
+}) {
+  const [openTimeline, setOpenTimeline] = useState(false);
+  const [events, setEvents] = useState<OrderEvent[] | null>(null);
+
+  useEffect(() => {
+    if (!openTimeline) return;
+    let live = true;
+    void api
+      .get<OrderEvent[]>(`/businesses/${businessId}/orders/${order.id}/events`)
+      .then((rows) => live && setEvents(rows))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [openTimeline, businessId, order.id]);
+
+  return (
+    <li className="rounded-2xl border border-line bg-surface px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <button
+          type="button"
+          onClick={() => setOpenTimeline((o) => !o)}
+          aria-expanded={openTimeline}
+          className="flex min-w-0 flex-1 items-center gap-4 text-left"
+        >
+          <span className="text-[14px] font-medium">Table {order.table.label}</span>
+          <span className="tnum text-[13px] text-faint">#{order.dailyNumber}</span>
+          {order.status === "cancelled" ? (
+            <span className="rounded-full bg-[#FDF3F2] px-2 py-0.5 text-[12px] font-medium text-[#8C1D18]">
+              Cancelled
+            </span>
+          ) : (
+            <span className="text-[13px] text-muted">
+              {order.items.reduce((n, i) => n + i.quantity, 0)} items
+            </span>
+          )}
+          <span className="ml-auto text-[13px] text-muted">{openTimeline ? "▴" : "▾"}</span>
+        </button>
+        <span className="tnum text-[14px] font-semibold">
+          {formatMoney(String(total), currency)}
+        </span>
+        {order.status === "completed" && (
+          <span className="flex gap-1.5">
+            <Button
+              size="sm"
+              loading={busy === `${order.id}:bill`}
+              onClick={() => onDownload(order, "bill")}
+            >
+              Bill
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              loading={busy === `${order.id}:receipt`}
+              onClick={() => onDownload(order, "receipt")}
+            >
+              Receipt
+            </Button>
+          </span>
+        )}
+      </div>
+
+      {openTimeline && (
+        <div className="mt-3 border-t border-line pt-3">
+          {events === null ? (
+            <p className="text-[12.5px] text-faint">Loading…</p>
+          ) : (
+            <OrderTimeline
+              steps={buildTimeline(events, {
+                status: order.status,
+                showUpcoming: false,
+              })}
+              tone="staff"
+              showGaps
+            />
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
 function OrderCard({
   order,
   now,
   currency,
   busy,
+  businessId,
   nextLabel,
   onAdvance,
   onCancel,
@@ -398,11 +472,33 @@ function OrderCard({
   now: number;
   currency: string;
   busy: boolean;
+  businessId: string;
   nextLabel?: string;
   onAdvance: () => void;
   onCancel: () => void;
   onBill: (format: "bill" | "receipt") => void;
 }) {
+  const [openTimeline, setOpenTimeline] = useState(false);
+  const [events, setEvents] = useState<OrderEvent[] | null>(null);
+
+  // Fetched on expand rather than embedded in the board's response: this
+  // screen polls two scopes every five seconds, and carrying six rows per
+  // order in both — forever, for a panel that is usually shut — is a poor
+  // trade. Refetched when the order advances so an open panel stays true.
+  useEffect(() => {
+    if (!openTimeline) return;
+    let live = true;
+    void api
+      .get<OrderEvent[]>(`/businesses/${businessId}/orders/${order.id}/events`)
+      .then((rows) => live && setEvents(rows))
+      // Left null on failure: a timeline that will not load is worth less
+      // than the card it is attached to, and the card still works.
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [openTimeline, businessId, order.id, order.status]);
+
   const minutes = Math.max(0, Math.floor((now - new Date(order.placedAt).getTime()) / 60000));
 
   const batches = useMemo(() => {
@@ -419,15 +515,56 @@ function OrderCard({
   );
 
   return (
-    <article className="rounded-2xl border border-line bg-surface p-4 shadow-card">
+    <article
+      className={cx(
+        "rounded-2xl border bg-surface p-4 shadow-card",
+        // Running orders get an accent ring so they visually pop to the top
+        // of their column without requiring the owner to read every label.
+        order.isRunning ? "border-[color:var(--accent)] ring-1 ring-[color:var(--accent)]" : "border-line",
+      )}
+    >
       <header className="flex items-baseline justify-between gap-3">
-        <h3 className="font-display text-[16px] font-semibold">
-          Table {order.table.label}
-        </h3>
-        <span className="tnum text-[13px] text-faint">
-          #{order.dailyNumber} · {minutes === 0 ? "just now" : `${minutes}m`}
-        </span>
+        <button
+          type="button"
+          onClick={() => setOpenTimeline((o) => !o)}
+          aria-expanded={openTimeline}
+          className="flex min-w-0 flex-1 items-baseline justify-between gap-3 text-left"
+        >
+          <span className="flex min-w-0 items-baseline gap-2">
+            <h3 className="font-display text-[16px] font-semibold">
+              Table {order.table.label}
+            </h3>
+            {order.isRunning && (
+              <span className="shrink-0 rounded-full bg-[color:var(--accent)] px-2 py-0.5 text-[11px] font-semibold text-white">
+                Running order
+              </span>
+            )}
+          </span>
+          <span className="tnum shrink-0 text-[13px] text-faint">
+            #{order.dailyNumber} · {minutes === 0 ? "just now" : `${minutes}m`}
+            <span aria-hidden className="ml-1.5">{openTimeline ? "▴" : "▾"}</span>
+          </span>
+        </button>
       </header>
+
+      {openTimeline && (
+        <div className="mt-3 border-t border-line pt-3">
+          {events === null ? (
+            <p className="text-[12.5px] text-faint">Loading…</p>
+          ) : (
+            <OrderTimeline
+              steps={buildTimeline(events, {
+                status: order.status,
+                // Staff know what comes next — the button says so. What they
+                // are reading for is how long each stage actually took.
+                showUpcoming: false,
+              })}
+              tone="staff"
+              showGaps
+            />
+          )}
+        </div>
+      )}
 
       {batches.map(([batch, items]) => (
         <div key={batch} className="mt-3">
