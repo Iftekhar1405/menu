@@ -70,6 +70,7 @@ model User {
   businesses     Business[]
   otpChallenges  OtpChallenge[]
   refreshTokens  RefreshToken[]
+  pushSubscriptions PushSubscription[]
 
   @@map("users")
 }
@@ -150,6 +151,29 @@ model Business {
   serviceChargeRate    Decimal @default(0) @map("service_charge_rate") @db.Decimal(5, 2)
   receiptFooter        String? @map("receipt_footer")
 
+  // ── Running orders ───────────────────────────────────────────────────────
+  /// A table that orders again this soon after being served is mid-meal, and
+  /// its new order is flagged and sorted to the top of the board. Decided by
+  /// `place_table_round` when the order row is created — see the migration.
+  runningOrderEnabled    Boolean @default(true) @map("running_order_enabled")
+  /// Minutes, 5–180 (checked in the database). Roughly a starters-then-mains
+  /// gap by default.
+  runningOrderWindowMins Int     @default(45) @map("running_order_window_mins")
+
+  // ── Cancelling an order ──────────────────────────────────────────────────
+  /// Off by default. A kitchen that has already started cooking is the norm,
+  /// so letting a diner call an order back is something an owner opts into
+  /// rather than something they have to discover and switch off.
+  cancellationEnabled      Boolean       @default(false) @map("cancellation_enabled")
+  /// Minutes, measured from when each line was ordered rather than from the
+  /// order — otherwise a second round would quietly reopen the first.
+  cancellationWindowMins   Int           @default(2) @map("cancellation_window_mins")
+  /// Which board columns still allow it. Empty means nobody can cancel, which
+  /// is a coherent thing for an owner to have ticked their way into.
+  cancellationStatuses     OrderStatus[] @default([placed]) @map("cancellation_statuses")
+  /// Whether a diner may drop a single dish, or only the whole order.
+  cancellationItemsEnabled Boolean       @default(true) @map("cancellation_items_enabled")
+
   createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
   /// Bumped on every menu mutation; drives public payload cache busting.
@@ -161,10 +185,13 @@ model Business {
   views      MenuView[]
   tables     Table[]
   orders     Order[]
+  orderEvents OrderEvent[]
   bills      Bill[]
   ratings    OrderRating[]
   prompts    ReviewPrompt[]
   merchOrders MerchOrder[]
+  notifications Notification[]
+  cancellations OrderItemCancellation[]
 
   @@index([ownerId])
   @@map("businesses")
@@ -270,6 +297,9 @@ model MenuView {
 
 enum OrderStatus {
   placed
+  /// Staff have seen it and taken it on. The diner's screen says so within a
+  /// second; the kitchen has not necessarily started work.
+  accepted
   preparing
   ready
   completed
@@ -291,6 +321,7 @@ model Table {
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   orders   Order[]
+  notifications Notification[]
 
   @@index([businessId, position])
   @@map("tables")
@@ -307,14 +338,22 @@ model Order {
   dailyNumber Int         @map("daily_number")
   placedAt    DateTime    @default(now()) @map("placed_at") @db.Timestamptz(6)
   completedAt DateTime?   @map("completed_at") @db.Timestamptz(6)
+  /// This table ordered again inside the business's running-order window —
+  /// they are mid-meal, not newly seated. Written once, when the order is
+  /// created, and never recomputed: shortening the window tomorrow must not
+  /// un-flag an order that was a genuine return today. Staff can clear it.
+  isRunning   Boolean     @default(false) @map("is_running")
   updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
   note        String?
 
   business Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
   table    Table       @relation(fields: [tableId], references: [id], onDelete: Cascade)
   items    OrderItem[]
+  events   OrderEvent[]
   bill     Bill?
   rating   OrderRating?
+  notifications Notification[]
+  cancellations OrderItemCancellation[]
 
   @@unique([businessId, businessDay, dailyNumber])
   @@index([businessId, status])
@@ -342,10 +381,84 @@ model OrderItem {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  cancellations OrderItemCancellation[]
 
   @@index([orderId, batch])
   @@index([businessId])
   @@map("order_items")
+}
+
+enum CancellationReason {
+  mistake
+  changed_mind
+  wrong_item
+  too_slow
+  other
+}
+
+enum CancelledBy {
+  diner
+  staff
+}
+
+/// One cancellation of one line, counted in units.
+///
+/// The ledger exists because `order_items` deliberately does not remember:
+/// cancelling decrements the line's quantity, and a line cancelled to nothing
+/// is deleted outright. That keeps every existing reader — the bill above all
+/// — correct without any of them learning what a cancellation is. The price
+/// of that is that the history has to live somewhere, and this is it, which
+/// is why the row carries its own snapshots rather than reading them back
+/// through `orderItemId`.
+model OrderItemCancellation {
+  id          String  @id @default(uuid()) @db.Uuid
+  businessId  String  @map("business_id") @db.Uuid
+  orderId     String  @map("order_id") @db.Uuid
+  /// Null once the line it came from was cancelled in full and removed.
+  orderItemId String? @map("order_item_id") @db.Uuid
+
+  /// How many units went. The line keeps whatever is still live.
+  quantity Int
+
+  nameSnapshot    String  @map("name_snapshot")
+  variantSnapshot String? @map("variant_snapshot")
+  unitPrice       Decimal @map("unit_price") @db.Decimal(10, 2)
+
+  reason      CancellationReason
+  /// Free text the diner may add, and must add when the reason is `other`.
+  remark      String?
+  cancelledBy CancelledBy @default(diner) @map("cancelled_by")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  business  Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  order     Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItem OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([businessId, createdAt])
+  @@map("order_item_cancellations")
+}
+
+/// One thing that happened to an order, in the order it happened.
+///
+/// Written by two authors: `place_table_round` logs the round (it is the only
+/// thing that knows its contents), and an AFTER UPDATE trigger on `orders`
+/// logs every status change. Read by both screens and never updated.
+model OrderEvent {
+  id         BigInt   @id @default(autoincrement())
+  orderId    String   @map("order_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  /// A status name, or "round_added". Text rather than the enum: most future
+  /// kinds are not statuses.
+  kind       String
+  data       Json     @default("{}")
+  at         DateTime @default(now()) @db.Timestamptz(6)
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, id])
+  @@map("order_events")
 }
 
 
@@ -535,4 +648,60 @@ model MerchOrderItem {
 
   @@index([orderId])
   @@map("merch_order_items")
+}
+
+/// The staff inbox.
+///
+/// Diners deliberately have no equivalent: they need their current order,
+/// not a history, and `get_table_order` already returns that. Everything
+/// here is therefore staff-facing, which is why there is no audience column.
+model Notification {
+  /// Identity and cursor in one column. Clients refetch `?since=<id>` on
+  /// every wake-up — reconnect, tab focus, fallback poll — so a broadcast
+  /// that never arrived costs nothing. BigInt rather than Int because the
+  /// counter is global across tenants; it is narrowed to a JS number at the
+  /// API boundary, which is exact far past anything a serial4 would hold.
+  id         BigInt    @id @default(autoincrement())
+  businessId String    @map("business_id") @db.Uuid
+  orderId    String?   @map("order_id") @db.Uuid
+  tableId    String?   @map("table_id") @db.Uuid
+  /// "order.placed", "order.round_added". Kept as text, not an enum: adding
+  /// a kind should not need a migration on a table that is pure append.
+  kind       String
+  /// Rendered once, at emit time, by notifications/events.ts. The toast, the
+  /// bell row and the pushed notification all read these same two strings,
+  /// so they cannot drift into describing the same event differently.
+  title      String
+  body       String
+  data       Json      @default("{}")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  readAt     DateTime? @map("read_at") @db.Timestamptz(6)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  order    Order?   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  table    Table?   @relation(fields: [tableId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, id])
+  @@map("notifications")
+}
+
+/// One row per browser that agreed to be pushed to. Per device, not per
+/// user: an owner with a counter tablet and a phone has two.
+model PushSubscription {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  /// The push service's URL for this device. Unique because re-subscribing
+  /// the same browser must update the row, not accumulate duplicates that
+  /// each deliver the same notification.
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }

@@ -1,0 +1,12 @@
+-- The `accepted` status.
+--
+-- Alone in its own migration on purpose. Postgres will not let a new enum
+-- value be *used* in the transaction that added it, and Prisma runs each
+-- migration in one — so the table, trigger and functions that name
+-- 'accepted' as a literal live in the next folder. Collapsing the two fails
+-- at deploy time rather than at review time.
+--
+-- BEFORE 'preparing', not appended. listForBusiness orders by status ASC and
+-- Postgres sorts an enum by declaration order; appending would sort accepted
+-- orders after cancelled ones.
+ALTER TYPE "OrderStatus" ADD VALUE 'accepted' BEFORE 'preparing';
