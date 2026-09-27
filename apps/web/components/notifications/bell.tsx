@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sheet, cx } from "@/components/ui";
+import { Sheet, SheetGrabber, cx } from "@/components/ui";
 import { relativeTime } from "@/lib/notifications/relative-time";
 import { needsHomeScreenInstall } from "@/lib/notifications/permission";
 import type { FeedItem } from "@/lib/notifications/feed";
@@ -79,7 +79,8 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Sheet label="Notifications" side="side" onClose={onClose}>
+    <Sheet label="Notifications" side="side" onClose={onClose} className="sm:h-full sm:max-h-full sm:rounded-none max-h-[92dvh] rounded-t-[20px] sm:max-w-[460px]">
+      <SheetGrabber />
       <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
         <h2 className="text-[15px] font-medium">Notifications</h2>
         <div className="flex items-center gap-1">

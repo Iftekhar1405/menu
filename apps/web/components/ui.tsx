@@ -337,7 +337,9 @@ export function Sheet({
     <div
       className={cx(
         "fixed inset-0 z-40 flex",
-        side === "side" ? "sm:justify-end" : "items-end sm:items-center sm:justify-center",
+        side === "side"
+          ? "items-end sm:items-stretch sm:justify-end"
+          : "items-end sm:items-center sm:justify-center",
       )}
     >
       {/* Presentational: closing is already offered by the sheet's own Done
