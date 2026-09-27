@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { requestOrigin } from "@/lib/table-claim";
+import { requestOrigin } from "@/lib/request-origin";
 import { TABLE_COOKIE, tableCookieOptions } from "@/lib/table-session";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -31,6 +31,10 @@ export async function GET(
     body: JSON.stringify({ token }),
     cache: "no-store",
   }).catch(() => null);
+
+  // The host they scanned on, not a configured one: the cookie below is
+  // scoped to whichever host sets it, so sending them anywhere else loses
+  // the session on arrival.
 
   if (!res || !res.ok) {
     // An unknown or retired card sends them to the scanner rather than an
