@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import type { Env } from "../config/env";
+import type { Env } from "src/config/env";
 import {
   NotificationChannel,
   OtpPurposeName,

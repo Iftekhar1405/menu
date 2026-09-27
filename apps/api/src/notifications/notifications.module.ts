@@ -1,10 +1,10 @@
 import { Global, Logger, Module } from "@nestjs/common";
 import { loadEnv } from "../config/env";
-import { ConsoleDriver } from "./console.driver";
-import { NotificationDispatcher } from "./dispatcher";
-import { EmailDriver } from "./email.driver";
-import { NOTIFICATION_CHANNELS, NotificationChannel } from "./notification.channel";
-import { WhatsAppDriver } from "./whatsapp.driver";
+import { ConsoleDriver } from "src/otp/channels/console.driver";
+import { NOTIFICATION_CHANNELS, NotificationChannel } from "src/otp/channels/notification.channel";
+import { WhatsAppDriver } from "src/otp/channels/whatsapp.driver";
+import { EmailDriver } from "src/otp/channels/email.driver";
+import { NotificationDispatcher } from "src/otp/channels/dispatcher";
 
 /**
  * Picks a driver per channel based on which credentials exist. Absent

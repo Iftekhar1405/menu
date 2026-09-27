@@ -3,9 +3,9 @@ import type { OtpPurpose } from "@prisma/client";
 import { TooManyRequestsException } from "../common/exceptions";
 import { randomInt } from "node:crypto";
 import { PinService } from "../auth/pin.service";
-import { NotificationDispatcher } from "../notifications/dispatcher";
-import type { UserContact } from "../notifications/notification.channel";
+    import { NotificationDispatcher } from "src/otp/channels/dispatcher";
 import { PrismaService } from "../prisma/prisma.service";
+import { UserContact } from "./channels/notification.channel";
 
 const CODE_TTL_MINUTES = 10;
 const MAX_ATTEMPTS = 5;
