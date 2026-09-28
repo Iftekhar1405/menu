@@ -259,10 +259,23 @@ export function NotificationsProvider({
     // Called from a click, never on load: the browser requires a gesture for
     // push subscription, and an unprompted dialog is the reliable way to get
     // a permanent denial.
-    recordPromptAnswered(browserPromptStore());
     setOfferAlerts(false);
 
     const permission = await Notification.requestPermission();
+
+    // Record only after the browser answers. If the user dismisses the OS
+    // dialog without choosing, permission stays "default" and we don't write
+    // the record — so the offer card returns next session and they get another
+    // chance. Writing before the answer is what caused the one-shot behaviour.
+    if (permission !== "default") {
+      recordPromptAnswered(browserPromptStore());
+    } else {
+      // They dismissed without answering — put the card back so they see it
+      // next time they open the panel.
+      setOfferAlerts(true);
+      return;
+    }
+
     setAlertsEnabled(permission === "granted");
     if (permission !== "granted" || !businessId) return;
 
