@@ -128,9 +128,10 @@ export function summariseNewestRound(
         quantity: i.quantity,
       })),
       total: sumMoney(batch),
-      // Only a first batch can be a return: a later round lands on an order
-      // that is still open, which means the table never left.
-      isRunning: newest === 1 && order.isRunning === true,
+      // isRunning on any batch — the DB now embeds it in every round's event
+      // data, so a second round from a returning table still says "Ordered
+      // again" rather than the generic "Added to Table X".
+      isRunning: order.isRunning === true,
     },
   };
 }
