@@ -63,10 +63,14 @@ async function proxy(req: NextRequest, path: string): Promise<NextResponse> {
   // domain, and strip Domain= if present so the browser does not reject it.
   upstream.headers.forEach((value, key) => {
     if (key.toLowerCase() === "set-cookie") {
-      // Drop Domain= — the browser will assign the cookie to the current
-      // origin, which is what we want.
       const rewritten = value
+        // Drop Domain= — the browser will assign the cookie to the current
+        // origin, which is what we want.
         .replace(/;\s*domain=[^;]*/gi, "")
+        // Rewrite path=/auth → path=/api/auth so the browser sends the cookie
+        // back when it hits /api/auth/refresh. Without this the path mismatch
+        // means the cookie is invisible and every refresh looks like no session.
+        .replace(/;\s*path=\/auth\b/gi, "; Path=/api/auth")
         // Force SameSite=Lax — same-origin cookies do not need None, and Lax
         // is the right default here (protects against CSRF while working on
         // every browser including Safari ITP).
