@@ -1,6 +1,16 @@
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 /**
+ * Auth endpoints are proxied through Next.js so the refresh cookie stays on
+ * the same origin as the web app (menu.irad.solutions). iOS Safari and locked
+ * Android Chrome block cookies from third-party domains regardless of
+ * SameSite=None, which made every page load after a tab close look like a
+ * session expiry. Routing /auth/* through /api/auth/* keeps the cookie
+ * first-party without any change to the API server.
+ */
+const AUTH_PROXY = "/api/auth";
+
+/**
  * The access token lives in a module variable, never in localStorage.
  *
  * A token in localStorage is readable by any script that ends up on the page.
@@ -80,7 +90,13 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
-  const res = await fetchWithDeadline(`${API}${path}`, {
+  // Auth routes go through the same-origin Next.js proxy so the refresh
+  // cookie stays on menu.irad.solutions. All other API calls go direct.
+  const url = path.startsWith("/auth")
+    ? `${AUTH_PROXY}${path.slice("/auth".length)}`
+    : `${API}${path}`;
+
+  const res = await fetchWithDeadline(url, {
     method: opts.method ?? "GET",
     headers,
     credentials: "include",
@@ -139,7 +155,7 @@ export function restoreSession(): Promise<boolean> {
 
   inFlight = (async () => {
     try {
-      const res = await fetchWithDeadline(`${API}/auth/refresh`, {
+      const res = await fetchWithDeadline(`${AUTH_PROXY}/refresh`, {
         method: "POST",
         credentials: "include",
       });
@@ -175,7 +191,7 @@ export function restoreSession(): Promise<boolean> {
 }
 
 export async function logout(): Promise<void> {
-  await fetch(`${API}/auth/logout`, { method: "POST", credentials: "include" }).catch(
+  await fetch(`${AUTH_PROXY}/logout`, { method: "POST", credentials: "include" }).catch(
     () => undefined,
   );
   accessToken = null;
