@@ -66,17 +66,17 @@ BEGIN
     SELECT COALESCE(MAX(batch), 0) + 1 INTO v_batch
     FROM order_items WHERE order_id = v_order_id;
 
-    -- A new round on a Ready order means the kitchen has more to do.
-    -- Move it back to 'placed' so staff see it in the New column rather
-    -- than assuming it is already on the way to the table.
-    IF v_existing_status = 'ready' THEN
+    -- A new round always resets the order to 'placed' so staff see it in
+    -- the New column and go through Accept → Start again for the new items.
+    -- Without this, Round 2 inherits whatever status Round 1 left behind
+    -- (accepted, preparing, ready) and the kitchen walks past it.
+    IF v_existing_status <> 'placed' THEN
       UPDATE orders SET status = 'placed', updated_at = now() WHERE id = v_order_id;
-      -- The trigger fires on status change and logs the 'placed' event.
+      -- The trigger fires on status change and logs the event automatically.
     END IF;
 
     -- Carry the running flag so notifications can say "Ordered again" on
-    -- later rounds too — the table came back, which is always worth noting
-    -- regardless of which round this is.
+    -- later rounds too — the table came back, which is always worth noting.
     SELECT is_running INTO v_is_running FROM orders WHERE id = v_order_id;
 
   ELSE
