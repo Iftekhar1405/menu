@@ -25,7 +25,7 @@ const W = 105;
 const H = W * CELL_ASPECT.compact;
 
 export async function buildCompactCellSvg(opts: CompactCellOptions): Promise<string> {
-  const accent = opts.accent ?? "#1D6F5C";
+  const accent = opts.accent ?? "#9A6700";
 
   const qrSize = 84;
   const qrX = (W - qrSize) / 2;

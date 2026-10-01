@@ -28,7 +28,7 @@ export function sampleMenu(overrides?: Partial<PublicMenu["theme"]>): PublicMenu
     },
     theme: {
       layout: "editorial",
-      accent: "#1D6F5C",
+      accent: "#9A6700",
       fontPairing: "inter-fraunces",
       ...overrides,
     },

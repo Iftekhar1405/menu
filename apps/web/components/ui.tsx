@@ -29,12 +29,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   };
   const variants = {
     primary:
-      "bg-[var(--accent)] text-white hover:bg-[var(--accent-strong)] active:scale-[0.985]",
+      "bg-[var(--accent)] text-white hover:bg-[var(--accent-strong)] active:scale-[0.985] shadow-card hover:shadow-lift",
     secondary:
-      "bg-surface text-ink border border-line hover:bg-raised active:scale-[0.985]",
-    ghost: "text-muted hover:text-ink hover:bg-[rgba(17,17,19,0.04)]",
+      "bg-surface text-ink border border-line hover:bg-raised hover:border-[var(--accent-soft)] active:scale-[0.985] shadow-card",
+    ghost: "text-muted hover:text-ink hover:bg-[var(--raised)]",
     danger:
-      "bg-surface text-[#B3261E] border border-[#F0D5D3] hover:bg-[#FDF3F2] active:scale-[0.985]",
+      "bg-surface text-[#B3261E] border border-[#F0D5D3] hover:bg-[#FDF3F2] active:scale-[0.985] dark:border-[rgba(179,38,30,0.3)] dark:hover:bg-[rgba(179,38,30,0.08)]",
   };
 
   return (
@@ -102,7 +102,7 @@ export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTML
         ref={ref}
         className={cx(
           "spring h-11 w-full rounded-xl border border-line bg-surface px-3 text-[16px] text-ink sm:text-[15px]",
-          "placeholder:text-faint hover:border-[#d6d9de] focus:border-[var(--accent)]",
+          "placeholder:text-faint hover:border-[var(--accent-soft)] focus:border-[var(--accent)] focus:bg-surface",
           className,
         )}
         {...rest}
@@ -120,7 +120,7 @@ export const Textarea = forwardRef<
       ref={ref}
       className={cx(
         "spring w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-[16px] text-ink sm:text-[15px]",
-        "placeholder:text-faint hover:border-[#d6d9de] focus:border-[var(--accent)]",
+        "placeholder:text-faint hover:border-[var(--accent-soft)] focus:border-[var(--accent)]",
         className,
       )}
       {...rest}
@@ -137,7 +137,7 @@ export const Select = forwardRef<
       ref={ref}
       className={cx(
         "spring h-11 w-full appearance-none rounded-xl border border-line bg-surface px-3 text-[16px] text-ink sm:text-[15px]",
-        "hover:border-[#d6d9de] focus:border-[var(--accent)]",
+        "hover:border-[var(--accent-soft)] focus:border-[var(--accent)]",
         className,
       )}
       {...rest}
@@ -176,7 +176,7 @@ export function Toggle({
         <span
           className={cx(
             "spring flex h-6 w-10 shrink-0 items-center rounded-full px-0.5",
-            checked ? "bg-[var(--accent)]" : "bg-line",
+            checked ? "bg-[var(--accent)] shadow-card" : "bg-line",
           )}
         >
           <span
@@ -208,7 +208,7 @@ export function Banner({
       className={cx(
         "rounded-xl px-3.5 py-3 text-[13.5px] leading-relaxed",
         tone === "error"
-          ? "bg-[#FDF3F2] text-[#8C1D18] border border-[#F0D5D3]"
+          ? "bg-[rgba(179,38,30,0.08)] text-[#8C1D18] border border-[rgba(179,38,30,0.2)] dark:text-[#f87171] dark:bg-[rgba(179,38,30,0.14)] dark:border-[rgba(179,38,30,0.25)]"
           : "bg-[var(--accent-soft)] text-[var(--accent-strong)]",
       )}
     >
@@ -231,7 +231,10 @@ export function Empty({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-dashed border-line bg-surface px-6 py-12 text-center">
+    <div className="rounded-2xl border-2 border-dashed border-line bg-surface px-6 py-14 text-center">
+      <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-2xl">
+        📋
+      </div>
       <h3 className="font-display text-[17px] font-semibold text-ink">{title}</h3>
       <p className="mx-auto mt-1.5 max-w-sm text-[14px] leading-relaxed text-muted">{body}</p>
       {action && <div className="mt-5 flex justify-center">{action}</div>}
@@ -292,7 +295,7 @@ export function Segmented<T extends string>({
               "spring flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 text-[13.5px] font-medium",
               active
                 ? "bg-surface text-ink shadow-card"
-                : "text-muted hover:text-ink",
+                : "text-muted hover:text-ink hover:bg-[var(--raised)]",
             )}
           >
             <span className="truncate">{option.label}</span>
@@ -348,7 +351,7 @@ export function Sheet({
       <div
         aria-hidden="true"
         onClick={onClose}
-        className="animate-fade-in absolute inset-0 bg-[rgba(17,17,19,0.32)]"
+        className="animate-fade-in absolute inset-0 bg-[rgba(5,6,10,0.48)] dark:bg-[rgba(0,0,0,0.6)] backdrop-blur-[2px]"
       />
 
       <div
@@ -377,7 +380,7 @@ export function Sheet({
 export function SheetGrabber() {
   return (
     <div aria-hidden="true" className="flex justify-center pt-2 sm:hidden">
-      <div className="h-1 w-9 rounded-full bg-[rgba(17,17,19,0.16)]" />
+      <div className="h-1 w-9 rounded-full bg-line" />
     </div>
   );
 }

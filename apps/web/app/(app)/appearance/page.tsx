@@ -15,13 +15,9 @@ import type { Category } from "@/lib/types";
 import { useSession } from "@/components/session";
 import { PreviewButton, PreviewRail } from "@/components/menu-preview";
 import { Banner, Button, cx } from "@/components/ui";
+import { ThemeToggle } from "@/components/theme-toggle";
 
-/**
- * Three knobs, one live phone. The owner is choosing how their menu reads at
- * arm's length in a dim room, which is not a decision anyone can make from a
- * row of swatches.
- */
-export default function TemplatesPage() {
+export default function AppearancePage() {
   const { current, refreshBusinesses } = useSession();
   const [categories, setCategories] = useState<Category[]>([]);
   const [layout, setLayout] = useState<ThemeLayout>("editorial");
@@ -44,21 +40,11 @@ export default function TemplatesPage() {
     void load();
   }, [load]);
 
-  // The whole product recolours as they browse, then reverts if they leave
-  // without saving.
   const preview = useMemo(() => {
     if (!current) return null;
     const hasItems = categories.some((c) => c.items.length > 0);
-    // An empty menu makes every layout look identical, so the sample stands in
-    // until there is something real to judge.
-    if (!hasItems) {
-      return sampleMenu({ layout, accent, fontPairing: font });
-    }
-    return toPreviewMenu(current, categories, {
-      layout,
-      accent,
-      fontPairing: font,
-    });
+    if (!hasItems) return sampleMenu({ layout, accent, fontPairing: font });
+    return toPreviewMenu(current, categories, { layout, accent, fontPairing: font });
   }, [current, categories, layout, accent, font]);
 
   if (!current) return null;
@@ -82,12 +68,8 @@ export default function TemplatesPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2200);
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "Could not save that design. Try again.",
-      );
+      setError(err instanceof ApiError ? err.message : "Could not save your appearance settings. Try again.");
     } finally {
-      // In the `finally`, because without it a failed save left the button
-      // spinning for the rest of the session with nothing said about why.
       setSaving(false);
     }
   }
@@ -95,31 +77,60 @@ export default function TemplatesPage() {
   return (
     <div className="lg:grid lg:min-h-[100dvh] lg:grid-cols-[minmax(0,1fr)_400px]">
       <div className="mx-auto w-full max-w-2xl px-5 py-8 sm:px-6 sm:py-10 lg:px-10 lg:py-12">
-        <header className="mb-6 flex items-start justify-between gap-4 sm:mb-8">
+        <header className="mb-8 flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-[26px] font-semibold leading-tight tracking-tight sm:text-[30px]">
-              Design
+              Appearance
             </h1>
             <p className="mt-1 text-[14.5px] text-muted">
-              Three choices. The phone updates as you go.
+              Customise how your dashboard and menu look.
             </p>
           </div>
-          {/* Below `lg` the rail is gone, so the promise the line above makes
-              is kept by a button instead. */}
           <div className="shrink-0 lg:hidden">
             <PreviewButton menu={preview} />
           </div>
         </header>
 
-        {error && (
-          <div className="mb-6">
-            <Banner>{error}</Banner>
-          </div>
-        )}
+        {error && <div className="mb-6"><Banner>{error}</Banner></div>}
 
+        {/* ── Dashboard appearance ─────────────────────────────────────── */}
+        <section className="mb-9">
+          <ThemeToggle />
+        </section>
+
+        {/* ── Menu layout ──────────────────────────────────────────────── */}
+        {/* ── Menu accent ──────────────────────────────────────────────── */}
         <section className="mb-9">
           <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-[0.12em] text-faint">
-            Layout
+            Menu Accent
+          </h2>
+          <div className="flex flex-wrap gap-2.5">
+            {ACCENTS.map((a) => (
+              <button
+                key={a.id}
+                onClick={() => setAccent(a.hex)}
+                aria-pressed={accent === a.hex}
+                aria-label={a.name}
+                title={a.name}
+                className={cx(
+                  "spring h-11 w-11 rounded-full border-2",
+                  accent === a.hex
+                    ? "border-ink scale-110"
+                    : "border-transparent hover:scale-105",
+                )}
+                style={{ background: a.hex }}
+              />
+            ))}
+          </div>
+          <p className="hidden">
+            This colours your public menu only — use the Dashboard Theme above for the admin panel.
+          </p>
+        </section>
+
+        {/* ── Menu typography ──────────────────────────────────────────── */}
+        <section className="mb-9">
+          <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-[0.12em] text-faint">
+            Menu Layout
           </h2>
           <div className="space-y-2">
             {THEME_LAYOUTS.map((id) => {
@@ -138,7 +149,7 @@ export default function TemplatesPage() {
                   )}
                 >
                   <span className="flex items-baseline justify-between gap-3">
-                    <span className="font-display text-[15px] font-semibold">
+                    <span className="font-display text-[15px] font-semibold text-ink">
                       {meta.name}
                     </span>
                     <span className="text-[12px] text-muted">{meta.suits}</span>
@@ -154,34 +165,7 @@ export default function TemplatesPage() {
 
         <section className="mb-9">
           <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-[0.12em] text-faint">
-            Accent
-          </h2>
-          <div className="flex flex-wrap gap-2.5">
-            {ACCENTS.map((a) => (
-              <button
-                key={a.id}
-                onClick={() => setAccent(a.hex)}
-                aria-pressed={accent === a.hex}
-                aria-label={a.name}
-                title={a.name}
-                className={cx(
-                  "spring h-11 w-11 rounded-full border-2",
-                  accent === a.hex
-                    ? "border-ink scale-105"
-                    : "border-transparent hover:scale-105",
-                )}
-                style={{ background: a.hex }}
-              />
-            ))}
-          </div>
-          <p className="mt-2.5 text-[12.5px] text-faint">
-            This colours your menu — and this dashboard.
-          </p>
-        </section>
-
-        <section className="mb-9">
-          <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-[0.12em] text-faint">
-            Type
+            Menu Typography
           </h2>
           <div className="grid gap-2 sm:grid-cols-2">
             {FONT_PAIRINGS.map((f) => (
@@ -197,7 +181,7 @@ export default function TemplatesPage() {
                 )}
               >
                 <span
-                  className="block text-[19px] leading-tight"
+                  className="block text-[19px] leading-tight text-ink"
                   style={{ fontFamily: f.displayStack }}
                 >
                   {f.name}
@@ -218,7 +202,7 @@ export default function TemplatesPage() {
             loading={saving}
             disabled={!dirty}
           >
-            {dirty ? "Save design" : "Saved"}
+            {dirty ? "Save changes" : "Saved"}
           </Button>
           {saved && <span className="text-[13.5px] text-muted">Your menu is updated.</span>}
         </div>
@@ -232,4 +216,3 @@ export default function TemplatesPage() {
     </div>
   );
 }
-

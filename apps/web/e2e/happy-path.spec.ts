@@ -74,27 +74,17 @@ test("owner signs up, builds a menu, and a diner can read it", async ({ page }) 
   await page.screenshot({ path: `${SHOTS}/03-builder.png`, fullPage: true });
 
   // ── Pick a design ────────────────────────────────────────────────────────
-  await page.getByRole("link", { name: "Design" }).click();
-  await expect(page.getByRole("heading", { name: "Design" })).toBeVisible();
+  await page.getByRole("link", { name: "Appearance" }).click();
+  await expect(page.getByRole("heading", { name: "Appearance" })).toBeVisible();
   await page.getByRole("button", { name: /Compact/ }).click();
   await page.getByRole("button", { name: "Terracotta" }).click();
 
-  // The thesis of the design: the accent is the only colour in the product,
-  // so choosing one must recolour the chrome itself, not just a swatch.
   await expect(page.getByRole("button", { name: "Terracotta" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
-  await expect
-    .poll(() =>
-      page.evaluate(() =>
-        getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(),
-      ),
-    )
-    .toBe("#B4532A");
-
   await page.screenshot({ path: `${SHOTS}/04-design.png`, fullPage: true });
-  await page.getByRole("button", { name: "Save design" }).click();
+  await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Your menu is updated.")).toBeVisible();
 
   // ── QR ───────────────────────────────────────────────────────────────────

@@ -240,6 +240,45 @@ export default function SettingsPage() {
           {saved && <span className="text-[13.5px] text-muted">Saved.</span>}
         </div>
       </form>
+
+      {/* ── Danger zone ──────────────────────────────────────────────────── */}
+      <section className="mt-12 rounded-2xl border border-[rgba(179,38,30,0.25)] bg-[rgba(179,38,30,0.04)] p-5">
+        <h2 className="mb-1 font-display text-[15px] font-semibold text-[#B3261E]">
+          Warning
+        </h2>
+        <p className="text-[13.5px] leading-relaxed text-muted">
+          Permanently delete your account and all associated businesses, menus, and order history.
+          This cannot be undone.
+        </p>
+        <button
+          type="button"
+          onClick={async () => {
+            const step1 = await confirm({
+              title: "Delete your account?",
+              body: "This will permanently remove your account, all businesses, menus, and order history. You cannot undo this.",
+              confirmLabel: "Yes, continue",
+              tone: "destructive" as never,
+            });
+            if (!step1) return;
+            const step2 = await confirm({
+              title: "Are you absolutely sure?",
+              body: `Type your email or phone to confirm: ${me?.email ?? me?.phone}. All data will be gone forever.`,
+              confirmLabel: "Delete everything",
+              tone: "destructive" as never,
+            });
+            if (!step2) return;
+            try {
+              await api.del(`/me`);
+              window.location.href = "/login";
+            } catch {
+              setError("Could not delete account. Please contact support.");
+            }
+          }}
+          className="spring mt-4 inline-flex h-9 items-center rounded-xl border border-[rgba(179,38,30,0.3)] px-3.5 text-[13px] font-medium text-[#B3261E] hover:bg-[rgba(179,38,30,0.08)] active:scale-[0.985]"
+        >
+          Delete account permanently
+        </button>
+      </section>
     </div>
   );
 }

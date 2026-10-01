@@ -2,39 +2,139 @@
 @tailwind components;
 @tailwind utilities;
 
-/*
- * The product chrome is achromatic on purpose.
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Design System — menu.irad
  *
- * This is a multi-tenant menu platform: the only colour in the interface is
- * the accent the owner picked for their own menu. Everything else is a grey
- * so the product never competes with the restaurant's identity, and so that
- * changing the accent in the template picker visibly recolours the whole app
- * rather than a swatch in a corner.
- *
- * Greys are very slightly cool rather than warm. Warm-cream grounds read as
- * "artisanal cafe", which is one of the three business types here, not all
- * of them — a cinema concession stand should not look like a bakery.
- */
-:root {
-  --paper: #f6f7f8;
-  --surface: #ffffff;
-  --raised: #fbfbfc;
-  --line: #e6e8eb;
-  --ink: #111113;
-  --muted: #5c6069;
-  --faint: #8b9099;
+ * Theme tokens are declared here and overridden per color theme + mode.
+ * The accent system supports 4 named themes: amber, violet, cyan, indigo.
+ * Dark mode is triggered by .dark on <html>; system preference is the default.
+ * ───────────────────────────────────────────────────────────────────────────── */
 
-  /* Overwritten per-tenant at runtime. Pine is the default. */
-  --accent: #1d6f5c;
-  --accent-strong: #155245;
-  --accent-soft: #e6f2ee;
+/* ── Light mode defaults ──────────────────────────────────────────────────── */
+:root {
+  --paper:   #f4f5f7;
+  --surface: #ffffff;
+  --raised:  #f9fafb;
+  --glass:   rgba(255, 255, 255, 0.72);
+  --line:    #e5e7eb;
+  --ink:     #0f0f12;
+  --muted:   #52576b;
+  --faint:   #9299a8;
+
+  /* Accent — Amber (default) */
+  --accent:        #d97706;
+  --accent-strong: #b45309;
+  --accent-soft:   #fef3c7;
+  --accent-glow:   rgba(217, 119, 6, 0.22);
+  --accent-mid:    rgba(217, 119, 6, 0.12);
+  --accent-rgb:    217, 119, 6;
+
+  /* Sidebar */
+  --sidebar-bg:    #ffffff;
+  --sidebar-line:  #e5e7eb;
+
+  /* Blur chrome */
+  --chrome-bg:     rgba(255,255,255,0.82);
 
   --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-body:    "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
 
   color-scheme: light;
 }
 
+/* ── Dark mode ────────────────────────────────────────────────────────────── */
+html.dark {
+  --paper:   #0c0d10;
+  --surface: #13141a;
+  --raised:  #1a1c25;
+  --glass:   rgba(19, 20, 26, 0.76);
+  --line:    #252836;
+  --ink:     #f0f0f5;
+  --muted:   #9298b0;
+  --faint:   #5a6080;
+
+  --sidebar-bg:   #0f1018;
+  --sidebar-line: #1e2030;
+  --chrome-bg:    rgba(13, 14, 20, 0.85);
+
+  color-scheme: dark;
+}
+
+/* ── Theme: Amber (default) ──────────────────────────────────────────────── */
+html[data-theme="amber"],
+:root {
+  --accent:        #d97706;
+  --accent-strong: #b45309;
+  --accent-soft:   #fef3c7;
+  --accent-glow:   rgba(217, 119, 6, 0.22);
+  --accent-mid:    rgba(217, 119, 6, 0.12);
+  --accent-rgb:    217, 119, 6;
+}
+html.dark[data-theme="amber"],
+html.dark:not([data-theme]) {
+  --accent:        #f59e0b;
+  --accent-strong: #fbbf24;
+  --accent-soft:   rgba(245, 158, 11, 0.14);
+  --accent-glow:   rgba(245, 158, 11, 0.28);
+  --accent-mid:    rgba(245, 158, 11, 0.12);
+  --accent-rgb:    245, 158, 11;
+}
+
+/* ── Theme: Violet ───────────────────────────────────────────────────────── */
+html[data-theme="violet"] {
+  --accent:        #7c3aed;
+  --accent-strong: #6d28d9;
+  --accent-soft:   #ede9fe;
+  --accent-glow:   rgba(124, 58, 237, 0.22);
+  --accent-mid:    rgba(124, 58, 237, 0.12);
+  --accent-rgb:    124, 58, 237;
+}
+html.dark[data-theme="violet"] {
+  --accent:        #a78bfa;
+  --accent-strong: #c4b5fd;
+  --accent-soft:   rgba(167, 139, 250, 0.14);
+  --accent-glow:   rgba(167, 139, 250, 0.28);
+  --accent-mid:    rgba(167, 139, 250, 0.12);
+  --accent-rgb:    167, 139, 250;
+}
+
+/* ── Theme: Cyan ─────────────────────────────────────────────────────────── */
+html[data-theme="cyan"] {
+  --accent:        #0891b2;
+  --accent-strong: #0e7490;
+  --accent-soft:   #cffafe;
+  --accent-glow:   rgba(8, 145, 178, 0.22);
+  --accent-mid:    rgba(8, 145, 178, 0.12);
+  --accent-rgb:    8, 145, 178;
+}
+html.dark[data-theme="cyan"] {
+  --accent:        #22d3ee;
+  --accent-strong: #67e8f9;
+  --accent-soft:   rgba(34, 211, 238, 0.14);
+  --accent-glow:   rgba(34, 211, 238, 0.28);
+  --accent-mid:    rgba(34, 211, 238, 0.12);
+  --accent-rgb:    34, 211, 238;
+}
+
+/* ── Theme: Indigo ───────────────────────────────────────────────────────── */
+html[data-theme="indigo"] {
+  --accent:        #4f46e5;
+  --accent-strong: #4338ca;
+  --accent-soft:   #e0e7ff;
+  --accent-glow:   rgba(79, 70, 229, 0.22);
+  --accent-mid:    rgba(79, 70, 229, 0.12);
+  --accent-rgb:    79, 70, 229;
+}
+html.dark[data-theme="indigo"] {
+  --accent:        #818cf8;
+  --accent-strong: #a5b4fc;
+  --accent-soft:   rgba(129, 140, 248, 0.14);
+  --accent-glow:   rgba(129, 140, 248, 0.28);
+  --accent-mid:    rgba(129, 140, 248, 0.12);
+  --accent-rgb:    129, 140, 248;
+}
+
+/* ── Base ────────────────────────────────────────────────────────────────── */
 html {
   -webkit-text-size-adjust: 100%;
 }
@@ -45,6 +145,7 @@ body {
   font-family: var(--font-body);
   font-feature-settings: "cv05" 1, "ss01" 1;
   -webkit-font-smoothing: antialiased;
+  transition: background-color 280ms ease, color 280ms ease;
 }
 
 h1, h2, h3, h4 {
@@ -52,194 +153,182 @@ h1, h2, h3, h4 {
   letter-spacing: -0.02em;
 }
 
-/*
- * Money and counts use tabular figures everywhere. A menu is a price column
- * people scan vertically; proportional digits make that column ragged and
- * genuinely harder to read.
- */
+/* ── Numeric figures ─────────────────────────────────────────────────────── */
 .tnum {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }
 
-/* Utility surface: motion is fast and near-invisible. Nothing here is meant
- * to be watched — it exists to keep a change from happening abruptly. */
+/* ── Transitions ─────────────────────────────────────────────────────────── */
 .spring {
   transition:
     transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
     opacity 180ms ease-out,
     background-color 160ms ease-out,
-    border-color 160ms ease-out;
+    border-color 160ms ease-out,
+    color 160ms ease-out,
+    box-shadow 160ms ease-out;
 }
 
-/* Chrome is the only place translucency is allowed — never on content. */
+/* ── Glassmorphism chrome ────────────────────────────────────────────────── */
 .chrome-blur {
-  background: color-mix(in srgb, var(--surface) 78%, transparent);
-  backdrop-filter: saturate(1.6) blur(14px);
-  -webkit-backdrop-filter: saturate(1.6) blur(14px);
+  background: var(--chrome-bg);
+  backdrop-filter: saturate(1.8) blur(20px);
+  -webkit-backdrop-filter: saturate(1.8) blur(20px);
 }
 
-/*
- * Phone hardware.
- *
- * The viewport is declared `viewport-fit=cover` so the page paints under the
- * notch and the home indicator. That is only correct if the chrome sitting
- * against those edges pays the inset back — which is what these do. On a
- * screen without insets every one resolves to 0 and costs nothing.
- *
- * These set padding outright, so they are only for edges that have no padding
- * of their own: defined after Tailwind's utilities, they win, and a `pb-safe`
- * next to a `py-4` silently deletes the `py-4` on that side. Where an element
- * needs both, the call site adds them itself with
- * `pb-[calc(<base>+env(safe-area-inset-bottom,0px))]`, which says so plainly.
- */
-.pt-safe {
-  padding-top: env(safe-area-inset-top, 0px);
+.glass-card {
+  background: var(--glass);
+  backdrop-filter: saturate(1.4) blur(12px);
+  -webkit-backdrop-filter: saturate(1.4) blur(12px);
+  border: 1px solid var(--line);
 }
-.pb-safe {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+
+html.dark .glass-card {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.07);
 }
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+.sidebar-surface {
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--sidebar-line);
+  transition: background-color 280ms ease;
+}
+
+/* ── Safe area utilities ─────────────────────────────────────────────────── */
+.pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .px-safe {
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
 }
-
-/*
- * Horizontal room for chrome that runs edge to edge: the page gutter, or the
- * display cutout, whichever is larger. Not the cutout alone — that is zero on
- * most phones, which would leave the content flush against the glass.
- */
 .px-edge {
   padding-left: max(1.25rem, env(safe-area-inset-left, 0px));
   padding-right: max(1.25rem, env(safe-area-inset-right, 0px));
 }
 
-/*
- * How much room the bottom tab bar needs. Pages add this to their own bottom
- * padding so the last row of content clears the bar rather than hiding under
- * it. Zero once the sidebar takes over.
- */
-:root {
-  --tab-bar: 0px;
-}
+/* ── Tab bar height ──────────────────────────────────────────────────────── */
+:root { --tab-bar: 0px; }
 @media (max-width: 1023.98px) {
-  :root {
-    --tab-bar: calc(58px + env(safe-area-inset-bottom, 0px));
-  }
+  :root { --tab-bar: calc(60px + env(safe-area-inset-bottom, 0px)); }
 }
-.pb-tabs {
-  padding-bottom: calc(var(--tab-bar) + 1.5rem);
-}
+.pb-tabs { padding-bottom: calc(var(--tab-bar) + 1.5rem); }
 
-body {
-  /*
-   * Removes the 300ms Safari spends deciding whether a tap was the first half
-   * of a double-tap-to-zoom. Every control here is a single tap.
-   */
-  touch-action: manipulation;
-}
+body { touch-action: manipulation; }
 
-/*
- * Rubber-banding the whole document under a fixed tab bar looks like the bar
- * has come loose. Overscroll stays inside whichever pane is really scrolling.
- */
-.overscroll-contain-y {
-  overscroll-behavior-y: contain;
-}
+.overscroll-contain-y { overscroll-behavior-y: contain; }
 
-/* A sheet rising from the bottom edge, and a scrim fading in behind it. */
+/* ── Animations ──────────────────────────────────────────────────────────── */
 @keyframes sheet-up {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
-  }
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
 }
 @keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
-.animate-sheet-up {
-  animation: sheet-up 280ms cubic-bezier(0.32, 0.72, 0, 1);
+@keyframes scale-in {
+  from { transform: scale(0.96); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
 }
-.animate-fade-in {
-  animation: fade-in 160ms ease-out;
+@keyframes float-up {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
 }
-
-/*
- * A toast arriving.
- *
- * Deliberately not `sheet-up`, which travels its own full height — correct
- * for a panel coming off the bottom edge, far too much movement for a card
- * that simply appears. This is the shortest distance that still reads as an
- * arrival rather than a repaint. The reduced-motion block below flattens it
- * along with everything else.
- */
 @keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(-6px) scale(0.99);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
-.animate-toast-in {
-  animation: toast-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
 }
+@keyframes nav-pip-in {
+  from { transform: translateY(-50%) scaleY(0); }
+  to   { transform: translateY(-50%) scaleY(1); }
+}
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position: 200% 0; }
+}
+
+.animate-sheet-up { animation: sheet-up 300ms cubic-bezier(0.32, 0.72, 0, 1); }
+.animate-fade-in  { animation: fade-in 180ms ease-out; }
+.animate-scale-in { animation: scale-in 220ms cubic-bezier(0.22, 1, 0.36, 1); }
+.animate-float-up { animation: float-up 240ms cubic-bezier(0.22, 1, 0.36, 1); }
+.animate-toast-in { animation: toast-in 220ms cubic-bezier(0.22, 1, 0.36, 1); }
+
 @media (min-width: 1024px) {
-  /* Bottom-right on a desktop, so it rises into place instead. */
   @keyframes toast-in {
-    from {
-      opacity: 0;
-      transform: translateY(8px) scale(0.99);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
+    from { opacity: 0; transform: translateY(10px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
   }
 }
 
-/* Focus is always visible and always the accent. Keyboard users get the same
- * signal the pointer users get from hover. */
-:where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+/* ── Nav active pip ──────────────────────────────────────────────────────── */
+.nav-active-pip {
+  position: relative;
+}
+.nav-active-pip::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%) scaleY(1);
+  width: 3px;
+  height: 55%;
+  min-height: 16px;
+  background: var(--accent);
+  border-radius: 0 3px 3px 0;
+  animation: nav-pip-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── Skeleton loading ────────────────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--line) 25%,
+    var(--raised) 50%,
+    var(--line) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
   border-radius: 6px;
 }
 
+/* ── Focus ───────────────────────────────────────────────────────────────── */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+/* ── Selection ───────────────────────────────────────────────────────────── */
 ::selection {
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
 
-/* Scrollbars in the builder columns, quiet until hovered. */
+/* ── Scrollbars ──────────────────────────────────────────────────────────── */
 .scroll-quiet {
   scrollbar-width: thin;
   scrollbar-color: var(--line) transparent;
 }
-.scroll-quiet::-webkit-scrollbar { width: 10px; height: 10px; }
+.scroll-quiet::-webkit-scrollbar { width: 6px; height: 6px; }
 .scroll-quiet::-webkit-scrollbar-thumb {
   background: var(--line);
-  border: 3px solid transparent;
-  background-clip: content-box;
   border-radius: 999px;
 }
 
+/* ── Reduced motion ──────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
 }
+
+

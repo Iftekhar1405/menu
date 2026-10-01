@@ -15,16 +15,21 @@ describe("buildCardSvg", () => {
     expect(decodeQrFromSvg(svg)).toBe(URL);
   });
 
-  it("still scans with a logo and a table label on the card", async () => {
+  it("keeps a logo-table label above the QR and still scans", async () => {
     const svg = await buildCardSvg({
       businessName: "Blue Tokai",
       url: URL,
       tableLabel: "Table 7",
+      logoDataUri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL0NwAAAABJRU5ErkJggg==",
       accent: "#7A3E9D",
     });
 
     expect(decodeQrFromSvg(svg)).toBe(URL);
     expect(svg).toContain("Table 7");
+    // Logo cards put the business baseline at 45 and the table chip at
+    // 48–59. The QR starts at 63, leaving a clear 4mm gap.
+    expect(svg).toContain('y="48" width="32" height="11"');
+    expect(svg).toContain('y="55.5" text-anchor="middle"');
   });
 
   it("keeps the A6 canvas the print vendor is quoted on", async () => {

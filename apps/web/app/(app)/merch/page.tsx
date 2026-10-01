@@ -216,7 +216,7 @@ export default function MerchPage() {
                   "spring block w-full rounded-2xl border p-4 text-left",
                   productId === p.id
                     ? "border-[var(--accent)] bg-[var(--accent-soft)]"
-                    : "border-line bg-surface hover:border-[#d6d9de]",
+                    : "border-line bg-surface hover:border-[var(--accent-soft)] hover:bg-raised",
                 )}
               >
                 <span className="flex items-baseline justify-between gap-3">
@@ -280,7 +280,7 @@ export default function MerchPage() {
                           "spring h-11 min-w-[52px] rounded-xl border px-3 text-[14px] font-medium",
                           on
                             ? "border-[var(--accent)] bg-[var(--accent)] text-white"
-                            : "border-line bg-surface text-muted hover:border-[#d6d9de]",
+                            : "border-line bg-surface text-muted hover:border-[var(--accent-soft)] hover:bg-raised",
                         )}
                       >
                         {table.label}
@@ -414,3 +414,4 @@ export default function MerchPage() {
     </div>
   );
 }
+

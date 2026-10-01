@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { ThemeProvider } from "@/components/theme-provider";
 
 export const metadata: Metadata = {
   title: {
@@ -9,8 +10,6 @@ export const metadata: Metadata = {
   description:
     "Build a menu, print a QR code, and let people order from the table.",
   applicationName: "menu.irad.solutions",
-  // app/icon.svg and app/apple-icon.png are picked up by convention; the 32px
-  // PNG is here for anything that still refuses an SVG favicon.
   icons: {
     icon: [
       { url: "/icon.svg", type: "image/svg+xml" },
@@ -23,28 +22,47 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#ffffff",
-  // The dashboard's chrome sits against the top and bottom edges of a phone,
-  // so the page paints under the notch and home indicator and pays the inset
-  // back itself — see the .pt-safe / .pb-safe utilities in globals.css.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)",  color: "#0c0d10" },
+  ],
   viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Anti-FOUC: apply dark class and theme before first paint */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function(){
+                try {
+                  var mode  = localStorage.getItem('ui-mode')  || 'system';
+                  var theme = localStorage.getItem('ui-theme') || 'amber';
+                  var dark  = mode === 'dark' ||
+                    (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                  if (dark) document.documentElement.classList.add('dark');
+                  document.documentElement.setAttribute('data-theme', theme);
+                } catch(e) {}
+              })();
+            `,
+          }}
+        />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        {/* Bricolage Grotesque carries the headings; Inter does the work.
-            Both are loaded once here so a template switch on the public menu
-            never causes a font flash. */}
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=Inter:wght@400;500;600;700&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=Inter:wght@300;400;500;600;700&display=swap"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <ThemeProvider>
+          {children}
+        </ThemeProvider>
+      </body>
     </html>
   );
 }
+

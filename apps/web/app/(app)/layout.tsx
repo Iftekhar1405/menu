@@ -20,15 +20,15 @@ import { NotificationToasts } from "@/components/notifications/toasts";
  * list either way.
  */
 const NAV = [
-  { href: "/dashboard", label: "Overview", icon: OverviewIcon },
-  { href: "/orders", label: "Orders", icon: OrdersIcon },
-  { href: "/menu", label: "Menu", icon: MenuIcon },
-  { href: "/tables", label: "Tables", icon: TablesIcon },
-  { href: "/billing", label: "Billing", icon: BillingIcon },
-  { href: "/templates", label: "Design", icon: DesignIcon },
-  { href: "/qr", label: "QR code", icon: QrIcon },
-  { href: "/merch", label: "Printed cards", icon: CardsIcon },
-  { href: "/settings", label: "Settings", icon: SettingsIcon },
+  { href: "/dashboard",   label: "Overview",       icon: OverviewIcon },
+  { href: "/orders",      label: "Orders",          icon: OrdersIcon },
+  { href: "/menu",        label: "Menu",            icon: MenuIcon },
+  { href: "/tables",      label: "Tables",          icon: TablesIcon },
+  { href: "/billing",     label: "Billing",         icon: BillingIcon },
+  { href: "/appearance",  label: "Appearance",      icon: AppearanceIcon },
+  { href: "/qr",          label: "QR code",         icon: QrIcon },
+  { href: "/merch",       label: "Printed cards",   icon: CardsIcon },
+  { href: "/settings",    label: "Settings",        icon: SettingsIcon },
 ];
 
 /** How many of those get their own tab. The rest go behind More. */
@@ -73,19 +73,26 @@ function Shell({ children }: { children: React.ReactNode }) {
   if (loading) {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center">
-        <p className="text-[14px] text-faint">Loading…</p>
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 rounded-full border-2 border-line border-t-[var(--accent)] animate-spin" />
+          <p className="text-[13px] text-faint">Loading…</p>
+        </div>
       </div>
     );
   }
 
-  /* A dead end otherwise: the shell has no business to render and nothing
-     on screen would say so or offer a way forward. */
   if (error) {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center px-6">
-        <div className="text-center">
-          <p className="text-[15px] text-ink">{error}</p>
-          <p className="mt-1 text-[13.5px] text-muted">
+        <div className="text-center animate-float-up">
+          <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 7v5M12 16h.01" strokeLinecap="round" />
+            </svg>
+          </div>
+          <p className="text-[16px] font-semibold text-ink">{error}</p>
+          <p className="mt-1.5 text-[13.5px] text-muted">
             Your work is safe. Check the connection and try again.
           </p>
           <Button variant="primary" className="mt-5" onClick={retry}>
@@ -96,199 +103,196 @@ function Shell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  /*
-   * One <nav aria-label="Sections"> for both layouts, because it is one
-   * navigation — which shape it takes is a property of the screen, not of the
-   * information. The sidebar's markup is hidden below `lg`, the tab bar's
-   * above it, so exactly one is ever in the accessibility tree.
-   */
   return (
-    // Inside Shell rather than around it: the provider needs the current
-    // business id, and that only exists once SessionProvider has resolved.
-    // Keying on it tears the feed and socket down when an owner switches
-    // restaurants, which is correct — the two inboxes are not the same one.
     <NotificationsProvider key={current?.id ?? "none"} businessId={current?.id ?? null}>
-    <div className="min-w-0 lg:grid lg:min-h-[100dvh] lg:grid-cols-[232px_minmax(0,1fr)]">
-      {/* Phone: a slim bar that says where you are and whose menu you are
-          editing, and nothing else. Everything actionable is at the bottom,
-          in reach of a thumb. */}
-      <header className="chrome-blur pt-safe px-edge sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-line lg:hidden">
-        <Link href="/dashboard" className="flex h-14 items-center">
-          <Wordmark size={18} />
-        </Link>
-        <div className="flex min-w-0 items-center gap-1">
-          {current && (
-            <span className="min-w-0 truncate text-[13px] text-muted">{current.name}</span>
-          )}
-          <NotificationBell className="-mr-1.5" />
-        </div>
-      </header>
+      <div className="min-w-0 lg:grid lg:min-h-[100dvh] lg:grid-cols-[240px_minmax(0,1fr)]">
 
-      <aside className="hidden min-w-0 border-line bg-surface lg:block lg:border-r">
-        <div className="flex h-full min-w-0 flex-col p-5">
-          <div className="mb-6 flex items-center justify-between gap-2 pr-1">
-            <Link href="/dashboard" className="block px-2">
-              <Wordmark size={19} />
-            </Link>
-            <NotificationBell />
+        {/* ── Mobile header ──────────────────────────────────────────────── */}
+        <header className="chrome-blur pt-safe px-edge sticky top-0 z-30 flex h-14 items-center justify-between gap-3 lg:hidden">
+          <Link href="/dashboard" className="flex items-center">
+            <Wordmark size={18} markClassName="text-[#B45309]" />
+          </Link>
+          <div className="flex min-w-0 items-center gap-1.5">
+            {current && (
+              <span className="min-w-0 truncate text-[13px] text-muted">{current.name}</span>
+            )}
+            <NotificationBell className="-mr-1.5" />
           </div>
+        </header>
 
-          {/* Only shown when it is a real choice. A single-restaurant owner
-              should not have to look at a switcher with one option in it. */}
-          {businesses.length > 1 && (
-            <select
-              aria-label="Choose a business"
-              value={current?.id ?? ""}
-              onChange={(e) => setCurrentId(e.target.value)}
-              className="mb-4 h-10 w-full min-w-0 rounded-xl border border-line bg-raised px-2.5 text-[13.5px]"
-            >
-              {businesses.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          )}
+        {/* ── Desktop sidebar ────────────────────────────────────────────── */}
+        <aside className="sidebar-surface hidden min-w-0 lg:flex lg:flex-col">
+          <div className="flex h-full min-w-0 flex-col px-4 py-5">
 
-          <nav aria-label="Sections" className="flex min-w-0 flex-col gap-1">
-            {items.map((item) => {
-              const active = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
-                  className={cx(
-                    "spring flex h-10 shrink-0 items-center whitespace-nowrap rounded-xl px-3 text-[14px]",
-                    active
-                      ? "bg-[var(--accent-soft)] font-medium text-[var(--accent-strong)]"
-                      : "text-muted hover:bg-[rgba(17,17,19,0.04)] hover:text-ink",
-                  )}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
+            {/* Logo + bell */}
+            <div className="mb-6 flex items-center justify-between gap-2 px-2">
+              <Link href="/dashboard" className="block">
+                <Wordmark size={19} markClassName="text-[#B45309]" />
+              </Link>
+              <NotificationBell />
+            </div>
 
-          <div className="mt-auto hidden min-w-0 pt-6 lg:block">
-            <p className="truncate px-3 text-[13px] font-medium text-ink">
-              {current?.name}
-            </p>
-            <button
-              onClick={() => void signOut()}
-              className="mt-1 px-3 text-[13px] text-faint hover:text-ink"
-            >
-              Sign out
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* pb-tabs keeps the last row of every page clear of the tab bar. It is
-          zero from `lg` up, where there is no bar. */}
-      <main className="pb-tabs min-w-0 lg:pb-0">{children}</main>
-
-      <nav
-        aria-label="Sections"
-        data-testid="tab-bar"
-        className="chrome-blur pb-safe px-safe fixed inset-x-0 bottom-0 z-30 flex border-t border-line lg:hidden"
-      >
-        {tabs.map((item) => (
-          <Tab key={item.href} item={item} active={pathname === item.href} />
-        ))}
-        <button
-          type="button"
-          onClick={() => setMoreOpen(true)}
-          aria-haspopup="dialog"
-          aria-expanded={moreOpen}
-          className={cx(
-            "spring flex min-w-0 flex-1 flex-col items-center justify-center gap-1 py-2",
-            rest.some((i) => i.href === pathname)
-              ? "text-[var(--accent-strong)]"
-              : "text-faint",
-          )}
-        >
-          <MoreIcon />
-          <span className="text-[10.5px] font-medium leading-none">More</span>
-        </button>
-      </nav>
-
-      {moreOpen && (
-        <Sheet label="More sections" onClose={() => setMoreOpen(false)}>
-          <SheetGrabber />
-          <header className="flex items-center justify-between px-5 py-3.5">
-            <h2 className="font-display text-[17px] font-semibold">More</h2>
-            <button
-              onClick={() => setMoreOpen(false)}
-              className="h-11 px-2 text-[14px] text-muted hover:text-ink"
-            >
-              Done
-            </button>
-          </header>
-
-          <div className="scroll-quiet overscroll-contain-y flex-1 overflow-y-auto px-5 pb-5">
+            {/* Business switcher */}
             {businesses.length > 1 && (
-              <label className="mb-4 block">
-                <span className="mb-1.5 block text-[13px] font-medium text-ink">
-                  Business
-                </span>
-                <select
-                  aria-label="Choose a business"
-                  value={current?.id ?? ""}
-                  onChange={(e) => setCurrentId(e.target.value)}
-                  className="h-11 w-full min-w-0 rounded-xl border border-line bg-raised px-3 text-[16px]"
-                >
-                  {businesses.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <select
+                aria-label="Choose a business"
+                value={current?.id ?? ""}
+                onChange={(e) => setCurrentId(e.target.value)}
+                className="spring mb-4 h-10 w-full min-w-0 rounded-xl border border-line bg-raised px-2.5 text-[13px] text-ink"
+              >
+                {businesses.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
             )}
 
-            <ul className="overflow-hidden rounded-2xl border border-line">
-              {rest.map((item, i) => {
+            {/* Nav */}
+            <nav aria-label="Sections" className="flex min-w-0 flex-col gap-0.5">
+              {items.map((item) => {
                 const active = pathname === item.href;
                 const Icon = item.icon;
                 return (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      onClick={() => setMoreOpen(false)}
-                      aria-current={active ? "page" : undefined}
-                      className={cx(
-                        "spring flex h-[52px] items-center gap-3 px-4 text-[15px]",
-                        i > 0 && "border-t border-line",
-                        active
-                          ? "bg-[var(--accent-soft)] font-medium text-[var(--accent-strong)]"
-                          : "bg-surface text-ink",
-                      )}
-                    >
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    className={cx(
+                      "spring group flex h-10 shrink-0 items-center gap-3 whitespace-nowrap rounded-xl px-3 text-[13.5px] font-medium",
+                      active
+                        ? "nav-active-pip bg-[var(--accent-soft)] text-[var(--accent-strong)]"
+                        : "text-muted hover:bg-[rgba(var(--accent-rgb),0.06)] hover:text-ink",
+                    )}
+                  >
+                    <span className={cx(
+                      "spring shrink-0",
+                      active ? "text-[var(--accent)]" : "text-faint group-hover:text-muted",
+                    )}>
                       <Icon />
-                      {item.label}
-                    </Link>
-                  </li>
+                    </span>
+                    {item.label}
+                  </Link>
                 );
               })}
-            </ul>
+            </nav>
 
-            <button
-              onClick={() => {
-                setMoreOpen(false);
-                void signOut();
-              }}
-              className="mt-4 h-12 w-full rounded-2xl border border-line bg-surface text-[15px] text-muted hover:text-ink"
-            >
-              Sign out
-            </button>
+            {/* Bottom area */}
+            <div className="mt-auto min-w-0 pt-6">
+              {/* Business name + sign out */}
+              <div className="px-2">
+                <p className="truncate text-[13px] font-medium text-ink">
+                  {current?.name}
+                </p>
+                <button
+                  onClick={() => void signOut()}
+                  className="spring mt-0.5 text-[12.5px] text-faint hover:text-[var(--accent)]"
+                >
+                  Sign out
+                </button>
+              </div>
+            </div>
           </div>
-        </Sheet>
-      )}
+        </aside>
 
-      <NotificationToasts />
-    </div>
+        {/* ── Page content ──────────────────────────────────────────────── */}
+        <main className="pb-tabs min-w-0 lg:pb-0">{children}</main>
+
+        {/* ── Mobile tab bar ─────────────────────────────────────────────── */}
+        <nav
+          aria-label="Sections"
+          data-testid="tab-bar"
+          className="chrome-blur pb-safe px-safe fixed inset-x-0 bottom-0 z-30 flex border-t border-line lg:hidden"
+        >
+          {tabs.map((item) => (
+            <Tab key={item.href} item={item} active={pathname === item.href} />
+          ))}
+          <button
+            type="button"
+            onClick={() => setMoreOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={moreOpen}
+            className={cx(
+              "spring flex min-w-0 flex-1 flex-col items-center justify-center gap-1 py-2",
+              rest.some((i) => i.href === pathname)
+                ? "text-[var(--accent)]"
+                : "text-faint",
+            )}
+          >
+            <MoreIcon />
+            <span className="text-[10.5px] font-medium leading-none">More</span>
+          </button>
+        </nav>
+
+        {/* ── More sheet ─────────────────────────────────────────────────── */}
+        {moreOpen && (
+          <Sheet label="More sections" onClose={() => setMoreOpen(false)}>
+            <SheetGrabber />
+            <header className="flex items-center justify-between px-5 py-3.5">
+              <h2 className="font-display text-[17px] font-semibold">More</h2>
+              <button
+                onClick={() => setMoreOpen(false)}
+                className="spring h-11 px-2 text-[14px] text-muted hover:text-ink"
+              >
+                Done
+              </button>
+            </header>
+
+            <div className="scroll-quiet overscroll-contain-y flex-1 overflow-y-auto px-5 pb-5 space-y-4">
+              {businesses.length > 1 && (
+                <label className="block">
+                  <span className="mb-1.5 block text-[13px] font-medium text-ink">Business</span>
+                  <select
+                    aria-label="Choose a business"
+                    value={current?.id ?? ""}
+                    onChange={(e) => setCurrentId(e.target.value)}
+                    className="h-11 w-full min-w-0 rounded-xl border border-line bg-raised px-3 text-[16px]"
+                  >
+                    {businesses.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <ul className="overflow-hidden rounded-2xl border border-line">
+                {rest.map((item, i) => {
+                  const active = pathname === item.href;
+                  const Icon = item.icon;
+                  return (
+                    <li key={item.href}>
+                      <Link
+                        href={item.href}
+                        onClick={() => setMoreOpen(false)}
+                        aria-current={active ? "page" : undefined}
+                        className={cx(
+                          "spring flex h-[52px] items-center gap-3 px-4 text-[15px]",
+                          i > 0 && "border-t border-line",
+                          active
+                            ? "bg-[var(--accent-soft)] font-medium text-[var(--accent-strong)]"
+                            : "bg-surface text-ink",
+                        )}
+                      >
+                        <span className={cx(active ? "text-[var(--accent)]" : "text-faint")}>
+                          <Icon />
+                        </span>
+                        {item.label}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <button
+                onClick={() => { setMoreOpen(false); void signOut(); }}
+                className="spring w-full h-12 rounded-2xl border border-line bg-surface text-[15px] text-muted hover:text-[var(--accent)] hover:border-[var(--accent-soft)]"
+              >
+                Sign out
+              </button>
+            </div>
+          </Sheet>
+        )}
+
+        <NotificationToasts />
+      </div>
     </NotificationsProvider>
   );
 }
@@ -307,7 +311,7 @@ function Tab({
       aria-current={active ? "page" : undefined}
       className={cx(
         "spring flex min-w-0 flex-1 flex-col items-center justify-center gap-1 py-2",
-        active ? "text-[var(--accent-strong)]" : "text-faint",
+        active ? "text-[var(--accent)]" : "text-faint",
       )}
     >
       <Icon />
@@ -319,16 +323,14 @@ function Tab({
 }
 
 /* ── Icons ─────────────────────────────────────────────────────────────────
- * Line drawings at a single weight, sized to the tab bar. They exist because
- * five text labels at a readable size do not fit across a phone; the label
- * stays underneath, so the icon never has to carry the meaning alone.
+ * Line drawings at a single weight, sized to the tab bar.
  */
 
 function icon(path: React.ReactNode) {
   return (
     <svg
-      width="22"
-      height="22"
+      width="20"
+      height="20"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -389,16 +391,6 @@ function BillingIcon() {
   );
 }
 
-function DesignIcon() {
-  return icon(
-    <>
-      <circle cx="12" cy="12" r="9" />
-      <circle cx="12" cy="12" r="3.2" />
-      <path d="M12 3v5.8M12 15.2V21M3 12h5.8M15.2 12H21" />
-    </>,
-  );
-}
-
 function QrIcon() {
   return icon(
     <>
@@ -428,6 +420,18 @@ function SettingsIcon() {
   );
 }
 
+function AppearanceIcon() {
+  return icon(
+    <>
+      <path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.6 0 2.7-.8 2.7-1.9 0-.9-.7-1.6-.7-2.5 0-1.1.9-2 2-2h1.8A2.7 2.7 0 0 0 20.5 11 7.5 7.5 0 0 0 12 3.5Z" />
+      <circle cx="7.8" cy="11" r="1" fill="currentColor" stroke="none" />
+      <circle cx="10.5" cy="7.8" r="1" fill="currentColor" stroke="none" />
+      <circle cx="14.5" cy="8.2" r="1" fill="currentColor" stroke="none" />
+      <circle cx="7.8" cy="15" r="1" fill="currentColor" stroke="none" />
+    </>,
+  );
+}
+
 function MoreIcon() {
   return icon(
     <>
@@ -437,3 +441,4 @@ function MoreIcon() {
     </>,
   );
 }
+

@@ -36,19 +36,23 @@ const WM_MARK = 3.6;
 const WM_GAP = 1.3;
 
 export async function buildCardSvg(opts: CardOptions): Promise<string> {
-  const accent = opts.accent ?? "#1D6F5C";
+  const accent = opts.accent ?? "#9A6700";
   const caption =
     opts.caption ?? (opts.tableLabel ? "Scan to order" : "Scan for menu");
 
+  const nameY = nameYFor(opts);
+  const tableY = nameY + 3;
   const qrSize = 62;
   const qrX = (W - qrSize) / 2;
-  const qrY = 52;
+  // A table label has its own line between the business name and QR. With a
+  // logo, the old fixed y=52 placed the code through that line.
+  const qrY = opts.tableLabel ? nameY + 18 : 52;
   const d = await qrPath(opts.url, { x: qrX, y: qrY, size: qrSize });
 
   const tableBlock = opts.tableLabel
-    ? `<rect x="${W / 2 - 16}" y="${nameYFor(opts) + 3}" width="32" height="11" rx="5.5"
+    ? `<rect x="${W / 2 - 16}" y="${tableY}" width="32" height="11" rx="5.5"
              fill="${accent}" opacity="0.10"/>
-       <text x="${W / 2}" y="${nameYFor(opts) + 10.5}" text-anchor="middle"
+       <text x="${W / 2}" y="${tableY + 7.5}" text-anchor="middle"
              font-family="Helvetica, Arial, sans-serif" font-size="6.2" font-weight="600"
              fill="${accent}">${escapeXml(truncate(opts.tableLabel, 12))}</text>`
     : "";
@@ -58,8 +62,6 @@ export async function buildCardSvg(opts: CardOptions): Promise<string> {
      <image href="${opts.logoDataUri}" x="${W / 2 - 11}" y="13" width="22" height="22"
             preserveAspectRatio="xMidYMid slice" clip-path="url(#logoClip)"/>`
     : "";
-
-  const nameY = nameYFor(opts);
 
   /*
    * The watermark is a mark and a name laid out as one centred group. SVG

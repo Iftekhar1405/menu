@@ -130,7 +130,7 @@ model Business {
   currency     String       @default("INR")
 
   themeLayout  String       @default("editorial") @map("theme_layout")
-  themeAccent  String       @default("#1D6F5C") @map("theme_accent")
+  themeAccent  String       @default("#9A6700") @map("theme_accent")
   themeFont    String       @default("inter-fraunces") @map("theme_font")
 
   /// Phase 3: post-order Google review deep link.

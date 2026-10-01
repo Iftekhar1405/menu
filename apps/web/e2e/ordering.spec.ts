@@ -231,9 +231,9 @@ test("the ordering page uses the layout the owner chose", async ({ page, browser
   await expect(diner.locator("ul.grid")).toHaveCount(0);
 
   // Switch to Grid, and the ordering page must follow.
-  await page.getByRole("link", { name: "Design" }).click();
+  await page.getByRole("link", { name: "Appearance" }).click();
   await page.getByRole("button", { name: /Grid/ }).click();
-  await page.getByRole("button", { name: "Save design" }).click();
+  await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Your menu is updated.")).toBeVisible();
 
   await diner.reload();

@@ -57,14 +57,12 @@ export interface AccentMeta {
 }
 
 export const ACCENTS: AccentMeta[] = [
+  { id: "amber", name: "Amber", hex: "#9A6700", hexStrong: "#7A5100", hexSoft: "#FBF0DC" },
   { id: "pine", name: "Pine", hex: "#1D6F5C", hexStrong: "#155245", hexSoft: "#E6F2EE" },
   { id: "terracotta", name: "Terracotta", hex: "#B4532A", hexStrong: "#8A3F20", hexSoft: "#FAEDE7" },
   { id: "ink", name: "Ink", hex: "#274472", hexStrong: "#1B3153", hexSoft: "#E9EEF6" },
   { id: "burgundy", name: "Burgundy", hex: "#8C2F39", hexStrong: "#6B222A", hexSoft: "#F8EAEC" },
-  { id: "amber", name: "Amber", hex: "#9A6700", hexStrong: "#7A5100", hexSoft: "#FBF0DC" },
   { id: "plum", name: "Plum", hex: "#6B3A73", hexStrong: "#512B57", hexSoft: "#F3EAF5" },
-  { id: "teal", name: "Teal", hex: "#16656B", hexStrong: "#0F4C50", hexSoft: "#E4F1F2" },
-  { id: "graphite", name: "Graphite", hex: "#3A3A3C", hexStrong: "#242426", hexSoft: "#EFEFF0" },
 ];
 
 export const DEFAULT_ACCENT = ACCENTS[0]!.hex;

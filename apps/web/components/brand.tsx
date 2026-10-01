@@ -5,16 +5,12 @@
  * signup layout, the public menu footer) as well as client ones, and pulling
  * in a helper from a "use client" module would make it unusable from the
  * server half.
- *
- * They appeared in four places with the SVG pasted into each, which is exactly
- * how a logo ends up subtly different depending on which screen you are
- * looking at. Everything brand-shaped now comes from here.
  */
 
 /**
- * The tile takes `currentColor` so the mark inherits whatever text colour it
- * sits in — ink in the sidebar, muted in a footer — while the pattern inside
- * stays white and keeps its contrast either way.
+ * The tile uses `currentColor` so it can be styled from the outside.
+ * Pass className="text-[var(--accent)]" for the branded accent colour,
+ * or let it inherit from context.
  */
 export function Mark({ size = 20, className }: { size?: number; className?: string }) {
   return (
@@ -45,31 +41,31 @@ export function Mark({ size = 20, className }: { size?: number; className?: stri
 }
 
 /**
- * Mark plus name. `full` decides whether the domain is spelled out — the
- * sidebar has 232px to work with and says "menu.irad", the signup screen has
- * room and says the whole address, which is what someone types to come back.
- *
- * "menu" carries the contrast and the rest steps back, so the name reads at a
- * glance while the address stays available to anyone looking for it.
+ * Mark plus name. `full` decides whether the domain is spelled out.
+ * The mark is always rendered in the accent colour so it is visible in
+ * both light and dark mode (avoids going all-white on dark backgrounds).
  */
 export function Wordmark({
   full = false,
   size = 20,
   className,
+  markClassName,
 }: {
   full?: boolean;
   size?: number;
   className?: string;
+  /** Use a fixed colour where the product mark must ignore UI theme changes. */
+  markClassName?: string;
 }) {
   return (
     <span
-      className={["inline-flex items-center gap-2 text-ink", className]
+      className={["inline-flex items-center gap-2", className]
         .filter(Boolean)
         .join(" ")}
     >
-      <Mark size={size} />
+      <Mark size={size} className={markClassName ?? "text-[var(--accent)]"} />
       <span
-        className="font-display font-semibold tracking-tight"
+        className="font-display font-semibold tracking-tight text-ink"
         style={{ fontSize: size * 0.72 }}
       >
         menu
