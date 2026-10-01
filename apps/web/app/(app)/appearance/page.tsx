@@ -15,7 +15,6 @@ import type { Category } from "@/lib/types";
 import { useSession } from "@/components/session";
 import { PreviewButton, PreviewRail } from "@/components/menu-preview";
 import { Banner, Button, cx } from "@/components/ui";
-import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function AppearancePage() {
   const { current, refreshBusinesses } = useSession();
@@ -80,10 +79,10 @@ export default function AppearancePage() {
         <header className="mb-8 flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-[26px] font-semibold leading-tight tracking-tight sm:text-[30px]">
-              Appearance
+              Menu design
             </h1>
             <p className="mt-1 text-[14.5px] text-muted">
-              Customise how your dashboard and menu look.
+              Choose a layout, accent colour, and typeface for your public menu.
             </p>
           </div>
           <div className="shrink-0 lg:hidden">
@@ -92,11 +91,6 @@ export default function AppearancePage() {
         </header>
 
         {error && <div className="mb-6"><Banner>{error}</Banner></div>}
-
-        {/* ── Dashboard appearance ─────────────────────────────────────── */}
-        <section className="mb-9">
-          <ThemeToggle />
-        </section>
 
         {/* ── Menu layout ──────────────────────────────────────────────── */}
         {/* ── Menu accent ──────────────────────────────────────────────── */}

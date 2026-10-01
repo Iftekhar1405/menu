@@ -11,6 +11,7 @@ import { ConfirmProvider, useConfirm } from "@/components/confirm";
 import { NotificationsProvider } from "@/components/notifications/provider";
 import { NotificationBell } from "@/components/notifications/bell";
 import { NotificationToasts } from "@/components/notifications/toasts";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 /**
  * The first four are what an owner touches during a service; the rest are
@@ -25,7 +26,7 @@ const NAV = [
   { href: "/menu",        label: "Menu",            icon: MenuIcon },
   { href: "/tables",      label: "Tables",          icon: TablesIcon },
   { href: "/billing",     label: "Billing",         icon: BillingIcon },
-  { href: "/appearance",  label: "Appearance",      icon: AppearanceIcon },
+  { href: "/appearance",  label: "Menu design",     icon: AppearanceIcon },
   { href: "/qr",          label: "QR code",         icon: QrIcon },
   { href: "/merch",       label: "Printed cards",   icon: CardsIcon },
   { href: "/settings",    label: "Settings",        icon: SettingsIcon },
@@ -105,7 +106,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <NotificationsProvider key={current?.id ?? "none"} businessId={current?.id ?? null}>
-      <div className="min-w-0 lg:grid lg:min-h-[100dvh] lg:grid-cols-[240px_minmax(0,1fr)]">
+      <div className="min-w-0 lg:grid lg:h-[100dvh] lg:overflow-hidden lg:grid-cols-[240px_minmax(0,1fr)]">
 
         {/* ── Mobile header ──────────────────────────────────────────────── */}
         <header className="chrome-blur pt-safe px-edge sticky top-0 z-30 flex h-14 items-center justify-between gap-3 lg:hidden">
@@ -121,7 +122,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* ── Desktop sidebar ────────────────────────────────────────────── */}
-        <aside className="sidebar-surface hidden min-w-0 lg:flex lg:flex-col">
+        <aside className="sidebar-surface hidden min-w-0 lg:flex lg:flex-col lg:h-full lg:overflow-y-auto">
           <div className="flex h-full min-w-0 flex-col px-4 py-5">
 
             {/* Logo + bell */}
@@ -176,7 +177,11 @@ function Shell({ children }: { children: React.ReactNode }) {
             </nav>
 
             {/* Bottom area */}
-            <div className="mt-auto min-w-0 pt-6">
+            <div className="mt-auto min-w-0 pt-4 space-y-3">
+              {/* Dark mode toggle */}
+              <div className="rounded-xl border border-line bg-raised px-3 py-2.5">
+                <ThemeToggle />
+              </div>
               {/* Business name + sign out */}
               <div className="px-2">
                 <p className="truncate text-[13px] font-medium text-ink">
@@ -194,7 +199,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         </aside>
 
         {/* ── Page content ──────────────────────────────────────────────── */}
-        <main className="pb-tabs min-w-0 lg:pb-0">{children}</main>
+        <main className="pb-tabs min-w-0 lg:pb-0 lg:h-full lg:overflow-y-auto">{children}</main>
 
         {/* ── Mobile tab bar ─────────────────────────────────────────────── */}
         <nav

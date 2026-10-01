@@ -21,7 +21,7 @@ export function Mark({ size = 20, className }: { size?: number; className?: stri
       aria-hidden="true"
       className={["shrink-0", className].filter(Boolean).join(" ")}
     >
-      <rect width="32" height="32" rx="8" fill="currentColor" />
+      <rect width="32" height="32" rx="8" fill="black" />
       <rect
         x="6.25"
         y="6.25"

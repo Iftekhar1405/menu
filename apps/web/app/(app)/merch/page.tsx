@@ -201,42 +201,6 @@ export default function MerchPage() {
       <form onSubmit={submit} className="space-y-8">
         {error && <Banner>{error}</Banner>}
 
-        <section>
-          <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-[0.12em] text-faint">
-            What to print
-          </h2>
-          <div className="space-y-2">
-            {products.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => setProductId(p.id)}
-                aria-pressed={productId === p.id}
-                className={cx(
-                  "spring block w-full rounded-2xl border p-4 text-left",
-                  productId === p.id
-                    ? "border-[var(--accent)] bg-[var(--accent-soft)]"
-                    : "border-line bg-surface hover:border-[var(--accent-soft)] hover:bg-raised",
-                )}
-              >
-                <span className="flex items-baseline justify-between gap-3">
-                  <span className="font-display text-[15px] font-semibold">{p.name}</span>
-                  <span className="tnum shrink-0 text-[14px] font-medium">
-                    {formatMoney(p.unitPrice, current.currency)}
-                    <span className="text-[12px] font-normal text-muted"> each</span>
-                  </span>
-                </span>
-                <span className="mt-1 block text-[13.5px] leading-relaxed text-muted">
-                  {p.blurb}
-                </span>
-                <span className="mt-1.5 block text-[12px] text-faint">
-                  Minimum {p.minQuantity} · about {p.leadTimeDays} days to deliver
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
-
         {product?.perTable ? (
           <section>
             <div className="mb-3 flex items-baseline justify-between">
@@ -280,7 +244,7 @@ export default function MerchPage() {
                           "spring h-11 min-w-[52px] rounded-xl border px-3 text-[14px] font-medium",
                           on
                             ? "border-[var(--accent)] bg-[var(--accent)] text-white"
-                            : "border-line bg-surface text-muted hover:border-[var(--accent-soft)] hover:bg-raised",
+                            : "border-line bg-surface text-muted hover:border-[#d6d9de]",
                         )}
                       >
                         {table.label}
@@ -414,4 +378,3 @@ export default function MerchPage() {
     </div>
   );
 }
-

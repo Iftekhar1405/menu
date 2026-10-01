@@ -8,6 +8,7 @@ import { guessCountryClient } from "@/lib/country";
 import { IdentifierField } from "@/components/identifier-field";
 import { PinInput } from "@/components/pin-input";
 import { Banner, Button } from "@/components/ui";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { useEffect } from "react";
 
 export default function LoginPage() {
@@ -91,6 +92,10 @@ export default function LoginPage() {
         <Link href="/signup" className="font-medium text-[var(--accent)] hover:underline">
           Create an account
         </Link>
+      </div>
+
+      <div className="mt-8 border-t border-line pt-5">
+        <ThemeToggle />
       </div>
     </div>
   );

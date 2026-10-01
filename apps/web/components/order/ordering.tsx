@@ -90,10 +90,17 @@ export function Ordering({
     }
   }, [cart, cartKey]);
 
+  const justPlaced = useRef(false);
+
   const loadOrder = useCallback(async () => {
     const res = await fetch("/api/table/order", { cache: "no-store" }).catch(() => null);
     if (!res || !res.ok) return;
-    setOrder((await res.json()) as CurrentOrder | null);
+    const data = await res.json().catch(() => undefined) as CurrentOrder | null | undefined;
+    if (data === undefined) return; // JSON parse failed — skip this poll
+    // Guard: if we just placed and the next immediate poll returns null (DB
+    // write not yet visible), don't wipe the optimistic order state.
+    if (data === null && justPlaced.current) return;
+    setOrder(data ?? null);
   }, []);
 
   const previousOrderId = useRef<string | null>(null);
@@ -110,9 +117,6 @@ export function Ordering({
 
   useEffect(() => {
     void loadOrder();
-    // Five seconds: a diner wants to see "being made" appear without thinking
-    // about it, and this survives flaky restaurant wifi with no reconnection
-    // logic to get wrong.
     const id = setInterval(() => void loadOrder(), 5000);
     return () => clearInterval(id);
   }, [loadOrder]);
@@ -190,9 +194,17 @@ export function Ordering({
       return;
     }
 
-    setOrder((await res.json()) as CurrentOrder);
+    const placed = await res.json().catch(() => null) as CurrentOrder | null;
+    if (placed) {
+      setOrder(placed);
+    }
     setCart([]);
     setTab("order");
+    // Guard the next poll from wiping the optimistic state before the DB write
+    // is visible. Reset after 3 s — enough for any reasonable round trip.
+    justPlaced.current = true;
+    setTimeout(() => { justPlaced.current = false; }, 3000);
+    void loadOrder();
   }
 
   const batches = useMemo(() => {
