@@ -250,7 +250,7 @@ export default function OrdersPage() {
             />
           </div>
 
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-5">
             {COLUMNS.map((column) => {
               const list = grouped.get(column.status) ?? [];
               const shown = column.status === lane;
@@ -698,7 +698,7 @@ function OrderCard({
         <span className="tnum text-[14px] font-semibold">
           {formatMoney(String(total), currency)}
         </span>
-        <span className="flex flex-1 justify-end gap-1.5">
+        <span className="flex flex-1 flex-wrap justify-end gap-1.5">
           <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
             Cancel
           </Button>
