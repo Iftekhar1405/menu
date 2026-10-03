@@ -360,13 +360,22 @@ export class OrdersService {
       );
     }
 
-    const updated = await this.prisma.db.order.update({
-      where: { id: orderId },
+    // Guarded on the status just read. Without it, an Accept read before a
+    // Paid commits and written after it would reopen a paid order.
+    const moved = await this.prisma.db.order.updateMany({
+      where: { id: orderId, businessId, status: order.status },
       data: {
         status: next,
         completedAt:
           next === "completed" || next === "cancelled" ? new Date() : null,
       },
+    });
+    if (moved.count !== 1) {
+      throw new ConflictException("Someone else just updated this order — refresh and try again");
+    }
+
+    const updated = await this.prisma.db.order.findUniqueOrThrow({
+      where: { id: orderId },
       include: {
         table: { select: { id: true, label: true } },
         items: { orderBy: [{ batch: "asc" }, { createdAt: "asc" }] },
@@ -394,6 +403,19 @@ export class OrdersService {
   async markPaid(userId: string, businessId: string, orderId: string, mode: PaymentMode) {
     await this.businesses.assertOwns(userId, businessId);
 
+    const found = await this.prisma.db.order.findFirst({
+      where: { id: orderId, businessId },
+      select: { tableId: true },
+    });
+    if (!found) throw new NotFoundException("Order not found");
+
+    // The lock place_table_round and cancel_table_order take. Held to the end
+    // of the request's transaction, it stops a diner's new round landing in
+    // this order mid-payment, and makes a second Paid tap wait for the first
+    // instead of racing generate_bill into a duplicate bill.
+    await this.prisma.db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${found.tableId}::text))`;
+
+    // Read again under the lock: the status that matters is the one now.
     const order = await this.prisma.db.order.findFirst({
       where: { id: orderId, businessId },
       select: { id: true, status: true, completedAt: true, tableId: true },
