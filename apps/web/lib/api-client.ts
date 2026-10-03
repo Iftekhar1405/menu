@@ -233,3 +233,25 @@ export async function downloadFile(
   a.remove();
   URL.revokeObjectURL(url);
 }
+
+/**
+ * POSTs JSON and returns the raw bytes — the sales export's PDF batches.
+ * One refresh-and-retry on 401, like every other call: an export of a year
+ * of bills outlives a 15-minute access token.
+ */
+export async function apiBinary(path: string, body: unknown): Promise<Uint8Array> {
+  const send = () =>
+    fetchWithDeadline(`${API}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify(body),
+      credentials: "include",
+    });
+  let res = await send();
+  if (res.status === 401 && (await restoreSession())) res = await send();
+  if (!res.ok) throw new ApiError(res.status, "Could not fetch the bill PDFs");
+  return new Uint8Array(await res.arrayBuffer());
+}
