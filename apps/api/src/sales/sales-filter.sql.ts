@@ -18,6 +18,9 @@ export function billWhere(f: SalesFilter, businessId: string, tz: string): Prism
     // the upper bound is the following local midnight.
     Prisma.sql`b.issued_at >= (${f.from}::date::timestamp AT TIME ZONE ${tz})`,
     Prisma.sql`b.issued_at < (${addDays(f.to, 1)}::date::timestamp AT TIME ZONE ${tz})`,
+    // A bill printed for an order that was later cancelled is not a sale, and
+    // it can never be paid — counting it would leave a permanent "Unpaid".
+    Prisma.sql`EXISTS (SELECT 1 FROM orders o WHERE o.id = b.order_id AND o.status <> 'cancelled')`,
   ];
 
   if (f.modes?.length) {

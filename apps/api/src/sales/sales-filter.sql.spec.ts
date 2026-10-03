@@ -13,6 +13,14 @@ describe("billWhere", () => {
     expect(w.values).toEqual([BIZ, "2026-10-02", "Asia/Kolkata", "2026-10-03", "Asia/Kolkata"]);
   });
 
+  // A bill printed for an order that was then cancelled is not a sale. It
+  // can never be paid either, so counting it would leave a permanent
+  // "Unpaid" in the books.
+  it("leaves out bills whose order was cancelled", () => {
+    const w = billWhere(base, BIZ, "UTC");
+    expect(w.sql).toContain("o.status <> 'cancelled'");
+  });
+
   it("ORs modes with unpaid", () => {
     const w = billWhere({ ...base, modes: ["cash", "unpaid"] }, BIZ, "UTC");
     expect(w.sql).toMatch(/b\.payment_mode::text IN \(\?\) OR b\.payment_mode IS NULL/);
