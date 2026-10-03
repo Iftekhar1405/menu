@@ -25,6 +25,8 @@ const NAV = [
   { href: "/orders",      label: "Orders",          icon: OrdersIcon },
   { href: "/menu",        label: "Menu",            icon: MenuIcon },
   { href: "/tables",      label: "Tables",          icon: TablesIcon },
+  { href: "/sales",       label: "Sales",           icon: SalesIcon },
+  { href: "/insights",    label: "Insights",        icon: InsightsIcon },
   { href: "/billing",     label: "Billing",         icon: BillingIcon },
   { href: "/appearance",  label: "Menu design",     icon: AppearanceIcon },
   { href: "/qr",          label: "QR code",         icon: QrIcon },
@@ -383,6 +385,23 @@ function TablesIcon() {
     <>
       <circle cx="12" cy="9" r="5" />
       <path d="M12 14v7M8 21h8" />
+    </>,
+  );
+}
+
+function SalesIcon() {
+  return icon(
+    <>
+      <path d="M4 4h16v16H4Z" />
+      <path d="M4 9h16M9 9v11" />
+    </>,
+  );
+}
+
+function InsightsIcon() {
+  return icon(
+    <>
+      <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
     </>,
   );
 }

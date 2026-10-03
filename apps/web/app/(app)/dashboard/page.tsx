@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { formatMoney, localToday, timezoneFor } from "@menu/shared";
 import { api } from "@/lib/api-client";
+import type { SalesPage, Totals } from "@/lib/sales/types";
 import type { Summary } from "@/lib/types";
 import { useSession } from "@/components/session";
 import { Button, Empty } from "@/components/ui";
@@ -18,12 +20,18 @@ export default function DashboardPage() {
   const { current } = useSession();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [ratings, setRatings] = useState<Ratings | null>(null);
+  const [today, setToday] = useState<Totals | null>(null);
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     if (!current) return;
     void api.get<Summary>(`/businesses/${current.id}/summary`).then(setSummary);
     void api.get<Ratings>(`/businesses/${current.id}/ratings`).then(setRatings).catch(() => undefined);
+    const day = localToday(timezoneFor(current.country));
+    void api
+      .get<SalesPage>(`/businesses/${current.id}/bills?from=${day}&to=${day}`)
+      .then((p) => setToday(p.totals))
+      .catch(() => undefined);
   }, [current]);
 
   useEffect(() => {
@@ -82,6 +90,28 @@ export default function DashboardPage() {
         />
       ) : (
         <>
+          {today && current && (
+            <Link
+              href="/insights?p=today"
+              className="spring mb-3 block rounded-2xl border border-line bg-surface px-5 py-4 hover:border-[var(--accent-soft)] hover:shadow-lift"
+            >
+              <p className="text-[12.5px] text-muted">Today</p>
+              <div className="mt-1 flex flex-wrap items-baseline gap-x-6 gap-y-1">
+                <span className="tnum text-[26px] font-semibold tracking-tight">
+                  {formatMoney(today.gross, current.currency)}
+                </span>
+                <span className="tnum text-[14px] text-muted">
+                  {today.count} bill{today.count === 1 ? "" : "s"}
+                </span>
+                {Number(today.byMode.unpaid) > 0 && (
+                  <span className="tnum text-[14px] font-medium text-[var(--accent-strong)]">
+                    {formatMoney(today.byMode.unpaid, current.currency)} unpaid
+                  </span>
+                )}
+              </div>
+            </Link>
+          )}
+
           {/* Stats grid */}
           <section className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat label="Dishes" value={summary?.items} icon="🍽️" delay={0} />
