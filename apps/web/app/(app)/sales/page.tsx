@@ -93,13 +93,13 @@ function Sales() {
             {rows.map((r) => (
               <li key={r.id}>
                 <button type="button" onClick={() => setOpen(r)}
-                  className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-4 gap-y-0.5 px-4 py-3 text-left hover:bg-[var(--raised)] sm:grid-cols-[6rem_1fr_6rem_8rem_7rem]">
+                  className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-4 gap-y-0.5 px-4 py-3 text-left hover:bg-[var(--raised)] sm:grid-cols-[5rem_1fr_10rem_8rem_7rem]">
                   <span className="tnum font-medium">#{r.billNumber}</span>
                   <span className="text-[13.5px] text-muted">
                     {new Date(r.issuedAt).toLocaleString("en-IN", { timeZone: tz, dateStyle: "medium", timeStyle: "short" })}
                     <span className="sm:hidden"> · Table {r.tableLabel}</span>
                   </span>
-                  <span className="hidden text-[13.5px] sm:block">Table {r.tableLabel}</span>
+                  <span className="hidden truncate text-[13.5px] sm:block">Table {r.tableLabel}</span>
                   <span className={cx("hidden w-fit rounded-full px-2 py-0.5 text-[12px] sm:block",
                     r.paymentMode ? "bg-[var(--raised)]" : "bg-[var(--accent-soft)] text-[var(--accent-strong)]")}>
                     {r.paymentMode ? `Paid · ${PAYMENT_MODE_LABEL[r.paymentMode]}` : "Unpaid"}
