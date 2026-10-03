@@ -153,6 +153,49 @@ else
 fi
 
 echo
+echo "Sales records, export and insights:"
+
+RANGE="from=2020-01-01&to=2020-12-31"
+probe "tenant B lists A's sales"             "$API/businesses/$A_BID/bills?$RANGE" -H "Authorization: Bearer $B_TOKEN"
+probe "tenant B reads A's export rows"       "$API/businesses/$A_BID/bills/export/rows?$RANGE" -H "Authorization: Bearer $B_TOKEN"
+probe "tenant B reads A's analytics"         "$API/businesses/$A_BID/analytics?$RANGE" -H "Authorization: Bearer $B_TOKEN"
+probe "tenant B pulls PDFs from A" -X POST   "$API/businesses/$A_BID/bills/export/pdfs" -H "Authorization: Bearer $B_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"billIds":["00000000-0000-0000-0000-000000000000"]}'
+probe "tenant B changes a payment mode on A" -X PATCH "$API/businesses/$A_BID/bills/00000000-0000-0000-0000-000000000000/payment-mode" \
+  -H "Authorization: Bearer $B_TOKEN" -H 'Content-Type: application/json' -d '{"mode":"cash"}'
+probe "table session lists sales"            "$API/businesses/$A_BID/bills?$RANGE" -H "Authorization: Bearer $S1"
+probe "table session reads analytics"        "$API/businesses/$A_BID/analytics?$RANGE" -H "Authorization: Bearer $S1"
+probe "no token on analytics"                "$API/businesses/$A_BID/analytics?$RANGE"
+
+# A real order on table 1, so the paid-flow checks have something to act on.
+CAT=$(curl -s -X POST "$API/businesses/$A_BID/categories" -H "Authorization: Bearer $A_TOKEN"   -H 'Content-Type: application/json' -d '{"name":"Iso","isVisible":true}' | json_field '["id"]')
+ITEM=$(curl -s -X POST "$API/businesses/$A_BID/items" -H "Authorization: Bearer $A_TOKEN" -H 'Content-Type: application/json'   -d "{\"name\":\"Iso tea\",\"categoryId\":\"$CAT\",\"price\":50,\"isAvailable\":true,\"allergens\":[],\"variants\":[],\"photos\":[]}" | json_field '["id"]')
+curl -s -o /dev/null -X POST "$API/public/table/order" -H "Authorization: Bearer $S1"   -H 'Content-Type: application/json' -d "{\"items\":[{\"itemId\":\"$ITEM\",\"quantity\":1}]}"
+A_ORDER=$(curl -s "$API/businesses/$A_BID/orders?scope=open" -H "Authorization: Bearer $A_TOKEN"   | python3 -c "import sys,json;d=json.load(sys.stdin);print(d[0]['id'] if d else '')")
+
+if [ -n "$A_ORDER" ]; then
+  # Two Paid taps at once: exactly one may win.
+  ( curl -s -o /dev/null -w '%{http_code}' -X POST "$API/businesses/$A_BID/orders/$A_ORDER/paid"       -H "Authorization: Bearer $A_TOKEN" -H 'Content-Type: application/json' -d '{"mode":"upi"}' > /tmp/iso_s1 ) &
+  ( curl -s -o /dev/null -w '%{http_code}' -X POST "$API/businesses/$A_BID/orders/$A_ORDER/paid"       -H "Authorization: Bearer $A_TOKEN" -H 'Content-Type: application/json' -d '{"mode":"cash"}' > /tmp/iso_s2 ) &
+  wait
+  OKS=$(cat /tmp/iso_s1 /tmp/iso_s2 | grep -o '2[0-9][0-9]' | wc -l)
+  if [ "$OKS" -eq 1 ]; then
+    echo "  ok    double Paid tap: exactly one wins"
+  else
+    echo "  RACE  double Paid tap: $OKS succeeded"
+    FAILURES=$((FAILURES + 1))
+  fi
+
+  # A's real bill, requested through B's business id: refused whole.
+  DAY=$(date -u +%Y-%m-%d)
+  A_BILL=$(curl -s "$API/businesses/$A_BID/bills?from=$(date -u -d yesterday +%Y-%m-%d 2>/dev/null || echo $DAY)&to=$(date -u -d tomorrow +%Y-%m-%d 2>/dev/null || echo $DAY)"     -H "Authorization: Bearer $A_TOKEN" | python3 -c "import sys,json;b=json.load(sys.stdin)['bills'];print(b[0]['id'] if b else '')")
+  probe "tenant B pulls A's real bill PDF" -X POST "$API/businesses/$B_BID/bills/export/pdfs" -H "Authorization: Bearer $B_TOKEN"     -H 'Content-Type: application/json' -d "{\"billIds\":[\"$A_BILL\"]}"
+  probe "owner sets status paid without a mode" -X PATCH "$API/businesses/$A_BID/orders/$A_ORDER/status"     -H "Authorization: Bearer $A_TOKEN" -H 'Content-Type: application/json' -d '{"status":"paid"}'
+else
+  echo "  skip  paid-flow checks (could not place an order on table 1)"
+fi
+
+echo
 echo "Platform admin — the one boundary that is crossed on purpose:"
 
 # An ordinary owner must not reach the admin area at all.
@@ -171,6 +214,8 @@ probe "tenant B reads A's merch orders"    "$API/businesses/$A_BID/merch-orders"
 ADMIN_TOKEN=$(curl -s -X POST "$API/auth/login" -H 'Content-Type: application/json'   -d "{\"identifier\":\"${SEED_ADMIN_EMAIL:-admin@irad.solutions}\",\"pin\":\"${SEED_ADMIN_PIN:-204815}\",\"country\":\"IN\"}"   | json_field '["accessToken"]' 2>/dev/null || echo "")
 
 if [ -n "$ADMIN_TOKEN" ]; then
+  probe "admin reads a business's sales"     "$API/businesses/$A_BID/bills?from=2020-01-01&to=2020-12-31" -H "Authorization: Bearer $ADMIN_TOKEN"
+  probe "admin reads a business's analytics" "$API/businesses/$A_BID/analytics?from=2020-01-01&to=2020-12-31" -H "Authorization: Bearer $ADMIN_TOKEN"
   probe "admin reads a business's menu"      "$API/businesses/$A_BID/menu" -H "Authorization: Bearer $ADMIN_TOKEN"
   probe "admin reads a business's orders"    "$API/businesses/$A_BID/orders" -H "Authorization: Bearer $ADMIN_TOKEN"
   probe "admin reads a business's bills"     "$API/businesses/$A_BID/bills" -H "Authorization: Bearer $ADMIN_TOKEN"
