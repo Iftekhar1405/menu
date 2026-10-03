@@ -7,7 +7,7 @@ import { buildBillPdf } from "../billing/bill.pdf";
 import { shapeBill } from "../billing/billing.service";
 import { MediaService } from "../media/media.service";
 import { assertAllFound, billPdfName, zipPdfs } from "./pdf-batch";
-import { LINE_CATEGORY_JOIN, afterCursor, billWhere, decodeCursor, encodeCursor } from "./sales-filter.sql";
+import { CURSOR_AT, LINE_CATEGORY_JOIN, afterCursor, beforeCursor, billWhere, decodeCursor, encodeCursor } from "./sales-filter.sql";
 
 export interface BillRow {
   id: string;
@@ -93,14 +93,14 @@ export class SalesService {
     const rows = await this.prisma.db.$queryRaw<
       {
         id: string; order_id: string; bill_number: number; table_label: string; issued_at: Date;
-        total: string; items: number; payment_mode: PaymentMode | null; paid_at: Date | null;
+        total: string; items: number; payment_mode: PaymentMode | null; paid_at: Date | null; cursor_at: string;
       }[]
     >`
       SELECT b.id, b.order_id, b.bill_number, b.table_label, b.issued_at, b.total::text AS total,
-             b.payment_mode::text AS payment_mode, b.paid_at,
+             b.payment_mode::text AS payment_mode, b.paid_at, ${CURSOR_AT} AS cursor_at,
              COALESCE((SELECT SUM(l.quantity) FROM bill_lines l WHERE l.bill_id = b.id), 0)::int AS items
       FROM bills b
-      WHERE ${where} AND ${afterCursor(after)}
+      WHERE ${where} AND ${beforeCursor(after)}
       ORDER BY b.issued_at DESC, b.id DESC
       LIMIT ${PAGE + 1}`;
 
@@ -118,7 +118,7 @@ export class SalesService {
         paymentMode: r.payment_mode,
         paidAt: r.paid_at ? r.paid_at.toISOString() : null,
       })),
-      nextCursor: rows.length > PAGE && last ? encodeCursor({ issuedAt: last.issued_at, id: last.id }) : null,
+      nextCursor: rows.length > PAGE && last ? encodeCursor({ issuedAt: last.cursor_at, id: last.id }) : null,
       // Totals for the whole filter, only on the first page — later pages
       // would recompute the same numbers.
       totals: after ? null : await this.totals(where),
@@ -193,16 +193,15 @@ export class SalesService {
         id: string; bill_number: number; issued_at: Date; table_label: string;
         payment_mode: PaymentMode | null; paid_at: Date | null; subtotal: string; tax_total: string;
         service_charge: string; round_off: string; total: string; prices_include_tax: boolean;
-        tax_label: string; gstin: string | null;
+        tax_label: string; gstin: string | null; cursor_at: string;
       }[]
     >`
       SELECT b.id, b.bill_number, b.issued_at, b.table_label, b.payment_mode::text AS payment_mode, b.paid_at,
              b.subtotal::text AS subtotal, b.tax_total::text AS tax_total, b.service_charge::text AS service_charge,
              b.round_off::text AS round_off, b.total::text AS total, b.prices_include_tax, b.tax_label,
-             b.business_snapshot->>'gstin' AS gstin
+             b.business_snapshot->>'gstin' AS gstin, ${CURSOR_AT} AS cursor_at
       FROM bills b
-      WHERE ${where}
-        AND ${after ? Prisma.sql`(b.issued_at, b.id) > (${after.issuedAt}::timestamptz, ${after.id}::uuid)` : Prisma.sql`TRUE`}
+      WHERE ${where} AND ${afterCursor(after)}
       ORDER BY b.issued_at ASC, b.id ASC
       LIMIT ${EXPORT_PAGE + 1}`;
 
@@ -260,7 +259,7 @@ export class SalesService {
         gstin: b.gstin,
         lines: byBill.get(b.id) ?? [],
       })),
-      nextCursor: bills.length > EXPORT_PAGE && last ? encodeCursor({ issuedAt: last.issued_at, id: last.id }) : null,
+      nextCursor: bills.length > EXPORT_PAGE && last ? encodeCursor({ issuedAt: last.cursor_at, id: last.id }) : null,
     };
   }
 

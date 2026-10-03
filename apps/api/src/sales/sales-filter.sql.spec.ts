@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { billWhere, decodeCursor, encodeCursor, lineMatch } from "./sales-filter.sql";
+import { afterCursor, beforeCursor, billWhere, decodeCursor, encodeCursor, lineMatch } from "./sales-filter.sql";
 
 const base = { from: "2026-10-02", to: "2026-10-02" };
 const BIZ = "11111111-1111-1111-1111-111111111111";
@@ -67,8 +67,17 @@ describe("lineMatch", () => {
 
 describe("cursor", () => {
   it("round-trips and rejects junk", () => {
-    const c = { issuedAt: new Date("2026-10-02T10:00:00.123Z"), id: "44444444-4444-4444-4444-444444444444" };
+    const c = { issuedAt: "2026-10-02T10:00:00.123456Z", id: "44444444-4444-4444-4444-444444444444" };
     expect(decodeCursor(encodeCursor(c))).toEqual(c);
     expect(decodeCursor("not-a-cursor")).toBeNull();
+  });
+
+  // Postgres keeps microseconds; a JS Date keeps milliseconds. A cursor cut
+  // to milliseconds sorts *before* its own row, so the next page repeats it —
+  // a duplicated bill in every 1000-row export page.
+  it("keeps the database's microseconds so a page never repeats its last row", () => {
+    const c = { issuedAt: "2026-10-03T12:08:20.873463Z", id: "44444444-4444-4444-4444-444444444444" };
+    expect(afterCursor(c).values).toContain("2026-10-03T12:08:20.873463Z");
+    expect(beforeCursor(c).values).toContain("2026-10-03T12:08:20.873463Z");
   });
 });

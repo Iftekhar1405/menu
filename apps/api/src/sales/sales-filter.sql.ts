@@ -75,26 +75,42 @@ export function lineMatch(f: SalesFilter): Prisma.Sql {
 }
 
 export interface Cursor {
-  issuedAt: Date;
+  /**
+   * The row's `issued_at` exactly as Postgres holds it — ISO text with
+   * microseconds, selected via `CURSOR_AT`. Never a JS Date: a Date keeps
+   * milliseconds only, and a cursor truncated that way sorts *before* its own
+   * row, so the next page would repeat it.
+   */
+  issuedAt: string;
   id: string;
 }
 
+/** Select this as `cursor_at` to build a full-precision cursor. */
+export const CURSOR_AT = Prisma.sql`to_char(b.issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+
+const CURSOR_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
+const UUID = /^[0-9a-f-]{36}$/i;
+
 export function encodeCursor(c: Cursor): string {
-  return Buffer.from(`${c.issuedAt.toISOString()}|${c.id}`).toString("base64url");
+  return Buffer.from(`${c.issuedAt}|${c.id}`).toString("base64url");
 }
 
 export function decodeCursor(s: string): Cursor | null {
   try {
-    const [iso, id] = Buffer.from(s, "base64url").toString().split("|");
-    const issuedAt = new Date(iso ?? "");
-    if (!id || Number.isNaN(issuedAt.getTime()) || !/^[0-9a-f-]{36}$/i.test(id)) return null;
+    const [issuedAt, id] = Buffer.from(s, "base64url").toString().split("|");
+    if (!issuedAt || !id || !CURSOR_TIME.test(issuedAt) || !UUID.test(id)) return null;
     return { issuedAt, id };
   } catch {
     return null;
   }
 }
 
-/** Keyset condition for newest-first pages. */
-export function afterCursor(c: Cursor | null): Prisma.Sql {
+/** Keyset condition for newest-first pages (the Sales list). */
+export function beforeCursor(c: Cursor | null): Prisma.Sql {
   return c ? Prisma.sql`(b.issued_at, b.id) < (${c.issuedAt}::timestamptz, ${c.id}::uuid)` : Prisma.sql`TRUE`;
+}
+
+/** Keyset condition for oldest-first pages (the export). */
+export function afterCursor(c: Cursor | null): Prisma.Sql {
+  return c ? Prisma.sql`(b.issued_at, b.id) > (${c.issuedAt}::timestamptz, ${c.id}::uuid)` : Prisma.sql`TRUE`;
 }
