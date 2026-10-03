@@ -32,7 +32,7 @@ describe("order transitions", () => {
   });
 
   it("refuses to reopen a finished order", () => {
-    expect(ALLOWED_TRANSITIONS.completed).toEqual([]);
+    expect(ALLOWED_TRANSITIONS.completed).toEqual(["paid"]);
     expect(ALLOWED_TRANSITIONS.cancelled).toEqual([]);
   });
 
@@ -50,5 +50,17 @@ describe("order transitions", () => {
     for (const status of ORDER_STATUSES) {
       expect(canTransition(status as OrderStatus, status as OrderStatus)).toBe(false);
     }
+  });
+
+  it("lets any open or served order be marked paid, and nothing leave paid", () => {
+    for (const s of [...OPEN_STATUSES, "completed"] as OrderStatus[]) {
+      expect(canTransition(s, "paid")).toBe(true);
+    }
+    expect(ALLOWED_TRANSITIONS.paid).toEqual([]);
+    expect(canTransition("cancelled", "paid")).toBe(false);
+  });
+
+  it("does not count paid as open", () => {
+    expect(OPEN_STATUSES).not.toContain("paid");
   });
 });

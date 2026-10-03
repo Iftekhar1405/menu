@@ -303,6 +303,8 @@ enum OrderStatus {
   preparing
   ready
   completed
+  /// Settled. Recorded with a payment mode on the bill; terminal.
+  paid
   cancelled
 }
 
@@ -466,6 +468,14 @@ model OrderEvent {
 
 /// Written once. Regenerating returns the existing row rather than recomputing,
 /// because the point of snapshotting is that tomorrow's price change cannot
+
+enum PaymentMode {
+  cash
+  upi
+  card
+  other
+}
+
 /// alter a bill printed today.
 model Bill {
   id          String   @id @default(uuid()) @db.Uuid
@@ -491,6 +501,9 @@ model Bill {
   serviceCharge Decimal @map("service_charge") @db.Decimal(10, 2)
   roundOff      Decimal @map("round_off") @db.Decimal(10, 2)
   total         Decimal @db.Decimal(10, 2)
+  /// Null until the order is marked paid. Both or neither (CHECK in SQL).
+  paymentMode   PaymentMode? @map("payment_mode")
+  paidAt        DateTime?    @map("paid_at") @db.Timestamptz(6)
 
   business Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
   order    Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -498,6 +511,7 @@ model Bill {
 
   @@unique([businessId, billNumber])
   @@index([businessId, issuedAt])
+  @@index([businessId, paymentMode, issuedAt])
   @@map("bills")
 }
 

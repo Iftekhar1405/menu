@@ -16,6 +16,7 @@ export const ORDER_STATUSES = [
   "preparing",
   "ready",
   "completed",
+  "paid",
   "cancelled",
 ] as const satisfies readonly OrderStatus[];
 
@@ -29,6 +30,10 @@ export const ORDER_STATUSES = [
  * index silently stops constraining accepted orders, and a table ends up with
  * two open orders and two bills. See the 20260927110000_order_events
  * migration.
+ *
+ * Statuses meaning *finished* (`completed`, `paid`) are likewise listed by
+ * hand in `place_table_round`, `get_table_order` and `get_ratable_order` —
+ * see the 20261003000100_bill_payment migration.
  */
 export const OPEN_STATUSES: OrderStatus[] = [
   "placed",
@@ -36,6 +41,9 @@ export const OPEN_STATUSES: OrderStatus[] = [
   "preparing",
   "ready",
 ];
+
+/** Served or settled — the order is over. Mirrors the SQL lists above. */
+export const FINISHED_STATUSES: OrderStatus[] = ["completed", "paid", "cancelled"];
 
 /**
  * What staff are allowed to move an order to.
@@ -45,13 +53,15 @@ export const OPEN_STATUSES: OrderStatus[] = [
  * be told to tap three more times first.
  */
 export const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  placed: ["accepted", "preparing", "ready", "completed", "cancelled"],
-  accepted: ["preparing", "ready", "completed", "cancelled"],
-  preparing: ["ready", "completed", "cancelled"],
-  ready: ["completed", "cancelled"],
+  placed: ["accepted", "preparing", "ready", "completed", "paid", "cancelled"],
+  accepted: ["preparing", "ready", "completed", "paid", "cancelled"],
+  preparing: ["ready", "completed", "paid", "cancelled"],
+  ready: ["completed", "paid", "cancelled"],
+  // Served food still has to be paid for; that is the only way forward.
+  completed: ["paid"],
   // A finished order stays finished. Reopening one would put two open orders
   // on a table that has since seated new diners.
-  completed: [],
+  paid: [],
   cancelled: [],
 };
 
