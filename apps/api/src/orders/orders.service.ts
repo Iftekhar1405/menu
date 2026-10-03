@@ -11,8 +11,9 @@ import { TenantContext } from "../prisma/tenant-context";
 import { cleanPgMessage } from "../common/pg-message";
 import { NotificationsService } from "../notifications/notifications.service";
 import type { CancelledLine, PlacedOrder } from "../notifications/events";
-import type { CancelOrderInput } from "@menu/shared";
-import { ALLOWED_TRANSITIONS, OPEN_STATUSES } from "./transitions";
+import type { CancelOrderInput, PaymentMode } from "@menu/shared";
+import { shapeBill } from "../billing/billing.service";
+import { ALLOWED_TRANSITIONS, OPEN_STATUSES, canTransition } from "./transitions";
 
 export interface PlaceLine {
   itemId: string;
@@ -213,7 +214,7 @@ export class OrdersService {
 
   // ── Staff side ────────────────────────────────────────────────────────────
 
-  async listForBusiness(userId: string, businessId: string, scope: "open" | "today") {
+  async listForBusiness(userId: string, businessId: string, scope: "open" | "today" | "collect") {
     await this.businesses.assertOwns(userId, businessId);
 
     // `business_day` is written by Postgres with CURRENT_DATE, so "today" has
@@ -230,7 +231,11 @@ export class OrdersService {
         businessId,
         ...(scope === "open"
           ? { status: { in: OPEN_STATUSES } }
-          : { businessDay: today }),
+          : scope === "collect"
+            ? // Served, not yet paid. A day back is enough for the board;
+              // anything older is chased from the Sales page.
+              { status: "completed", completedAt: { gte: new Date(Date.now() - 86_400_000) } }
+            : { businessDay: today }),
       },
       // Running orders first. The board groups by status in the browser, so
       // the effect is that a table that has come back sits at the top of
@@ -243,6 +248,7 @@ export class OrdersService {
         // the board would show an order quietly shrinking with no account of
         // why — and staff would go on cooking what is no longer there.
         cancellations: { orderBy: { createdAt: "asc" } },
+        bill: { select: { id: true, total: true, paymentMode: true } },
       },
     });
   }
@@ -341,6 +347,11 @@ export class OrdersService {
     });
     if (!order) throw new NotFoundException("Order not found");
 
+    // Paid needs a payment mode, so it has its own route.
+    if (next === "paid") {
+      throw new BadRequestException("Use the Paid action to record how it was paid");
+    }
+
     // A finished order stays finished. Reopening one would put two open orders
     // on a table that has since seated new diners.
     if (!ALLOWED_TRANSITIONS[order.status].includes(next)) {
@@ -369,6 +380,63 @@ export class OrdersService {
     await this.notifications.announceStatus(updated.tableId);
 
     return updated;
+  }
+
+  /**
+   * Settles an order: bills it if it has not been, records how it was paid,
+   * and closes it — one transaction (the request's tenant transaction).
+   *
+   * The order update is guarded on the status we read. Two staff tapping Paid
+   * together both pass the first check; only one matches the guarded update,
+   * and the other gets a 409 and its whole transaction — including its bill
+   * write — rolls back.
+   */
+  async markPaid(userId: string, businessId: string, orderId: string, mode: PaymentMode) {
+    await this.businesses.assertOwns(userId, businessId);
+
+    const order = await this.prisma.db.order.findFirst({
+      where: { id: orderId, businessId },
+      select: { id: true, status: true, completedAt: true, tableId: true },
+    });
+    if (!order) throw new NotFoundException("Order not found");
+    if (!canTransition(order.status, "paid")) {
+      throw new ConflictException(`An order that is ${order.status} cannot be marked paid`);
+    }
+
+    // Idempotent: returns the existing bill for an already-served order.
+    await this.prisma.db.$queryRaw`SELECT generate_bill(${orderId}::uuid, ${businessId}::uuid)`;
+
+    const now = new Date();
+    await this.prisma.db.bill.updateMany({
+      where: { orderId, businessId, paidAt: null },
+      data: { paymentMode: mode, paidAt: now },
+    });
+
+    const moved = await this.prisma.db.order.updateMany({
+      where: { id: orderId, businessId, status: order.status },
+      data: { status: "paid", completedAt: order.completedAt ?? now },
+    });
+    if (moved.count !== 1) {
+      throw new ConflictException("Someone else just updated this order — refresh and try again");
+    }
+
+    const [updated, bill] = await Promise.all([
+      this.prisma.db.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: {
+          table: { select: { id: true, label: true } },
+          items: { orderBy: [{ batch: "asc" }, { createdAt: "asc" }] },
+          cancellations: { orderBy: { createdAt: "asc" } },
+        },
+      }),
+      this.prisma.db.bill.findFirstOrThrow({
+        where: { orderId, businessId },
+        include: { lines: { orderBy: { position: "asc" } } },
+      }),
+    ]);
+
+    await this.notifications.announceStatus(order.tableId);
+    return { order: updated, bill: shapeBill(bill) };
   }
 }
 

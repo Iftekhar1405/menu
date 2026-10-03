@@ -11,7 +11,12 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { cancelOrderSchema, type CancelOrderInput } from "@menu/shared";
+import {
+  cancelOrderSchema,
+  markPaidSchema,
+  type CancelOrderInput,
+  type MarkPaidInput,
+} from "@menu/shared";
 import type { RequestUser } from "../auth/jwt.strategy";
 import { CurrentUser, Public } from "../common/decorators";
 import { ZodBody } from "../common/zod.pipe";
@@ -166,13 +171,23 @@ export class OrdersController {
   list(
     @CurrentUser() user: RequestUser,
     @Param("bid") bid: string,
-    @Query("scope") scope: "open" | "today" = "open",
+    @Query("scope") scope: "open" | "today" | "collect" = "open",
   ) {
     return this.orders.listForBusiness(
       user.id,
       bid,
-      scope === "today" ? "today" : "open",
+      scope === "today" || scope === "collect" ? scope : "open",
     );
+  }
+
+  @Post(":id/paid")
+  markPaid(
+    @CurrentUser() user: RequestUser,
+    @Param("bid") bid: string,
+    @Param("id") id: string,
+    @Body(new ZodBody(markPaidSchema)) body: MarkPaidInput,
+  ) {
+    return this.orders.markPaid(user.id, bid, id, body.mode);
   }
 
   @Patch(":id/status")

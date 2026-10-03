@@ -41,6 +41,8 @@ export interface Bill {
   roundOff: string;
   total: string;
   lines: BillLine[];
+  paymentMode: "cash" | "upi" | "card" | "other" | null;
+  paidAt: string | null;
 }
 
 export interface TaxConfig {
@@ -253,7 +255,7 @@ export interface RatableOrder {
 }
 
 /** Prisma Decimals become strings so money never touches a JS float. */
-function shapeBill(bill: {
+export function shapeBill(bill: {
   id: string;
   billNumber: number;
   tableLabel: string;
@@ -269,6 +271,8 @@ function shapeBill(bill: {
   serviceChargeRate: unknown;
   roundOff: unknown;
   total: unknown;
+  paymentMode?: string | null;
+  paidAt?: Date | null;
   lines: {
     id: string;
     name: string;
@@ -296,6 +300,8 @@ function shapeBill(bill: {
     serviceChargeRate: String(bill.serviceChargeRate),
     roundOff: String(bill.roundOff),
     total: String(bill.total),
+    paymentMode: (bill.paymentMode ?? null) as Bill["paymentMode"],
+    paidAt: bill.paidAt ? bill.paidAt.toISOString() : null,
     lines: bill.lines.map((l) => ({
       id: l.id,
       name: l.name,
