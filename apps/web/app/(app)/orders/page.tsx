@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { formatMoney } from "@menu/shared";
+import { PAYMENT_MODE_LABEL, formatMoney, type PaymentMode } from "@menu/shared";
 import { api, downloadFile } from "@/lib/api-client";
 import { createFreshness } from "@/lib/freshness";
 import { useSession } from "@/components/session";
@@ -9,6 +9,7 @@ import { useConfirm } from "@/components/confirm";
 import { Button, Empty, Segmented, cx } from "@/components/ui";
 import { buildTimeline, type OrderEvent, type OrderStatus } from "@/lib/order-timeline";
 import { OrderTimeline } from "@/components/order/timeline";
+import { PaySheet } from "@/components/sales/pay-sheet";
 
 type Status = OrderStatus;
 
@@ -27,6 +28,8 @@ interface Order {
     quantity: number;
     batch: number;
   }[];
+  /** Present once billed; carries the payment mode once paid. */
+  bill?: { id: string; total: string; paymentMode: PaymentMode | null } | null;
 }
 
 const COLUMNS: { status: Status; title: string; next?: Status; nextLabel?: string }[] = [
@@ -49,11 +52,14 @@ export default function OrdersPage() {
   const confirm = useConfirm();
   const [orders, setOrders] = useState<Order[]>([]);
   const [past, setPast] = useState<Order[]>([]);
+  /** Served, not paid yet — the "To collect" column. */
+  const [collect, setCollect] = useState<Order[]>([]);
+  const [paying, setPaying] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   /** Which column the phone is showing. Ignored from `sm:` up. */
-  const [lane, setLane] = useState<Status>("placed");
+  const [lane, setLane] = useState<Status | "collect">("placed");
 
   /*
    * The board polls and also moves cards optimistically, which is several
@@ -71,15 +77,17 @@ export default function OrdersPage() {
       // below shows what has already gone out. A served order used to vanish
       // from this screen entirely, which is no use to anyone reprinting a
       // bill five minutes later.
-      const [open, today] = await Promise.all([
+      const [open, today, toCollect] = await Promise.all([
         api.get<Order[]>(`/businesses/${current.id}/orders?scope=open`),
         api.get<Order[]>(`/businesses/${current.id}/orders?scope=today`),
+        api.get<Order[]>(`/businesses/${current.id}/orders?scope=collect`),
       ]);
       if (!fresh.current.accepts(token)) return;
       setOrders(open);
+      setCollect(toCollect);
       setPast(
         today
-          .filter((o) => o.status === "completed" || o.status === "cancelled")
+          .filter((o) => o.status === "completed" || o.status === "paid" || o.status === "cancelled")
           .sort((a, b) => b.dailyNumber - a.dailyNumber),
       );
     } finally {
@@ -165,6 +173,29 @@ export default function OrdersPage() {
     }
   }
 
+  /**
+   * Settles an order with how it was paid. From To collect after serving, or
+   * straight from an open column at a pay-at-counter cafe. A 409 means
+   * another device got there first; the reload shows what happened.
+   */
+  async function markPaid(order: Order, mode: PaymentMode) {
+    if (!current) return;
+    setBusy(order.id);
+    const written = fresh.current.mutating();
+    try {
+      await api.post(`/businesses/${current.id}/orders/${order.id}/paid`, { mode });
+      setCollect((prev) => prev.filter((o) => o.id !== order.id));
+      setOrders((prev) => prev.filter((o) => o.id !== order.id));
+    } catch {
+      // Swallowed: the reload below shows the order's real state.
+    } finally {
+      setPaying(null);
+      written();
+      setBusy(null);
+      await load();
+    }
+  }
+
   return (
     <div className="px-5 py-8 sm:px-6 sm:py-10 lg:px-10 lg:py-12">
       <header className="mb-6 flex items-baseline justify-between gap-4 sm:mb-8">
@@ -183,12 +214,12 @@ export default function OrdersPage() {
 
       {loading ? (
         <p className="text-[14px] text-faint">Loading…</p>
-      ) : orders.length === 0 && past.length === 0 ? (
+      ) : orders.length === 0 && collect.length === 0 && past.length === 0 ? (
         <Empty
           title="No orders today"
           body="When someone scans a table card and orders, it appears here straight away."
         />
-      ) : orders.length === 0 ? (
+      ) : orders.length === 0 && collect.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-center text-[13.5px] text-faint">
           Nothing cooking right now.
         </p>
@@ -206,8 +237,8 @@ export default function OrdersPage() {
               label="Order status"
               value={lane}
               onChange={setLane}
-              options={COLUMNS.map((c) => ({
-                value: c.status,
+              options={[...COLUMNS.map((c) => ({
+                value: c.status as Status | "collect",
                 // Shortened labels for the phone segmented control — four
                 // options at full width clips at 360px.
                 label: c.status === "placed" ? "New"
@@ -215,11 +246,11 @@ export default function OrdersPage() {
                   : c.status === "preparing" ? "Making"
                   : "Ready",
                 badge: (grouped.get(c.status) ?? []).length,
-              }))}
+              })), { value: "collect" as const, label: "Collect", badge: collect.length }]}
             />
           </div>
 
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
             {COLUMNS.map((column) => {
               const list = grouped.get(column.status) ?? [];
               const shown = column.status === lane;
@@ -250,6 +281,7 @@ export default function OrdersPage() {
                         nextLabel={column.nextLabel}
                         onAdvance={() => column.next && void advance(order, column.next)}
                         onCancel={() => void advance(order, "cancelled")}
+                        onPaid={() => setPaying(order)}
                         onBill={async (format) => {
                           await api
                             .post(`/businesses/${current.id}/orders/${order.id}/bill`)
@@ -270,6 +302,49 @@ export default function OrdersPage() {
                 </section>
               );
             })}
+
+            <section
+              role={lane === "collect" ? "tabpanel" : undefined}
+              id="segpanel-collect"
+              aria-labelledby={lane === "collect" ? "seg-collect" : undefined}
+              className={cx(lane === "collect" ? "block" : "hidden", "sm:block")}
+            >
+              <h2 className="mb-2.5 hidden items-baseline gap-2 text-[13px] font-semibold uppercase tracking-[0.12em] text-faint sm:flex">
+                To collect
+                <span className="tnum text-ink">{collect.length}</span>
+              </h2>
+              <div className="space-y-3">
+                {collect.map((order) => (
+                  <article
+                    key={order.id}
+                    className="rounded-2xl border border-line bg-surface px-4 py-3.5 shadow-card"
+                  >
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-[15px] font-semibold">Table {order.table.label}</span>
+                      <span className="tnum text-[13px] text-faint">#{order.dailyNumber}</span>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                      <span className="tnum text-[16px] font-semibold">
+                        {formatMoney(order.bill?.total ?? "0", current.currency)}
+                      </span>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        loading={busy === order.id}
+                        onClick={() => setPaying(order)}
+                      >
+                        Paid
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+                {collect.length === 0 && (
+                  <p className="rounded-2xl border border-dashed border-line px-4 py-6 text-center text-[13px] text-faint">
+                    Nothing to collect
+                  </p>
+                )}
+              </div>
+            </section>
           </div>
         </>
       )}
@@ -279,6 +354,18 @@ export default function OrdersPage() {
           orders={past}
           businessId={current.id}
           currency={current.currency}
+          onPay={setPaying}
+        />
+      )}
+
+      {paying && (
+        <PaySheet
+          title={`Table ${paying.table.label} · #${paying.dailyNumber}`}
+          total={paying.bill?.total ?? null}
+          currency={current.currency}
+          busy={busy === paying.id}
+          onPick={(mode) => void markPaid(paying, mode)}
+          onClose={() => setPaying(null)}
         />
       )}
     </div>
@@ -297,10 +384,12 @@ function ServedToday({
   orders,
   businessId,
   currency,
+  onPay,
 }: {
   orders: Order[];
   businessId: string;
   currency: string;
+  onPay: (order: Order) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -352,6 +441,7 @@ function ServedToday({
                 businessId={businessId}
                 busy={busy}
                 onDownload={download}
+                onPay={onPay}
               />
             );
           })}
@@ -368,6 +458,7 @@ function ServedOrderRow({
   businessId,
   busy,
   onDownload,
+  onPay,
 }: {
   order: Order;
   total: number;
@@ -375,6 +466,7 @@ function ServedOrderRow({
   businessId: string;
   busy: string | null;
   onDownload: (order: Order, format: "bill" | "receipt") => void;
+  onPay: (order: Order) => void;
 }) {
   const [openTimeline, setOpenTimeline] = useState(false);
   const [events, setEvents] = useState<OrderEvent[] | null>(null);
@@ -416,8 +508,18 @@ function ServedOrderRow({
         <span className="tnum text-[14px] font-semibold">
           {formatMoney(String(total), currency)}
         </span>
-        {order.status === "completed" && (
+        {order.status === "paid" && order.bill?.paymentMode && (
+          <span className="rounded-full bg-[var(--raised)] px-2 py-0.5 text-[12px] font-medium">
+            {PAYMENT_MODE_LABEL[order.bill.paymentMode]}
+          </span>
+        )}
+        {(order.status === "completed" || order.status === "paid") && (
           <span className="flex gap-1.5">
+            {order.status === "completed" && (
+              <Button size="sm" variant="primary" onClick={() => onPay(order)}>
+                Mark paid
+              </Button>
+            )}
             <Button
               size="sm"
               loading={busy === `${order.id}:bill`}
@@ -466,6 +568,7 @@ function OrderCard({
   nextLabel,
   onAdvance,
   onCancel,
+  onPaid,
   onBill,
 }: {
   order: Order;
@@ -476,6 +579,8 @@ function OrderCard({
   nextLabel?: string;
   onAdvance: () => void;
   onCancel: () => void;
+  /** Pay-at-counter: settle without serving first. */
+  onPaid: () => void;
   onBill: (format: "bill" | "receipt") => void;
 }) {
   const [openTimeline, setOpenTimeline] = useState(false);
@@ -599,6 +704,9 @@ function OrderCard({
           </Button>
           <Button variant="ghost" size="sm" onClick={() => onBill("bill")} disabled={busy}>
             Bill
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onPaid} disabled={busy}>
+            Paid
           </Button>
           {nextLabel && (
             <Button variant="primary" size="sm" onClick={onAdvance} loading={busy}>

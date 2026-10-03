@@ -13,6 +13,7 @@ export type OrderStatus =
   | "preparing"
   | "ready"
   | "completed"
+  | "paid"
   | "cancelled";
 
 export interface OrderEvent {
@@ -37,7 +38,7 @@ export interface TimelineStep {
 }
 
 /** The happy path, in the order Postgres sorts the enum. */
-const FLOW: OrderStatus[] = ["placed", "accepted", "preparing", "ready", "completed"];
+const FLOW: OrderStatus[] = ["placed", "accepted", "preparing", "ready", "completed", "paid"];
 
 const LABELS: Record<OrderStatus, string> = {
   placed: "Placed",
@@ -45,6 +46,7 @@ const LABELS: Record<OrderStatus, string> = {
   preparing: "Being made",
   ready: "Ready",
   completed: "Served",
+  paid: "Paid",
   cancelled: "Cancelled",
 };
 
@@ -98,7 +100,7 @@ export function buildTimeline(
 
   // Nothing further is coming for an order that is finished either way, and
   // showing "Ready" as pending under "Cancelled" would be a small lie.
-  if (options.status === "completed" || options.status === "cancelled") return steps;
+  if (options.status === "paid" || options.status === "cancelled") return steps;
 
   // Only stages *after* the current one. A stage the kitchen skipped past is
   // in neither list, which is exactly right: it is not history and it is not

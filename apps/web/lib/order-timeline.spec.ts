@@ -92,6 +92,7 @@ describe("buildTimeline", () => {
       ["Being made", "upcoming"],
       ["Ready", "upcoming"],
       ["Served", "upcoming"],
+      ["Paid", "upcoming"],
     ]);
     expect(steps.at(-1)!.at).toBeNull();
   });
@@ -103,8 +104,8 @@ describe("buildTimeline", () => {
       { status: "ready", showUpcoming: true },
     );
 
-    expect(steps.map((s) => s.label)).toEqual(["Placed", "Ready", "Served"]);
-    expect(steps.map((s) => s.state)).toEqual(["done", "current", "upcoming"]);
+    expect(steps.map((s) => s.label)).toEqual(["Placed", "Ready", "Served", "Paid"]);
+    expect(steps.map((s) => s.state)).toEqual(["done", "current", "upcoming", "upcoming"]);
   });
 
   it("promises nothing further once an order is cancelled", () => {
@@ -119,10 +120,18 @@ describe("buildTimeline", () => {
     ]);
   });
 
-  it("promises nothing further once an order is served", () => {
+  it("promises only payment once an order is served", () => {
     const steps = buildTimeline(
       [PLACED, event(2, "completed", "2026-09-27T15:00:00Z")],
       { status: "completed", showUpcoming: true },
+    );
+    expect(steps.filter((s) => s.state === "upcoming").map((s) => s.label)).toEqual(["Paid"]);
+  });
+
+  it("promises nothing further once an order is paid", () => {
+    const steps = buildTimeline(
+      [PLACED, event(2, "completed", "2026-09-27T15:00:00Z"), event(3, "paid", "2026-09-27T15:05:00Z")],
+      { status: "paid", showUpcoming: true },
     );
     expect(steps.every((s) => s.state !== "upcoming")).toBe(true);
   });
@@ -166,7 +175,7 @@ describe("buildTimeline", () => {
       { status: "completed", showUpcoming: true },
     );
 
-    expect(steps.map((s) => s.label)).toEqual(["Placed", "Served"]);
+    expect(steps.map((s) => s.label)).toEqual(["Placed", "Served", "Paid"]);
     expect(steps[0]!.detail).toBeNull();
     expect(steps[1]!.sincePreviousMs).toBe(32 * 60_000);
   });
@@ -203,5 +212,25 @@ describe("buildTimeline", () => {
       { status: "accepted", showUpcoming: false },
     );
     expect(steps.map((s) => s.label)).toEqual(["Placed", "Accepted"]);
+  });
+});
+
+describe("paid", () => {
+  const events = [
+    event(1, "placed", "2026-10-03T10:00:00Z"),
+    event(2, "completed", "2026-10-03T10:20:00Z"),
+    event(3, "paid", "2026-10-03T10:25:00Z"),
+    event(4, "payment_mode_changed", "2026-10-03T11:00:00Z", null),
+  ];
+
+  it("labels paid and ignores mode corrections", () => {
+    const steps = buildTimeline(events, { status: "paid", showUpcoming: true });
+    expect(steps.map((s) => s.label)).toEqual(["Placed", "Served", "Paid"]);
+    expect(steps.at(-1)!.state).toBe("current");
+  });
+
+  it("shows Paid as still to come after Served", () => {
+    const steps = buildTimeline(events.slice(0, 2), { status: "completed", showUpcoming: true });
+    expect(steps.at(-1)).toMatchObject({ label: "Paid", state: "upcoming" });
   });
 });

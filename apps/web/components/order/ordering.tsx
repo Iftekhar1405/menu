@@ -48,6 +48,7 @@ const STATUS_COPY: Record<CurrentOrder["status"], { label: string; hint: string 
   preparing: { label: "Being made", hint: "Won't be long." },
   ready: { label: "Ready", hint: "On its way over." },
   completed: { label: "Served", hint: "Enjoy." },
+  paid: { label: "Paid", hint: "Thank you — see you again." },
   cancelled: { label: "Cancelled", hint: "Ask a member of staff." },
 };
 
