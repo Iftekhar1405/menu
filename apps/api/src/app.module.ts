@@ -30,6 +30,7 @@ import { AdminMerchController, MerchController } from "./merch/merch.controller"
 import { MerchService } from "./merch/merch.service";
 import { SalesController } from "./sales/sales.controller";
 import { SalesService } from "./sales/sales.service";
+import { AnalyticsService } from "./sales/analytics.service";
 import { NotificationsController } from "./notifications/notifications.controller";
 import { NotificationsService } from "./notifications/notifications.service";
 import { RealtimeBroadcaster } from "./notifications/realtime.broadcast";
@@ -69,6 +70,7 @@ import { WebPushSender } from "./notifications/web-push.sender";
     BillingService,
     MerchService,
     SalesService,
+    AnalyticsService,
     NotificationsService,
     RealtimeBroadcaster,
     WebPushSender,

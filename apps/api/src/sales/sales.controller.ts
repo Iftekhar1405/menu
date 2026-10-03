@@ -5,6 +5,7 @@ import { markPaidSchema, salesFilterSchema, type MarkPaidInput, type SalesFilter
 import type { RequestUser } from "../auth/jwt.strategy";
 import { CurrentUser } from "../common/decorators";
 import { ZodBody } from "../common/zod.pipe";
+import { AnalyticsService } from "./analytics.service";
 import { SalesService } from "./sales.service";
 
 const pdfBatchSchema = z.object({ billIds: z.array(z.string().uuid()).min(1).max(25) });
@@ -16,7 +17,10 @@ const pdfBatchSchema = z.object({ billIds: z.array(z.string().uuid()).min(1).max
  */
 @Controller("businesses/:bid")
 export class SalesController {
-  constructor(private readonly sales: SalesService) {}
+  constructor(
+    private readonly sales: SalesService,
+    private readonly analytics: AnalyticsService,
+  ) {}
 
   @Get("bills")
   list(
@@ -58,5 +62,14 @@ export class SalesController {
     const zip = await this.sales.pdfBatch(user.id, bid, body.billIds);
     res.status(200).setHeader("Content-Type", "application/zip");
     res.send(Buffer.from(zip));
+  }
+
+  @Get("analytics")
+  insights(
+    @CurrentUser() user: RequestUser,
+    @Param("bid") bid: string,
+    @Query(new ZodBody(salesFilterSchema)) filter: SalesFilter,
+  ) {
+    return this.analytics.get(user.id, bid, filter);
   }
 }
