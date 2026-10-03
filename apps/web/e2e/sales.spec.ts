@@ -74,6 +74,9 @@ test("served → paid by UPI → Sales → export → Insights", async ({ page, 
   // ── Staff serve it: it moves to To collect with the billed total ─────────
   await page.getByRole("link", { name: "Orders" }).click();
   await expect(page.getByRole("heading", { name: "Table E2E 1" })).toBeVisible();
+  // Paying is offered only once the food is out: settling an order from an
+  // open column would take it off the kitchen board before it was cooked.
+  await expect(page.getByRole("button", { name: "Paid", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Accept" }).click();
   await page.getByRole("button", { name: "Start" }).click();
   await page.getByRole("button", { name: "Ready" }).click();

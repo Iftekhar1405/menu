@@ -174,9 +174,10 @@ export default function OrdersPage() {
   }
 
   /**
-   * Settles an order with how it was paid. From To collect after serving, or
-   * straight from an open column at a pay-at-counter cafe. A 409 means
-   * another device got there first; the reload shows what happened.
+   * Settles an order with how it was paid, from To collect or today's
+   * history. Not offered on open columns: a paid order is not open, so paying
+   * there would take it off the kitchen board before it was cooked. A 409
+   * means another device got there first; the reload shows what happened.
    */
   async function markPaid(order: Order, mode: PaymentMode) {
     if (!current) return;
@@ -281,7 +282,6 @@ export default function OrdersPage() {
                         nextLabel={column.nextLabel}
                         onAdvance={() => column.next && void advance(order, column.next)}
                         onCancel={() => void advance(order, "cancelled")}
-                        onPaid={() => setPaying(order)}
                         onBill={async (format) => {
                           await api
                             .post(`/businesses/${current.id}/orders/${order.id}/bill`)
@@ -568,7 +568,6 @@ function OrderCard({
   nextLabel,
   onAdvance,
   onCancel,
-  onPaid,
   onBill,
 }: {
   order: Order;
@@ -579,8 +578,6 @@ function OrderCard({
   nextLabel?: string;
   onAdvance: () => void;
   onCancel: () => void;
-  /** Pay-at-counter: settle without serving first. */
-  onPaid: () => void;
   onBill: (format: "bill" | "receipt") => void;
 }) {
   const [openTimeline, setOpenTimeline] = useState(false);
@@ -704,9 +701,6 @@ function OrderCard({
           </Button>
           <Button variant="ghost" size="sm" onClick={() => onBill("bill")} disabled={busy}>
             Bill
-          </Button>
-          <Button variant="ghost" size="sm" onClick={onPaid} disabled={busy}>
-            Paid
           </Button>
           {nextLabel && (
             <Button variant="primary" size="sm" onClick={onAdvance} loading={busy}>
