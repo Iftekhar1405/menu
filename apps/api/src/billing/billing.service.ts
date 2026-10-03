@@ -102,18 +102,6 @@ export class BillingService {
     return shapeBill(bill);
   }
 
-  /** Owner access has no window. This is their own sales record. */
-  async listBills(userId: string, businessId: string, limit = 50) {
-    await this.businesses.assertOwns(userId, businessId);
-    const bills = await this.prisma.db.bill.findMany({
-      where: { businessId },
-      orderBy: { issuedAt: "desc" },
-      take: Math.min(limit, 200),
-      include: { lines: { orderBy: { position: "asc" } } },
-    });
-    return bills.map(shapeBill);
-  }
-
   async getTaxConfig(userId: string, businessId: string): Promise<TaxConfig> {
     const business = await this.businesses.assertOwns(userId, businessId);
     return {

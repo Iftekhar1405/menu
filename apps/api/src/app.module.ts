@@ -28,6 +28,8 @@ import { BillingController, TableBillingController } from "./billing/billing.con
 import { BillingService } from "./billing/billing.service";
 import { AdminMerchController, MerchController } from "./merch/merch.controller";
 import { MerchService } from "./merch/merch.service";
+import { SalesController } from "./sales/sales.controller";
+import { SalesService } from "./sales/sales.service";
 import { NotificationsController } from "./notifications/notifications.controller";
 import { NotificationsService } from "./notifications/notifications.service";
 import { RealtimeBroadcaster } from "./notifications/realtime.broadcast";
@@ -49,6 +51,7 @@ import { WebPushSender } from "./notifications/web-push.sender";
     TableBillingController,
     MerchController,
     AdminMerchController,
+    SalesController,
     NotificationsController,
   ],
   providers: [
@@ -65,6 +68,7 @@ import { WebPushSender } from "./notifications/web-push.sender";
     TableSessionGuard,
     BillingService,
     MerchService,
+    SalesService,
     NotificationsService,
     RealtimeBroadcaster,
     WebPushSender,

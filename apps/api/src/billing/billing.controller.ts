@@ -109,11 +109,6 @@ export class BillingController {
     res.send(pdf);
   }
 
-  @Get("bills")
-  list(@CurrentUser() user: RequestUser, @Param("bid") bid: string) {
-    return this.billing.listBills(user.id, bid);
-  }
-
   @Get("tax")
   getTax(@CurrentUser() user: RequestUser, @Param("bid") bid: string) {
     return this.billing.getTaxConfig(user.id, bid);
