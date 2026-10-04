@@ -12,6 +12,7 @@ import { TenantContext } from "../prisma/tenant-context";
 import { cleanPgMessage } from "../common/pg-message";
 import { NotificationsService } from "../notifications/notifications.service";
 import type { CancelledLine, PlacedOrder } from "../notifications/events";
+import { KITCHEN_BOARD } from "../notifications/visibility";
 import type { CancelOrderInput } from "@menu/shared";
 import {
   ALLOWED_TRANSITIONS,
@@ -392,6 +393,15 @@ export class OrdersService {
     // stored for them: they need the order's current state, which
     // get_table_order already returns, not a log of how it got there.
     await this.notifications.announceStatus(updated.tableId);
+
+    // Leaving `placed` is the moment this order becomes the kitchen's. Their
+    // bell has been holding the diner's "New order" row back until now, so it
+    // needs telling — nothing else on this path reaches the staff topic.
+    // Keyed on the move out of `placed` rather than on `accepted` alone,
+    // because the state machine lets an owner skip straight to `preparing`.
+    if (order.status === "placed" && KITCHEN_BOARD.includes(next)) {
+      await this.notifications.announceReachedKitchen(businessId);
+    }
 
     return updated;
   }

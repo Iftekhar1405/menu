@@ -14,13 +14,14 @@ function service(role: "owner" | "kitchen", from: string) {
       },
     },
   };
-  const notifications = { announceStatus: vi.fn() };
-  return new OrdersService(
+  const notifications = { announceStatus: vi.fn(), announceReachedKitchen: vi.fn() };
+  const orders = new OrdersService(
     prisma as never,
     businesses as never,
     {} as never,
     notifications as never,
   );
+  return Object.assign(orders, { __notifications: notifications });
 }
 
 describe("setStatus by role", () => {
@@ -63,5 +64,34 @@ describe("setStatus by role", () => {
     const s = service("kitchen", "ready");
     await expect(s.setStatus("u", "b1", "o1", "accepted" as never))
       .rejects.toBeInstanceOf(ConflictException);
+  });
+
+  // The kitchen's bell holds a new order back until it is accepted, and
+  // nothing else on this path reaches the staff topic. Without this ping the
+  // kitchen would not hear about the order until the next unrelated event.
+  it("wakes the staff feed when an order reaches the kitchen", async () => {
+    const s = service("owner", "placed");
+    await s.setStatus("u", "b1", "o1", "accepted" as never);
+    expect(s.__notifications.announceReachedKitchen).toHaveBeenCalledWith("b1");
+  });
+
+  // The owner may skip `accepted`. Keying the wake on that one status would
+  // leave the kitchen's bell holding a row for an order already on its board.
+  it("wakes it for a move that skips straight past accepted", async () => {
+    const s = service("owner", "placed");
+    await s.setStatus("u", "b1", "o1", "preparing" as never);
+    expect(s.__notifications.announceReachedKitchen).toHaveBeenCalledWith("b1");
+  });
+
+  it("stays quiet once the order is already on the board", async () => {
+    const s = service("kitchen", "preparing");
+    await s.setStatus("u", "b1", "o1", "ready" as never);
+    expect(s.__notifications.announceReachedKitchen).not.toHaveBeenCalled();
+  });
+
+  it("stays quiet for an order cancelled before anyone cooked it", async () => {
+    const s = service("owner", "placed");
+    await s.setStatus("u", "b1", "o1", "cancelled" as never);
+    expect(s.__notifications.announceReachedKitchen).not.toHaveBeenCalled();
   });
 });
