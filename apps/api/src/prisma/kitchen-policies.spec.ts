@@ -375,7 +375,38 @@ describe.skipIf(!process.env.DATABASE_URL)("kitchen policies", () => {
       ).rejects.toThrow(/may not set order status/);
     });
 
+    // Fix round 1, Important 1: the guard used to key its staff lookup on
+    // NEW.business_id, so rewriting business_id to a venue the caller is
+    // NOT staff of made the lookup find nothing, take the "not staff"
+    // branch, and return NEW unexamined — skipping every column check,
+    // including the one that would have caught the rewrite itself. It was
+    // only ever caught by *_kitchen_write's WITH CHECK, a policy living in
+    // a different migration. The guard now keys on OLD.business_id, so this
+    // is the column-guard's own check: the trigger fires (and raises)
+    // before Postgres ever evaluates WITH CHECK for an UPDATE.
+    it("refuses the kitchen a rewrite of business_id itself", async () => {
+      await expect(
+        asUser(kitchenA, () =>
+          app.query("UPDATE orders SET business_id=$2 WHERE id=$1", [orderId, bizB]),
+        ),
+      ).rejects.toThrow(/only change an order's status/);
+
+      await expect(
+        asUser(kitchenA, () =>
+          app.query("UPDATE menu_items SET business_id=$2 WHERE id=$1", [itemId, bizB]),
+        ),
+      ).rejects.toThrow(/only change a dish's availability/);
+    });
+
     it("refuses the kitchen any column but status", async () => {
+      // Explicit, not inherited: this used to rely on an earlier test
+      // having already moved the order to 'preparing', because the
+      // whitelist ran unconditionally and 'placed' is not in it — on a
+      // fresh 'placed' order the whitelist fired first and this regex
+      // would not have matched. Fix round 1, Minor: the whitelist now only
+      // runs when status actually changes, so this is set up explicitly
+      // and holds regardless of what state earlier tests left the order in.
+      await admin.query("UPDATE orders SET status='placed' WHERE id=$1", [orderId]);
       await expect(
         asUser(kitchenA, () => app.query("UPDATE orders SET note='changed' WHERE id=$1", [orderId])),
       ).rejects.toThrow(/only change an order's status/);
@@ -402,6 +433,30 @@ describe.skipIf(!process.env.DATABASE_URL)("kitchen policies", () => {
           app.query("UPDATE menu_items SET created_at=now() WHERE id=$1", [itemId]),
         ),
       ).rejects.toThrow(/only change a dish's availability/);
+    });
+
+    // Fix round 1, Important 2b: the existing suspension test only covers
+    // reads. For a write, nothing in the column-guard trigger is what stops
+    // a suspended staff member — app_staff_business_ids() filters on
+    // status='active', so a suspended user's venue never appears in it,
+    // orders_kitchen_write's USING clause then matches zero rows, and the
+    // UPDATE affects nothing before the trigger ever runs. It does not
+    // raise; asserted here as "no rows changed", not as a throw.
+    it("lets a suspended staff member's write affect nothing, without raising", async () => {
+      const before = await admin.query("SELECT status FROM orders WHERE id=$1", [orderId]);
+
+      await admin.query("UPDATE business_staff SET status='suspended' WHERE user_id=$1", [kitchenA]);
+      try {
+        await asUser(kitchenA, async () => {
+          const r = await app.query("UPDATE orders SET status='ready' WHERE id=$1", [orderId]);
+          expect(r.rowCount).toBe(0);
+        });
+      } finally {
+        await admin.query("UPDATE business_staff SET status='active' WHERE user_id=$1", [kitchenA]);
+      }
+
+      const after = await admin.query("SELECT status FROM orders WHERE id=$1", [orderId]);
+      expect(after.rows[0].status).toBe(before.rows[0].status);
     });
 
     it("leaves the owner unrestricted", async () => {
