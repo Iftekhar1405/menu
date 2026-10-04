@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, type ComponentType } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import { SessionProvider, useSession } from "@/components/session";
 import { logout } from "@/lib/api-client";
 import { Button, cx, Sheet, SheetGrabber } from "@/components/ui";
@@ -12,7 +12,7 @@ import { NotificationsProvider } from "@/components/notifications/provider";
 import { NotificationBell } from "@/components/notifications/bell";
 import { NotificationToasts } from "@/components/notifications/toasts";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { navFor, type NavItem, type Role } from "@/lib/nav";
+import { canSee, navFor, type NavItem, type Role } from "@/lib/nav";
 
 /** Icons for each nav entry, keyed by href. Kept separate from nav.ts so
  * that file stays free of React and can run under a node test environment.
@@ -48,6 +48,33 @@ function Shell({ children }: { children: React.ReactNode }) {
   const items = navFor(role);
   const tabs = items.slice(0, TABS);
   const rest = items.slice(TABS);
+
+  /*
+   * Two gates, one effect, and the order between them matters.
+   *
+   * An owner-created account must change its PIN before anything else works
+   * — that check has to run first and `return` on a redirect, because if the
+   * section gate below ran first a kitchen user who owes a PIN change and
+   * lands on `/settings` would be bounced to `/orders` and then immediately
+   * on to `/change-pin`, a visible double redirect.
+   *
+   * `/change-pin` is in every role's allow-list in `lib/nav.ts`, so once
+   * `mustChangePin` is cleared the second branch can never bounce the user
+   * off the page they're already sitting on — no loop.
+   *
+   * This is cosmetic only, same as `canSee` itself: it stops a stale tab or
+   * a typed URL from rendering a screen this account shouldn't see. The real
+   * boundary is `MustChangePinGuard` on the API, which refuses every other
+   * route server-side regardless of what this effect does.
+   */
+  useEffect(() => {
+    if (loading || !me) return;
+    if (me.mustChangePin && pathname !== "/change-pin") {
+      router.replace("/change-pin");
+      return;
+    }
+    if (!me.mustChangePin && !canSee(role, pathname)) router.replace("/orders");
+  }, [loading, me, role, pathname, router]);
 
   async function signOut() {
     const ok = await confirm({
