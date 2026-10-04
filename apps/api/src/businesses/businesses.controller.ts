@@ -15,7 +15,7 @@ export class BusinessesController {
 
   @Get("mine")
   listMine(@CurrentUser() user: RequestUser) {
-    return this.businesses.listMine(user.id);
+    return this.businesses.listAccessible(user.id);
   }
 
   @Get(":id/summary")

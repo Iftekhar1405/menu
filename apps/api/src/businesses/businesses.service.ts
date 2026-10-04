@@ -1,8 +1,13 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Business } from "@prisma/client";
-import type { BusinessUpdateInput } from "@menu/shared";
+import type { AccessRole, BusinessUpdateInput } from "@menu/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { RevalidateClient } from "../public/revalidate.client";
+
+export interface BusinessAccess {
+  business: Business;
+  role: AccessRole;
+}
 
 @Injectable()
 export class BusinessesService {
@@ -14,19 +19,72 @@ export class BusinessesService {
   /**
    * The single door through which a business id becomes usable.
    *
+   * `allow` defaults to owner-only, which is the whole point: a route that
+   * nobody thought about stays closed. Opening one to staff is a visible
+   * edit at the call site, not something a role check elsewhere can do by
+   * accident.
+   */
+  async assertAccess(
+    userId: string,
+    businessId: string,
+    opts: { allow?: AccessRole[] } = {},
+  ): Promise<BusinessAccess> {
+    const allow = opts.allow ?? ["owner"];
+
+    if (allow.includes("owner")) {
+      const business = await this.prisma.db.business.findFirst({
+        where: { id: businessId, ownerId: userId },
+      });
+      if (business) return { business, role: "owner" };
+    }
+
+    const staffRoles = allow.filter((r): r is Exclude<AccessRole, "owner"> => r !== "owner");
+    if (staffRoles.length > 0) {
+      const member = await this.prisma.db.businessStaff.findFirst({
+        where: {
+          businessId,
+          userId,
+          status: "active",
+          role: { in: staffRoles },
+        },
+        include: { business: true },
+      });
+      if (member) return { business: member.business, role: member.role };
+    }
+
+    // The same 404 either way. That a business exists is not something a
+    // stranger needs confirmed.
+    throw new NotFoundException("Business not found");
+  }
+
+  /**
    * Every menu, media, and QR operation resolves its business through here
    * first, so an id from a URL is never trusted on its own. RLS would already
    * hide another tenant's rows; this turns that silence into an honest 404
    * and keeps the check visible in the code rather than only in the database.
+   *
+   * Owner-only. Unchanged for all existing call sites.
    */
   async assertOwns(userId: string, businessId: string): Promise<Business> {
-    const business = await this.prisma.db.business.findFirst({
-      where: { id: businessId, ownerId: userId },
-    });
-    if (!business) throw new NotFoundException("Business not found");
+    const { business } = await this.assertAccess(userId, businessId, { allow: ["owner"] });
     return business;
   }
 
+  /** Every business this user can reach, as owner or as staff. */
+  async listAccessible(userId: string): Promise<Business[]> {
+    const owned = await this.prisma.db.business.findMany({
+      where: { ownerId: userId },
+      orderBy: { createdAt: "asc" },
+    });
+    const staffed = await this.prisma.db.businessStaff.findMany({
+      where: { userId, status: "active" },
+      include: { business: true },
+      orderBy: { createdAt: "asc" },
+    });
+    return [...owned, ...staffed.map((s) => s.business)];
+  }
+
+  /** Kept: existing callers ask for "mine" meaning "owned". */
   async listMine(userId: string): Promise<Business[]> {
     return this.prisma.db.business.findMany({
       where: { ownerId: userId },
