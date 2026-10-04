@@ -318,4 +318,101 @@ describe.skipIf(!process.env.DATABASE_URL)("kitchen policies", () => {
       ).toBe(true);
     }
   });
+
+  /**
+   * RLS grants a whole row; these BEFORE UPDATE triggers are what narrows a
+   * kitchen write down to a single column. Reuses the order and menu item
+   * seeded for venue A in the outer beforeAll rather than inserting fresh
+   * fixtures — those rows already exist and are cleaned up (via the
+   * `businesses` cascade) by the outer afterAll.
+   */
+  describe("column guards", () => {
+    let orderId: string;
+    let itemId: string;
+    let ownerPricedItemId: string;
+
+    beforeAll(async () => {
+      const o = await admin.query("SELECT id FROM orders WHERE business_id=$1", [bizA]);
+      orderId = o.rows[0].id;
+      const i = await admin.query("SELECT id FROM menu_items WHERE business_id=$1", [bizA]);
+      itemId = i.rows[0].id;
+
+      // The seeded item above (Thali) has a variant price and no base price —
+      // menu_items_price_guard (a deferred constraint trigger from the
+      // `hardening` migration) forbids a row having both, so it cannot take
+      // a direct price update. One extra item, priced and variant-free, is
+      // needed to exercise "owner sets menu_items.price" at all; it is
+      // deleted in this describe's own afterAll.
+      const categoryRow = await admin.query(
+        "SELECT category_id FROM menu_items WHERE id=$1",
+        [itemId],
+      );
+      const p = await admin.query(
+        `INSERT INTO menu_items (id, business_id, category_id, name, price, position, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, 'Owner Priced Dish', 100.00, 2, now()) RETURNING id`,
+        [bizA, categoryRow.rows[0].category_id],
+      );
+      ownerPricedItemId = p.rows[0].id;
+    });
+
+    afterAll(async () => {
+      await admin.query("DELETE FROM menu_items WHERE id=$1", [ownerPricedItemId]);
+    });
+
+    it("lets the kitchen advance an order's status", async () => {
+      await asUser(kitchenA, async () => {
+        await app.query("UPDATE orders SET status='preparing' WHERE id=$1", [orderId]);
+      });
+      const r = await admin.query("SELECT status FROM orders WHERE id=$1", [orderId]);
+      expect(r.rows[0].status).toBe("preparing");
+    });
+
+    it("refuses the kitchen the statuses that touch a bill", async () => {
+      await expect(
+        asUser(kitchenA, () =>
+          app.query("UPDATE orders SET status='completed' WHERE id=$1", [orderId]),
+        ),
+      ).rejects.toThrow(/may not set order status/);
+    });
+
+    it("refuses the kitchen any column but status", async () => {
+      await expect(
+        asUser(kitchenA, () => app.query("UPDATE orders SET note='changed' WHERE id=$1", [orderId])),
+      ).rejects.toThrow(/only change an order's status/);
+    });
+
+    it("lets the kitchen toggle availability but not touch a price", async () => {
+      await asUser(kitchenA, async () => {
+        await app.query("UPDATE menu_items SET is_available=false WHERE id=$1", [itemId]);
+      });
+      const r = await admin.query("SELECT is_available FROM menu_items WHERE id=$1", [itemId]);
+      expect(r.rows[0].is_available).toBe(false);
+
+      await expect(
+        asUser(kitchenA, () => app.query("UPDATE menu_items SET price=1.00 WHERE id=$1", [itemId])),
+      ).rejects.toThrow(/only change a dish's availability/);
+    });
+
+    // Ruling 2's hole: the brief's own column list for menu_items omitted
+    // created_at. The migration pins it anyway — this proves the guard
+    // actually rejects it, not just that the brief forgot to ask.
+    it("refuses the kitchen a column the brief's own list omitted: created_at", async () => {
+      await expect(
+        asUser(kitchenA, () =>
+          app.query("UPDATE menu_items SET created_at=now() WHERE id=$1", [itemId]),
+        ),
+      ).rejects.toThrow(/only change a dish's availability/);
+    });
+
+    it("leaves the owner unrestricted", async () => {
+      await asUser(ownerA, async () => {
+        await app.query("UPDATE orders SET note='owner may' WHERE id=$1", [orderId]);
+        await app.query("UPDATE menu_items SET price=150.00 WHERE id=$1", [ownerPricedItemId]);
+      });
+      const r = await admin.query("SELECT note FROM orders WHERE id=$1", [orderId]);
+      expect(r.rows[0].note).toBe("owner may");
+      const m = await admin.query("SELECT price FROM menu_items WHERE id=$1", [ownerPricedItemId]);
+      expect(Number(m.rows[0].price)).toBe(150);
+    });
+  });
 });
