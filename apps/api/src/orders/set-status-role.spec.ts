@@ -53,4 +53,15 @@ describe("setStatus by role", () => {
     const s = service("owner", "ready");
     await expect(s.setStatus("u", "b1", "o1", "completed" as never)).resolves.toBeTruthy();
   });
+
+  // `accepted` IS a legal kitchen target, but not from `ready` — the move
+  // itself is backwards. This must stay a 409, not a 403: ALLOWED_TRANSITIONS
+  // has to be checked before canRoleSetStatus, because canRoleSetStatus
+  // already folds the transition check in and would make this pass silently
+  // if someone "simplified" setStatus down to that one call.
+  it("keeps a backward move to a role-legal status a conflict, not a role refusal", async () => {
+    const s = service("kitchen", "ready");
+    await expect(s.setStatus("u", "b1", "o1", "accepted" as never))
+      .rejects.toBeInstanceOf(ConflictException);
+  });
 });
