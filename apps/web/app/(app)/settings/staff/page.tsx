@@ -48,8 +48,14 @@ export default function StaffPage() {
   const [issued, setIssued] = useState<{ name: string; pin: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
-  /** Staff id with a mutation in flight — blocks a second tap racing the first. */
-  const [busyId, setBusyId] = useState<string | null>(null);
+  /**
+   * Staff ids with a mutation in flight. Row-scoped (a `Set`, same pattern as
+   * `/dishes`'s `pending`) rather than one page-wide flag: suspending one
+   * person must not freeze the Remove button on everyone else's row, and the
+   * dimmed styling below is keyed off membership in this set, so the gate and
+   * the visual always agree about which rows are actually busy.
+   */
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
 
   useEffect(() => setCountry(guessCountryClient()), []);
 
@@ -98,8 +104,28 @@ export default function StaffPage() {
     }
   }
 
+  /** Adds `id` to the busy set — called before every mutation below. */
+  function markBusy(id: string) {
+    setBusyIds((prev) => new Set(prev).add(id));
+  }
+
+  /**
+   * Removes `id` from the busy set. Called from `finally` in every mutator,
+   * not just the error path — this was the exact bug that shipped once: a
+   * row left in the busy set after a *successful* removal reads as "still
+   * working" forever, because nothing else ever clears it. Both the happy
+   * path and the error path must end here.
+   */
+  function clearBusy(id: string) {
+    setBusyIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
+
   async function setStatus(row: Staff, status: "active" | "suspended") {
-    if (!current || busyId) return;
+    if (!current || busyIds.has(row.id)) return;
     if (status === "suspended") {
       const ok = await confirm({
         title: `Suspend ${row.user.fullName}?`,
@@ -109,7 +135,7 @@ export default function StaffPage() {
       });
       if (!ok) return;
     }
-    setBusyId(row.id);
+    markBusy(row.id);
     setError(null);
     try {
       await api.patch(`/businesses/${current.id}/staff/${row.id}`, { status });
@@ -117,13 +143,13 @@ export default function StaffPage() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "That didn't save. Try again.");
     } finally {
-      setBusyId(null);
+      clearBusy(row.id);
     }
   }
 
   async function resetPin(row: Staff) {
-    if (!current || busyId) return;
-    setBusyId(row.id);
+    if (!current || busyIds.has(row.id)) return;
+    markBusy(row.id);
     setError(null);
     try {
       const res = await api.post<{ pin: string }>(
@@ -136,12 +162,12 @@ export default function StaffPage() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not reset their PIN. Try again.");
     } finally {
-      setBusyId(null);
+      clearBusy(row.id);
     }
   }
 
   async function remove(row: Staff) {
-    if (!current || busyId) return;
+    if (!current || busyIds.has(row.id)) return;
     const ok = await confirm({
       title: `Remove ${row.user.fullName}?`,
       body:
@@ -150,14 +176,15 @@ export default function StaffPage() {
       tone: "danger",
     });
     if (!ok) return;
-    setBusyId(row.id);
+    markBusy(row.id);
     setError(null);
     try {
       await api.del(`/businesses/${current.id}/staff/${row.id}`);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not remove them. Try again.");
-      setBusyId(null);
+    } finally {
+      clearBusy(row.id);
     }
   }
 
@@ -264,7 +291,7 @@ export default function StaffPage() {
                 key={row.id}
                 className={
                   "flex flex-wrap items-center justify-between gap-3 px-4 py-3.5" +
-                  (busyId === row.id ? " pointer-events-none opacity-60" : "")
+                  (busyIds.has(row.id) ? " pointer-events-none opacity-60" : "")
                 }
               >
                 <div className="min-w-0">
