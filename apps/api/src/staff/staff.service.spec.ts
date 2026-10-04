@@ -8,10 +8,8 @@ interface BuildOptions {
   existingUser?: unknown;
   /** What `find`'s scoped lookup returns. `null` simulates a cross-tenant id. */
   staffRow?: { id: string; userId: string; businessId: string } | null;
-  /** How many businesses the departing user owns, for `remove`'s guard. */
-  ownedCount?: number;
-  /** How many business_staff rows the departing user still has, for `remove`'s guard. */
-  remainingStaffCount?: number;
+  /** What `app_user_is_detachable` reports for `remove`'s guard. */
+  detachable?: boolean;
   /** Override `user.create`, e.g. to simulate a unique-constraint race. */
   userCreate?: () => unknown;
 }
@@ -25,11 +23,13 @@ function build(opts: BuildOptions = {}) {
   const {
     existingUser = null,
     staffRow = { id: "s1", userId: "u9", businessId: "b1" },
-    ownedCount = 0,
-    remainingStaffCount = 0,
+    detachable = true,
   } = opts;
 
-  const executeRaw = vi.fn().mockResolvedValue(undefined);
+  // Records the real order `remove` calls things in, so a regression that
+  // reorders revoke-then-delete back to delete-then-revoke (the hang) fails
+  // a test instead of passing silently.
+  const order: string[] = [];
 
   const prisma = {
     db: {
@@ -38,7 +38,10 @@ function build(opts: BuildOptions = {}) {
           ? vi.fn(opts.userCreate)
           : vi.fn().mockResolvedValue({ id: "u9", fullName: "Ramesh" }),
         update: vi.fn().mockResolvedValue({ id: "u9" }),
-        delete: vi.fn().mockResolvedValue({ id: "u9" }),
+        delete: vi.fn().mockImplementation(async () => {
+          order.push("delete");
+          return { id: "u9" };
+        }),
       },
       businessStaff: {
         create: vi.fn().mockResolvedValue({
@@ -50,22 +53,24 @@ function build(opts: BuildOptions = {}) {
         findFirst: vi.fn().mockResolvedValue(staffRow),
         update: vi.fn().mockResolvedValue({ id: "s1", status: "suspended" }),
         delete: vi.fn().mockResolvedValue({ id: "s1" }),
-        count: vi.fn().mockResolvedValue(remainingStaffCount),
       },
-      business: {
-        count: vi.fn().mockResolvedValue(ownedCount),
-      },
-      $executeRaw: executeRaw,
+      // app_user_is_detachable(p_user_id, p_business_id) — the SECURITY
+      // DEFINER helper that replaced the identity-borrow guard.
+      $queryRaw: vi.fn().mockResolvedValue([{ detachable }]),
     },
     // The base client: identifier-uniqueness must see every account
     // regardless of tenant, so it is checked here, not through `db`.
     user: { findFirst: vi.fn().mockResolvedValue(existingUser) },
   };
   const pins = { hashPin: vi.fn().mockResolvedValue("hashed") };
-  const tokens = { revokeAllForUser: vi.fn().mockResolvedValue(undefined) };
+  const tokens = {
+    revokeAllForUser: vi.fn().mockImplementation(async () => {
+      order.push("revoke");
+    }),
+  };
   const businesses = { assertOwns: vi.fn().mockResolvedValue({ id: "b1" }) };
   const svc = new StaffService(prisma as never, pins as never, tokens as never, businesses as never);
-  return { svc, prisma, tokens, pins, executeRaw };
+  return { svc, prisma, tokens, pins, order };
 }
 
 describe("staff creation", () => {
@@ -205,23 +210,51 @@ describe("ending access", () => {
 });
 
 describe("remove: the user account behind a removed staff row", () => {
-  // Important 3: the identifier is globally @unique. Leaving the User behind
-  // after removing their business_staff row would make re-adding this exact
-  // person — anywhere, ever — fail forever with "already in use".
+  // Fix round 2, CRITICAL: user.delete cascades onto refresh_tokens, and
+  // revokeAllForUser's updateMany runs on a different, outside-the-request
+  // connection. Deleting the user first holds a lock that query then waits
+  // on forever (Postgres sees one waiter, not a cycle, so deadlock detection
+  // never fires) — the request just hangs until the tenant transaction times
+  // out. This pins the order so that regression fails loudly instead of
+  // hanging silently.
+  it("revokes sessions before it ever deletes the user", async () => {
+    const { svc, order } = build({ detachable: true });
+    await svc.remove("owner1", "b1", "s1");
+    expect(order).toEqual(["revoke", "delete"]);
+  });
+
+  // Fix round 2, Important: the detachability check itself needs a test —
+  // mocking it without asserting the call or its result left the whole guard
+  // able to silently regress.
+  it("asks app_user_is_detachable about this exact user and business, and only deletes when it says yes", async () => {
+    const { svc, prisma } = build({ detachable: true });
+    await svc.remove("owner1", "b1", "s1");
+    expect(prisma.db.$queryRaw).toHaveBeenCalledTimes(1);
+    // $queryRaw is invoked as a tagged template: call args are
+    // [stringsArray, ...interpolatedValues] by ordinary JS tag semantics.
+    const [, ...params] = prisma.db.$queryRaw.mock.calls[0];
+    expect(params).toEqual(["u9", "b1"]);
+    expect(prisma.db.user.delete).toHaveBeenCalledWith({ where: { id: "u9" } });
+  });
+
+  // Important 3 (round 1): the identifier is globally @unique. Leaving the
+  // User behind after removing their business_staff row would make
+  // re-adding this exact person — anywhere, ever — fail forever with
+  // "already in use".
   it("deletes a plain kitchen account entirely, with no other ties", async () => {
-    const { svc, prisma } = build({ ownedCount: 0, remainingStaffCount: 0 });
+    const { svc, prisma } = build({ detachable: true });
     await svc.remove("owner1", "b1", "s1");
     expect(prisma.db.user.delete).toHaveBeenCalledWith({ where: { id: "u9" } });
   });
 
   it("keeps the account when the user still staffs another venue", async () => {
-    const { svc, prisma } = build({ ownedCount: 0, remainingStaffCount: 1 });
+    const { svc, prisma } = build({ detachable: false });
     await svc.remove("owner1", "b1", "s1");
     expect(prisma.db.user.delete).not.toHaveBeenCalled();
   });
 
   it("never deletes a user who owns a business", async () => {
-    const { svc, prisma } = build({ ownedCount: 1, remainingStaffCount: 0 });
+    const { svc, prisma } = build({ detachable: false });
     await svc.remove("owner1", "b1", "s1");
     expect(prisma.db.user.delete).not.toHaveBeenCalled();
   });

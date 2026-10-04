@@ -139,42 +139,44 @@ export class StaffService {
     const row = await this.find(userId, businessId, staffId);
     await this.prisma.db.businessStaff.delete({ where: { id: row.id } });
 
+    // Before any possible user deletion, not after: RefreshToken.user is
+    // onDelete: Cascade, and revokeAllForUser's updateMany runs on the base
+    // client — a different, outside-the-transaction connection. Deleting the
+    // user first would hold an uncommitted cascade lock on refresh_tokens
+    // while that outside query waits on the same rows, and since Postgres
+    // sees one waiter rather than a cycle, deadlock detection never fires —
+    // the request just hangs until the tenant transaction times out. The
+    // cascade removes those rows anyway, so revoking first is both correct
+    // and harmless whether or not the user ends up deleted below.
+    await this.tokens.revokeAllForUser(row.userId);
+
     // The identifier is globally @unique, and staff turnover is routine: if
     // the User row is left behind, re-adding this person — at this venue or
     // any other — fails forever with "already in use", with no UI path out.
-    // Delete the account too, but only when it is provably safe:
-    //  - they own no business (deleting them would cascade a whole venue
-    //    away — never do that from a staff-removal path);
-    //  - they have no remaining business_staff row anywhere (another owner
-    //    may still depend on this exact login at a different venue; removing
-    //    them from *this* business must never end their access elsewhere).
+    // Delete the account too, but only when app_user_is_detachable says it is
+    // safe: they own no business, and have no remaining business_staff row
+    // at any other venue.
     //
-    // Both tables are FORCE RLS keyed on the connection's identity, and with
-    // no identity set a query sees nothing at all (NULLIF(...)::uuid is NULL,
-    // every comparison is NULL) — so querying as the *acting owner* would
-    // always read back zero and delete unconditionally, which is exactly the
-    // unsafe outcome this guard exists to prevent. The owner policy on
-    // `businesses` and the self-read policy on `business_staff` both key on
-    // this exact departing user's id, so — borrowing the technique
-    // auth.service.signup uses before there is a tenant identity — this
-    // assumes the departing user's own identity for the read, then restores
-    // the acting owner's before doing anything else.
-    await this.prisma.db.$executeRaw`SELECT set_config('app.current_user_id', ${row.userId}::text, true)`;
-    let ownedCount: number;
-    let remainingStaffCount: number;
-    try {
-      [ownedCount, remainingStaffCount] = await Promise.all([
-        this.prisma.db.business.count({ where: { ownerId: row.userId } }),
-        this.prisma.db.businessStaff.count({ where: { userId: row.userId } }),
-      ]);
-    } finally {
-      await this.prisma.db.$executeRaw`SELECT set_config('app.current_user_id', ${userId}::text, true)`;
-    }
-    if (ownedCount === 0 && remainingStaffCount === 0) {
+    // That check cannot be a plain query here. `businesses` and
+    // `business_staff` are both FORCE RLS, keyed on the connection's
+    // identity, and policies only show the *caller's own* rows — so asking
+    // "does this other user own anything, anywhere" as the acting owner
+    // would read back nothing, not everything, and invert the guard into
+    // deleting unconditionally. (An earlier version of this guard tried to
+    // route around that by temporarily borrowing the departing user's
+    // identity with set_config; that is also wrong outside a request, where
+    // prisma.db falls back to the base client and set_config(..., true) is
+    // discarded before the next statement runs.) app_user_is_detachable is a
+    // SECURITY DEFINER function that answers this one question — and only
+    // for a user staffing a business the caller actually owns, so it cannot
+    // be asked about an arbitrary account — without the caller's own
+    // identity ever changing.
+    const [{ detachable }] = await this.prisma.db.$queryRaw<{ detachable: boolean }[]>`
+      SELECT app_user_is_detachable(${row.userId}::uuid, ${businessId}::uuid) AS detachable
+    `;
+    if (detachable) {
       await this.prisma.db.user.delete({ where: { id: row.userId } });
     }
-
-    await this.tokens.revokeAllForUser(row.userId);
   }
 
   private async find(userId: string, businessId: string, staffId: string) {
