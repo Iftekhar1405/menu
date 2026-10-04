@@ -70,7 +70,15 @@ export class BusinessesService {
     return business;
   }
 
-  /** Every business this user can reach, as owner or as staff. */
+  /**
+   * Every business this user can reach, as owner or as staff.
+   *
+   * A business the user both owns and is an active staff row on (nothing
+   * stops that combination existing) must appear once, not twice — this
+   * list feeds a venue switcher, and a duplicate there reads as a bug, not
+   * a security hole. Owned businesses win the slot; order is otherwise
+   * owned-first, each half by `createdAt asc`, same as before.
+   */
   async listAccessible(userId: string): Promise<Business[]> {
     const owned = await this.prisma.db.business.findMany({
       where: { ownerId: userId },
@@ -81,7 +89,11 @@ export class BusinessesService {
       include: { business: true },
       orderBy: { createdAt: "asc" },
     });
-    return [...owned, ...staffed.map((s) => s.business)];
+    const ownedIds = new Set(owned.map((b) => b.id));
+    const staffedOnly = staffed
+      .map((s) => s.business)
+      .filter((b) => !ownedIds.has(b.id));
+    return [...owned, ...staffedOnly];
   }
 
   /** Kept: existing callers ask for "mine" meaning "owned". */
