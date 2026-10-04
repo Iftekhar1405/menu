@@ -196,7 +196,9 @@ export class MenuService {
     itemId: string,
     isAvailable: boolean,
   ) {
-    await this.businesses.assertOwns(userId, businessId);
+    await this.businesses.assertAccess(userId, businessId, {
+      allow: ["owner", "kitchen"],
+    });
     await this.assertItemBelongs(businessId, itemId);
     const updated = await this.prisma.db.menuItem.update({
       where: { id: itemId },

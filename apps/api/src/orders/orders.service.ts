@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -12,7 +13,11 @@ import { cleanPgMessage } from "../common/pg-message";
 import { NotificationsService } from "../notifications/notifications.service";
 import type { CancelledLine, PlacedOrder } from "../notifications/events";
 import type { CancelOrderInput } from "@menu/shared";
-import { ALLOWED_TRANSITIONS, OPEN_STATUSES } from "./transitions";
+import {
+  ALLOWED_TRANSITIONS,
+  OPEN_STATUSES,
+  canRoleSetStatus,
+} from "./transitions";
 import { stripPrices } from "./kitchen-shape";
 
 export interface PlaceLine {
@@ -343,7 +348,9 @@ export class OrdersService {
     orderId: string,
     next: OrderStatus,
   ) {
-    await this.businesses.assertOwns(userId, businessId);
+    const { role } = await this.businesses.assertAccess(userId, businessId, {
+      allow: ["owner", "kitchen"],
+    });
 
     const order = await this.prisma.db.order.findFirst({
       where: { id: orderId, businessId },
@@ -353,10 +360,18 @@ export class OrdersService {
 
     // A finished order stays finished. Reopening one would put two open orders
     // on a table that has since seated new diners.
+    //
+    // Two different refusals on purpose. The state machine refusing is a
+    // fact about the order and reads as 409; a role refusing is a fact about
+    // the person and reads as 403. Collapsing them would tell a kitchen user
+    // their order was in the wrong state when it was not.
     if (!ALLOWED_TRANSITIONS[order.status].includes(next)) {
       throw new ConflictException(
         `An order that is ${order.status} cannot be moved to ${next}`,
       );
+    }
+    if (!canRoleSetStatus(role, order.status, next)) {
+      throw new ForbiddenException(`You cannot move an order to ${next}`);
     }
 
     const updated = await this.prisma.db.order.update({
