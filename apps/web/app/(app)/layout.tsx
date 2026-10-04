@@ -200,21 +200,23 @@ function Shell({ children }: { children: React.ReactNode }) {
           {tabs.map((item) => (
             <Tab key={item.href} item={item} active={pathname === item.href} />
           ))}
-          <button
-            type="button"
-            onClick={() => setMoreOpen(true)}
-            aria-haspopup="dialog"
-            aria-expanded={moreOpen}
-            className={cx(
-              "spring flex min-w-0 flex-1 flex-col items-center justify-center gap-1 py-2",
-              rest.some((i) => i.href === pathname)
-                ? "text-[var(--accent)]"
-                : "text-faint",
-            )}
-          >
-            <MoreIcon />
-            <span className="text-[10.5px] font-medium leading-none">More</span>
-          </button>
+          {rest.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setMoreOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={moreOpen}
+              className={cx(
+                "spring flex min-w-0 flex-1 flex-col items-center justify-center gap-1 py-2",
+                rest.some((i) => i.href === pathname)
+                  ? "text-[var(--accent)]"
+                  : "text-faint",
+              )}
+            >
+              <MoreIcon />
+              <span className="text-[10.5px] font-medium leading-none">More</span>
+            </button>
+          )}
         </nav>
 
         {/* ── More sheet ─────────────────────────────────────────────────── */}
