@@ -29,6 +29,11 @@ export class TablesService {
       where: { businessId },
       orderBy: { position: "asc" },
     });
+    // `Table` carries no money column today, so this strips nothing — it is
+    // here for uniformity at the boundary, not because this row needs it.
+    // Keep the wrap anyway: it is a no-op now and the one line standing
+    // between a future price-bearing column on this model and kitchen
+    // staff seeing it unguarded.
     return stripPrices(tables, role);
   }
 
