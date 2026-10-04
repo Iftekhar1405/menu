@@ -19,6 +19,47 @@ const PRICE_KEYS = new Set([
 ]);
 
 /**
+ * A formatted amount anywhere inside a sentence: "₹180", "₹1,250.50", "$40".
+ *
+ * `Intl.NumberFormat` puts the symbol before the digits for every currency
+ * this product ships with, and `formatMoney` is the only thing that writes
+ * money into these strings.
+ */
+const MONEY_IN_TEXT = /[₹$€£¥] ?\s?\d[\d,]*(?:\.\d+)?/g;
+
+/**
+ * Removes money from a notification's already-rendered text.
+ *
+ * Key-based stripping cannot help here: `notifications.title` and `body` are
+ * whole sentences composed at emit time by notifications/events.ts, which
+ * interpolates `formatMoney(...)` directly into them — so a kitchen user was
+ * reading "Coffee (Small), Chinese Bhel (Large) · ₹180" while every other
+ * surface correctly showed them no prices at all.
+ *
+ * The better fix is for events.ts to stop baking the total into the sentence
+ * and let each reader decide whether to render it. That is a schema change
+ * (the amount would have to live in `data`), and it would not help the rows
+ * already written — including every notification from before kitchen logins
+ * existed. Redacting at read time is what makes the existing history safe to
+ * show, so it is needed regardless of what emit does later.
+ *
+ * Separators are tidied afterwards so a redacted middle segment does not
+ * leave "lines ·  · reason" behind.
+ */
+export function redactMoneyFromText(text: string): string {
+  // Split on the separator rather than patching punctuation afterwards: money
+  // is a whole segment ("lines · ₹120 · reason"), and dropping the segment
+  // keeps the remaining ones correctly spaced no matter where it sat. Trying
+  // to stitch the dots back together with a second regex is what produced
+  // "Coffee (Small)· Ordered by mistake".
+  return text
+    .split("·")
+    .map((part) => part.replace(MONEY_IN_TEXT, "").trim())
+    .filter((part) => part.length > 0)
+    .join(" · ");
+}
+
+/**
  * Strips money from anything on its way to a kitchen caller.
  *
  * Done here, at the boundary, rather than by each query choosing its own

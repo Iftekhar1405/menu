@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api-client";
 import { useSession } from "@/components/session";
-import { Banner, Button, Empty, Toggle, cx } from "@/components/ui";
+import { Banner, Button, Empty, Input, Toggle, cx } from "@/components/ui";
+import { mediaUrl } from "@/lib/preview";
 
 /**
  * What the kitchen can change about the menu: whether a dish is on.
@@ -17,10 +18,18 @@ import { Banner, Button, Empty, Toggle, cx } from "@/components/ui";
  * price field before it leaves the server (Task 7); nothing here declares
  * one it would then have to remember not to render.
  */
+interface Photo {
+  id: string;
+  storagePath: string;
+  alt: string | null;
+}
+
 interface Item {
   id: string;
   name: string;
   isAvailable: boolean;
+  /** First one is the thumbnail. Empty for a dish nobody photographed. */
+  photos: Photo[];
 }
 
 interface Category {
@@ -36,6 +45,7 @@ export default function DishesPage() {
   const [error, setError] = useState<string | null>(null);
   /** Item ids with a PATCH in flight — blocks a second tap racing the first. */
   const [pending, setPending] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     if (!current) return;
@@ -95,6 +105,39 @@ export default function DishesPage() {
     }
   }
 
+  /*
+   * Search matches the dish name only. A kitchen hunting for "dosa" mid-service
+   * wants the dish, not every category that happens to mention it — and an
+   * empty category is dropped rather than left as a heading with nothing under
+   * it. The whole menu is already in memory, so this stays a local filter: a
+   * round trip per keystroke on restaurant wifi is how a search box becomes
+   * slower than scrolling.
+   */
+  const needle = query.trim().toLowerCase();
+  const shown = (categories ?? [])
+    .map((c) => ({
+      ...c,
+      items: needle
+        ? c.items.filter((i) => i.name.toLowerCase().includes(needle))
+        : c.items,
+    }))
+    .filter((c) => c.items.length > 0 || !needle);
+
+  const matches = shown.reduce((n, c) => n + c.items.length, 0);
+
+  const searchBox = (
+    <div className="mb-5">
+      <Input
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search dishes"
+        aria-label="Search dishes"
+        autoComplete="off"
+      />
+    </div>
+  );
+
   if (!current) return null;
 
   return (
@@ -131,8 +174,18 @@ export default function DishesPage() {
           title="No dishes yet"
           body="Dishes are added from the menu builder. Once there are some, turning them on and off during service happens here."
         />
+      ) : matches === 0 && needle ? (
+        <>
+          {searchBox}
+          <Empty
+            title={`Nothing matches “${query.trim()}”`}
+            body="Check the spelling, or clear the search to see the whole menu."
+          />
+        </>
       ) : (
-        categories.map((category) => (
+        <>
+        {searchBox}
+        {shown.map((category) => (
           <section key={category.id} className="mt-8 first:mt-0">
             <h2 className="mb-2.5 text-[13px] font-semibold uppercase tracking-[0.12em] text-faint">
               {category.name}
@@ -148,21 +201,49 @@ export default function DishesPage() {
                   <li
                     key={item.id}
                     className={cx(
-                      "px-3.5",
+                      "flex items-center gap-3 px-3.5",
                       pending.has(item.id) && "pointer-events-none opacity-60",
                     )}
                   >
-                    <Toggle
-                      checked={item.isAvailable}
-                      onChange={(next) => void toggleItem(item, next)}
-                      label={item.name}
-                    />
+                    {/*
+                      * The photo is the fastest way to find a dish on a tablet
+                      * mid-service — you recognise it before you finish reading
+                      * the name. Dishes with no photo keep their place in the
+                      * row with a neutral tile, so the column stays aligned
+                      * rather than ragging left wherever one is missing.
+                      */}
+                    {item.photos[0] ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={mediaUrl(item.photos[0].storagePath)}
+                        alt=""
+                        className={cx(
+                          "h-11 w-11 shrink-0 rounded-xl object-cover",
+                          !item.isAvailable && "opacity-40 grayscale",
+                        )}
+                      />
+                    ) : (
+                      <span
+                        aria-hidden="true"
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-raised text-[15px] font-semibold text-faint"
+                      >
+                        {item.name.slice(0, 1).toUpperCase()}
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <Toggle
+                        checked={item.isAvailable}
+                        onChange={(next) => void toggleItem(item, next)}
+                        label={item.name}
+                      />
+                    </span>
                   </li>
                 ))}
               </ul>
             )}
           </section>
-        ))
+        ))}
+        </>
       )}
     </div>
   );

@@ -13,7 +13,8 @@ import {
 } from "./events";
 import { RealtimeBroadcaster } from "./realtime.broadcast";
 import { WebPushSender, type PushTarget } from "./web-push.sender";
-import { stripPrices } from "../orders/kitchen-shape";
+import { redactMoneyFromText, stripPrices } from "../orders/kitchen-shape";
+import type { AccessRole } from "@menu/shared";
 
 export interface NotificationView {
   id: number;
@@ -237,15 +238,41 @@ export class NotificationsService {
       allow: ["owner", "kitchen"],
     });
 
+    /*
+     * Staff see the service they are working, not the venue's history.
+     *
+     * Notifications are business-scoped, so without this a kitchen member who
+     * started this morning opens the bell to a week of other people's rounds —
+     * noise they cannot act on, about tables that have long since paid and
+     * left. Their own start date is the only sensible floor, and it is already
+     * on the row that grants them access.
+     *
+     * Owners keep the full history: it is their venue.
+     */
+    const joinedAt =
+      role === "owner"
+        ? null
+        : (
+            await this.prisma.db.businessStaff.findFirst({
+              where: { businessId, userId, status: "active" },
+              select: { createdAt: true },
+            })
+          )?.createdAt ?? new Date();
+
+    const visible = {
+      businessId,
+      ...(joinedAt && { createdAt: { gte: joinedAt } }),
+    };
+
     const [rows, unread, newest] = await Promise.all([
       this.prisma.db.notification.findMany({
-        where: { businessId, ...(since !== null && { id: { gt: since } }) },
+        where: { ...visible, ...(since !== null && { id: { gt: since } }) },
         orderBy: { id: "desc" },
         take: limit,
       }),
-      this.prisma.db.notification.count({ where: { businessId, readAt: null } }),
+      this.prisma.db.notification.count({ where: { ...visible, readAt: null } }),
       this.prisma.db.notification.findFirst({
-        where: { businessId },
+        where: visible,
         orderBy: { id: "desc" },
         select: { id: true },
       }),
@@ -253,7 +280,7 @@ export class NotificationsService {
 
     return stripPrices(
       {
-        items: rows.map(toView),
+        items: rows.map(toView).map((n) => redactNotificationMoney(n, role)),
         unread,
         // The newest id that exists, not the newest returned. A page truncated
         // by `take` must not leave the cursor behind rows the client would
@@ -322,6 +349,26 @@ export class NotificationsService {
   async removePush(userId: string, endpoint: string): Promise<void> {
     await this.prisma.db.pushSubscription.deleteMany({ where: { userId, endpoint } });
   }
+}
+
+/**
+ * Blanks the money a notification's rendered sentence carries, for a reader
+ * who is not allowed to see it.
+ *
+ * `stripPrices` works on keys; `title` and `body` are prose composed at emit
+ * time with the total already interpolated, so only the text itself can be
+ * cleaned. See redactMoneyFromText for why this happens at read time.
+ */
+function redactNotificationMoney(
+  n: NotificationView,
+  role: AccessRole,
+): NotificationView {
+  if (role === "owner") return n;
+  return {
+    ...n,
+    title: redactMoneyFromText(n.title),
+    body: redactMoneyFromText(n.body),
+  };
 }
 
 function toView(row: {
