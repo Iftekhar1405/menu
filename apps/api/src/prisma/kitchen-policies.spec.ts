@@ -48,6 +48,93 @@ async function count(table: string): Promise<number> {
   return r.rows[0].n;
 }
 
+async function countForBusiness(table: string, businessId: string): Promise<number> {
+  const r = await app.query(`SELECT count(*)::int AS n FROM ${table} WHERE business_id = $1`, [
+    businessId,
+  ]);
+  return r.rows[0].n;
+}
+
+/**
+ * Seeds one row in every READABLE table for a venue, plus one in `bills`,
+ * `bill_lines` and `order_ratings` — tables the kitchen role must NOT read —
+ * so every assertion in this file is against a real, non-empty row rather
+ * than an absence that would pass whether or not a policy existed.
+ *
+ * `menu_items` and `menu_item_variants` are inserted inside one transaction:
+ * the price guard (see the `hardening` migration) is a DEFERRED constraint
+ * trigger that only sees both rows together at COMMIT, and an item with
+ * neither a price nor a variant yet would otherwise fail the moment it alone
+ * is committed.
+ */
+async function seedVenue(businessId: string, tableLabel: string) {
+  const table = await admin.query(
+    `INSERT INTO tables (id, business_id, label, token, position)
+     VALUES (gen_random_uuid(), $1, $2, $3, 1) RETURNING id`,
+    [businessId, tableLabel, Math.random().toString(16).slice(2).padEnd(32, "0").slice(0, 32)],
+  );
+  const tableId = table.rows[0].id as string;
+
+  const category = await admin.query(
+    `INSERT INTO menu_categories (id, business_id, name, position)
+     VALUES (gen_random_uuid(), $1, 'Mains', 1) RETURNING id`,
+    [businessId],
+  );
+  const categoryId = category.rows[0].id as string;
+
+  await admin.query("BEGIN");
+  let itemId: string;
+  try {
+    const item = await admin.query(
+      `INSERT INTO menu_items (id, business_id, category_id, name, position, updated_at)
+       VALUES (gen_random_uuid(), $1, $2, 'Thali', 1, now()) RETURNING id`,
+      [businessId, categoryId],
+    );
+    itemId = item.rows[0].id as string;
+    await admin.query(
+      `INSERT INTO menu_item_variants (id, item_id, business_id, name, price, position)
+       VALUES (gen_random_uuid(), $1, $2, 'Regular', 99.00, 1)`,
+      [itemId, businessId],
+    );
+    await admin.query("COMMIT");
+  } catch (err) {
+    await admin.query("ROLLBACK");
+    throw err;
+  }
+
+  await admin.query(
+    `INSERT INTO menu_item_photos (id, item_id, business_id, storage_path, position)
+     VALUES (gen_random_uuid(), $1, $2, '/fixture.jpg', 1)`,
+    [itemId, businessId],
+  );
+
+  const order = await admin.query(
+    `INSERT INTO orders (id, business_id, table_id, business_day, daily_number, updated_at)
+     VALUES (gen_random_uuid(), $1, $2, CURRENT_DATE, 1, now()) RETURNING id`,
+    [businessId, tableId],
+  );
+  const orderId = order.rows[0].id as string;
+
+  await admin.query(
+    `INSERT INTO order_items (id, order_id, business_id, name_snapshot, unit_price, quantity, batch)
+     VALUES (gen_random_uuid(), $1, $2, 'Thali', 99.00, 1, 1)`,
+    [orderId, businessId],
+  );
+
+  await admin.query(
+    `INSERT INTO order_events (order_id, business_id, kind) VALUES ($1, $2, 'placed')`,
+    [orderId, businessId],
+  );
+
+  await admin.query(
+    `INSERT INTO notifications (business_id, kind, title, body)
+     VALUES ($1, 'order_placed', 'New order', 'Table placed an order')`,
+    [businessId],
+  );
+
+  return { tableId, orderId };
+}
+
 describe.skipIf(!process.env.DATABASE_URL)("kitchen policies", () => {
   beforeAll(async () => {
     admin = new Client({ connectionString: ADMIN_URL });
@@ -90,14 +177,38 @@ describe.skipIf(!process.env.DATABASE_URL)("kitchen policies", () => {
       [bizA, kitchenA],
     );
 
-    // One table row in each venue, so "sees A, not B" has something to see.
-    for (const [biz, label] of [[bizA, "A1"], [bizB, "B1"]] as const) {
-      await admin.query(
-        `INSERT INTO tables (id, business_id, label, token, position)
-         VALUES (gen_random_uuid(), $1, $2, $3, 1)`,
-        [biz, label, Math.random().toString(16).slice(2).padEnd(32, "0").slice(0, 32)],
-      );
-    }
+    // A full row in every READABLE table for both venues — the only way
+    // "sees A, not B" and "every readable table is actually readable" mean
+    // anything rather than passing vacuously against empty tables.
+    const seedA = await seedVenue(bizA, "A1");
+    await seedVenue(bizB, "B1");
+
+    // Money tables kitchen must never see, non-empty for venue A specifically
+    // so "gives a kitchen user no sight of money" tests a real denial.
+    const bill = await admin.query(
+      `INSERT INTO bills (
+         id, business_id, order_id, bill_number, table_label,
+         prices_include_tax, tax_label, service_charge_rate, business_snapshot,
+         subtotal, tax_total, service_charge, round_off, total
+       ) VALUES (
+         gen_random_uuid(), $1, $2, 1, 'A1',
+         true, 'GST', 0, '{}'::jsonb,
+         99.00, 0, 0, 0, 99.00
+       ) RETURNING id`,
+      [bizA, seedA.orderId],
+    );
+    await admin.query(
+      `INSERT INTO bill_lines (
+         id, bill_id, business_id, name, quantity,
+         unit_price, line_total, line_net, tax_rate, tax_amount, position
+       ) VALUES (gen_random_uuid(), $1, $2, 'Thali', 1, 99.00, 99.00, 99.00, 0, 0, 1)`,
+      [bill.rows[0].id, bizA],
+    );
+    await admin.query(
+      `INSERT INTO order_ratings (id, business_id, order_id, table_id, stars)
+       VALUES (gen_random_uuid(), $1, $2, $3, 5)`,
+      [bizA, seedA.orderId, seedA.tableId],
+    );
   });
 
   afterAll(async () => {
@@ -114,11 +225,13 @@ describe.skipIf(!process.env.DATABASE_URL)("kitchen policies", () => {
     });
   });
 
-  // Review Focus 3: same role, different tenant.
-  it("shows a kitchen user nothing of another venue", async () => {
+  // Review Focus 3: same role, different tenant — checked across every
+  // readable table, not just `tables`, since each is a separate policy.
+  it("shows a kitchen user nothing of another venue, for every readable table", async () => {
     await asUser(kitchenA, async () => {
-      const r = await app.query("SELECT count(*)::int AS n FROM tables WHERE business_id = $1", [bizB]);
-      expect(r.rows[0].n).toBe(0);
+      for (const t of READABLE) {
+        expect(await countForBusiness(t, bizB)).toBe(0);
+      }
     });
   });
 
@@ -132,19 +245,34 @@ describe.skipIf(!process.env.DATABASE_URL)("kitchen policies", () => {
 
   it("hides everything from a suspended staff member", async () => {
     await admin.query("UPDATE business_staff SET status='suspended' WHERE user_id=$1", [kitchenA]);
-    await asUser(kitchenA, async () => {
-      expect(await count("businesses")).toBe(0);
-      expect(await count("tables")).toBe(0);
-    });
-    await admin.query("UPDATE business_staff SET status='active' WHERE user_id=$1", [kitchenA]);
+    try {
+      await asUser(kitchenA, async () => {
+        expect(await count("businesses")).toBe(0);
+        expect(await count("tables")).toBe(0);
+      });
+    } finally {
+      await admin.query("UPDATE business_staff SET status='active' WHERE user_id=$1", [kitchenA]);
+    }
   });
 
-  it("leaves every readable table reachable", async () => {
+  it("leaves every readable table reachable, with venue A's own rows visible", async () => {
     await asUser(kitchenA, async () => {
       for (const t of READABLE) {
-        await expect(count(t)).resolves.toBeGreaterThanOrEqual(0);
+        await expect(count(t)).resolves.toBeGreaterThan(0);
       }
     });
+  });
+
+  it("creates no kitchen INSERT or DELETE policy", async () => {
+    // migration.sql says this in a comment; the drift guard below only
+    // checks table names, so a future `orders_kitchen_insert` would pass it
+    // silently. This is the assertion that actually enforces the comment.
+    const r = await admin.query(
+      `SELECT policyname, cmd FROM pg_policies
+        WHERE schemaname='public' AND policyname LIKE '%\\_kitchen\\_%'
+          AND cmd IN ('INSERT', 'DELETE')`,
+    );
+    expect(r.rows).toEqual([]);
   });
 
   /**
@@ -157,7 +285,7 @@ describe.skipIf(!process.env.DATABASE_URL)("kitchen policies", () => {
         WHERE schemaname='public' AND policyname LIKE '%\\_owner'`,
     );
     // 15 pre-existing `_owner` policies plus `business_staff_owner`, added by
-    // this very migration (Part 2) — the owner's own counterpart to
+    // this very migration — the owner's own counterpart to
     // `business_staff_self_read`. Verified directly against the dev
     // database after deploy; see task-3-report.md for the query.
     const owned = r.rows.map((x) => x.tablename as string);
