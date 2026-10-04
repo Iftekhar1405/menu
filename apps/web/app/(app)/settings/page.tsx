@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { BUSINESS_TYPES, BUSINESS_TYPE_LABEL } from "@menu/shared";
 import { ApiError, api } from "@/lib/api-client";
@@ -240,6 +241,21 @@ export default function SettingsPage() {
           {saved && <span className="text-[13.5px] text-muted">Saved.</span>}
         </div>
       </form>
+
+      {/* ── Kitchen staff ────────────────────────────────────────────────── */}
+      <section className="mt-10 rounded-2xl border border-line bg-surface p-5">
+        <h2 className="font-display text-[15px] font-semibold text-ink">Kitchen staff</h2>
+        <p className="mt-1 text-[13.5px] leading-relaxed text-muted">
+          Create logins for kitchen staff. They see orders and dishes, never prices,
+          bills, or this settings page.
+        </p>
+        <Link
+          href="/settings/staff"
+          className="spring mt-3 inline-flex h-9 items-center rounded-xl border border-line bg-surface px-3.5 text-[13px] font-medium text-ink hover:bg-raised active:scale-[0.985]"
+        >
+          Manage kitchen staff
+        </Link>
+      </section>
 
       {/* ── Danger zone ──────────────────────────────────────────────────── */}
       <section className="mt-12 rounded-2xl border border-[rgba(179,38,30,0.25)] bg-[rgba(179,38,30,0.04)] p-5">
