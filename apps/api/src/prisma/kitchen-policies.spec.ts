@@ -470,4 +470,141 @@ describe.skipIf(!process.env.DATABASE_URL)("kitchen policies", () => {
       expect(Number(m.rows[0].price)).toBe(150);
     });
   });
+
+  /**
+   * Task 5: who caused each order_events row. log_order_status_event is
+   * SECURITY DEFINER because order_events has no kitchen INSERT policy
+   * (only order_events_owner / ALL and order_events_kitchen_read / SELECT) —
+   * drop SECURITY DEFINER and the kitchen's own status UPDATE below would be
+   * refused by RLS. The first test is therefore also the regression test for
+   * that: if it throws instead of succeeding, SECURITY DEFINER is gone.
+   */
+  describe("audit trail", () => {
+    /**
+     * Each test below gets its own table: the venue-A order seeded in the
+     * outer beforeAll, and the one used by "column guards", both stay
+     * "open" (orders_one_open_per_table) across these tests, so reusing
+     * either table's existing order would collide with that constraint.
+     */
+    async function freshTable(label: string) {
+      const t = await admin.query(
+        `INSERT INTO tables (id, business_id, label, token, position)
+         VALUES (gen_random_uuid(), $1, $2, $3, 100) RETURNING id`,
+        [bizA, label, Math.random().toString(16).slice(2).padEnd(32, "0").slice(0, 32)],
+      );
+      return t.rows[0].id as string;
+    }
+
+    it("records the kitchen user who advanced an order, and the write succeeds", async () => {
+      const tableId = await freshTable("Audit2");
+      const o = await admin.query(
+        `INSERT INTO orders (id, business_id, table_id, business_day, daily_number, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, CURRENT_DATE, 99, now()) RETURNING id`,
+        [bizA, tableId],
+      );
+      const id = o.rows[0].id;
+
+      await asUser(kitchenA, async () => {
+        const r = await app.query("UPDATE orders SET status='ready' WHERE id=$1", [id]);
+        // The regression check for ruling 1: without SECURITY DEFINER, the
+        // trigger's INSERT into order_events is refused by RLS and the
+        // UPDATE fails outright rather than merely logging nothing.
+        expect(r.rowCount).toBe(1);
+      });
+
+      const e = await admin.query(
+        "SELECT actor_id FROM order_events WHERE order_id=$1 AND kind='ready'",
+        [id],
+      );
+      expect(e.rows[0].actor_id).toBe(kitchenA);
+
+      await admin.query("DELETE FROM orders WHERE id=$1", [id]);
+      await admin.query("DELETE FROM tables WHERE id=$1", [tableId]);
+    });
+
+    it("records the owner who moved an order", async () => {
+      const tableId = await freshTable("Audit3");
+      const o = await admin.query(
+        `INSERT INTO orders (id, business_id, table_id, business_day, daily_number, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, CURRENT_DATE, 98, now()) RETURNING id`,
+        [bizA, tableId],
+      );
+      const id = o.rows[0].id;
+
+      await asUser(ownerA, async () => {
+        await app.query("UPDATE orders SET status='completed' WHERE id=$1", [id]);
+      });
+
+      const e = await admin.query(
+        "SELECT actor_id FROM order_events WHERE order_id=$1 AND kind='completed'",
+        [id],
+      );
+      expect(e.rows[0].actor_id).toBe(ownerA);
+
+      await admin.query("DELETE FROM orders WHERE id=$1", [id]);
+      await admin.query("DELETE FROM tables WHERE id=$1", [tableId]);
+    });
+
+    // The case most likely to regress: place_table_round runs with no
+    // app.current_user_id at all — a diner placing an order through the
+    // public menu, not a logged-in staff member — so its order_events row
+    // must record no actor, not accidentally inherit one.
+    it("leaves actor_id null for a diner-placed order with no user context", async () => {
+      const tableId = await freshTable("Audit1");
+
+      // A menu item of its own, available, rather than the seeded venue-A
+      // item — the "column guards" tests above toggle that one unavailable
+      // along the way and never flip it back. Item and variant are inserted
+      // in one transaction: menu_items_price_guard is a DEFERRED constraint
+      // trigger that only sees both rows together at COMMIT (see seedVenue).
+      const category = await admin.query(
+        "SELECT id FROM menu_categories WHERE business_id=$1 LIMIT 1",
+        [bizA],
+      );
+      let itemId: string;
+      await admin.query("BEGIN");
+      try {
+        const menuItem = await admin.query(
+          `INSERT INTO menu_items (id, business_id, category_id, name, position, updated_at)
+           VALUES (gen_random_uuid(), $1, $2, 'Audit Dish', 2, now()) RETURNING id`,
+          [bizA, category.rows[0].id],
+        );
+        itemId = menuItem.rows[0].id;
+        await admin.query(
+          `INSERT INTO menu_item_variants (id, item_id, business_id, name, price, position)
+           VALUES (gen_random_uuid(), $1, $2, 'Regular', 50.00, 1)`,
+          [itemId, bizA],
+        );
+        await admin.query("COMMIT");
+      } catch (err) {
+        await admin.query("ROLLBACK");
+        throw err;
+      }
+      const variant = await admin.query(
+        "SELECT id FROM menu_item_variants WHERE item_id=$1",
+        [itemId],
+      );
+      const variantId = variant.rows[0].id;
+
+      // No set_config, no asUser: this is the unauthenticated diner path.
+      const placed = await app.query(
+        `SELECT place_table_round($1, $2, $3::jsonb) AS result`,
+        [tableId, bizA, JSON.stringify([{ itemId, variantId, quantity: 1 }])],
+      );
+      expect(placed.rows[0].result).toBeTruthy();
+
+      const order = await admin.query("SELECT id FROM orders WHERE table_id=$1", [tableId]);
+      const orderId = order.rows[0].id;
+
+      const e = await admin.query(
+        "SELECT actor_id FROM order_events WHERE order_id=$1 AND kind='placed'",
+        [orderId],
+      );
+      expect(e.rows[0].actor_id).toBeNull();
+
+      await admin.query("DELETE FROM orders WHERE id=$1", [orderId]);
+      await admin.query("DELETE FROM tables WHERE id=$1", [tableId]);
+      await admin.query("DELETE FROM menu_items WHERE id=$1", [itemId]);
+    });
+  });
 });

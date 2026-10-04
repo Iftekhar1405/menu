@@ -278,6 +278,7 @@ export class OrdersService {
       kind: e.kind,
       at: e.at.toISOString(),
       data: e.data,
+      actorId: e.actorId,
     }));
   }
 
