@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { formatMoney } from "@menu/shared";
+import { canRoleSetStatus, formatMoney, type AccessRole } from "@menu/shared";
 import { api, downloadFile } from "@/lib/api-client";
 import { createFreshness } from "@/lib/freshness";
 import { useSession } from "@/components/session";
@@ -9,6 +9,7 @@ import { useConfirm } from "@/components/confirm";
 import { Button, Empty, Segmented, cx } from "@/components/ui";
 import { buildTimeline, type OrderEvent, type OrderStatus } from "@/lib/order-timeline";
 import { OrderTimeline } from "@/components/order/timeline";
+import { columnsFor, showsMoney } from "@/lib/board-actions";
 
 type Status = OrderStatus;
 
@@ -23,18 +24,14 @@ interface Order {
     id: string;
     nameSnapshot: string;
     variantSnapshot: string | null;
-    unitPrice: string;
+    // Absent entirely for a kitchen caller: the API strips every price
+    // before it leaves the server (Task 7). The client follows the data
+    // rather than re-deciding who gets to see it.
+    unitPrice?: string;
     quantity: number;
     batch: number;
   }[];
 }
-
-const COLUMNS: { status: Status; title: string; next?: Status; nextLabel?: string }[] = [
-  { status: "placed", title: "New", next: "accepted", nextLabel: "Accept" },
-  { status: "accepted", title: "Accepted", next: "preparing", nextLabel: "Start" },
-  { status: "preparing", title: "Being made", next: "ready", nextLabel: "Ready" },
-  { status: "ready", title: "Ready", next: "completed", nextLabel: "Served" },
-];
 
 /**
  * The kitchen board.
@@ -45,7 +42,7 @@ const COLUMNS: { status: Status; title: string; next?: Status; nextLabel?: strin
  * business runs enough tables to make the request volume matter.
  */
 export default function OrdersPage() {
-  const { current } = useSession();
+  const { current, me } = useSession();
   const confirm = useConfirm();
   const [orders, setOrders] = useState<Order[]>([]);
   const [past, setPast] = useState<Order[]>([]);
@@ -54,6 +51,22 @@ export default function OrdersPage() {
   const [now, setNow] = useState(() => Date.now());
   /** Which column the phone is showing. Ignored from `sm:` up. */
   const [lane, setLane] = useState<Status>("placed");
+
+  /*
+   * `me` is still null for a beat while the session loads, and `current`
+   * (gating the fetch and the early return below) resolves from the same
+   * request — so by the time there is anything on screen to gate, `me` is
+   * normally already set. Defaulting the gap to "owner" is the safe choice
+   * because this is cosmetic, not the access boundary: the API independently
+   * refuses any write the real role cannot make and never sends a kitchen
+   * caller a price, so a button or total that briefly over-shows during
+   * load corrects itself and never under-shows a genuine owner. It also
+   * matches what the nav sidebar already assumes while loading (lib/nav.ts).
+   * `platform_admin` has no distinct board permissions of its own, so it
+   * falls into the same "owner" bucket.
+   */
+  const role: AccessRole = me?.role === "kitchen" ? "kitchen" : "owner";
+  const columns = useMemo(() => columnsFor(role), [role]);
 
   /*
    * The board polls and also moves cards optimistically, which is several
@@ -99,10 +112,10 @@ export default function OrdersPage() {
 
   const grouped = useMemo(() => {
     const map = new Map<Status, Order[]>();
-    for (const column of COLUMNS) map.set(column.status, []);
+    for (const column of columns) map.set(column.status, []);
     for (const order of orders) map.get(order.status)?.push(order);
     return map;
-  }, [orders]);
+  }, [orders, columns]);
 
   if (!current) return null;
 
@@ -206,7 +219,7 @@ export default function OrdersPage() {
               label="Order status"
               value={lane}
               onChange={setLane}
-              options={COLUMNS.map((c) => ({
+              options={columns.map((c) => ({
                 value: c.status,
                 // Shortened labels for the phone segmented control — four
                 // options at full width clips at 360px.
@@ -220,7 +233,7 @@ export default function OrdersPage() {
           </div>
 
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {COLUMNS.map((column) => {
+            {columns.map((column) => {
               const list = grouped.get(column.status) ?? [];
               const shown = column.status === lane;
               return (
@@ -248,6 +261,8 @@ export default function OrdersPage() {
                         busy={busy === order.id}
                         businessId={current.id}
                         nextLabel={column.nextLabel}
+                        showMoney={showsMoney(role)}
+                        canCancel={canRoleSetStatus(role, order.status, "cancelled")}
                         onAdvance={() => column.next && void advance(order, column.next)}
                         onCancel={() => void advance(order, "cancelled")}
                         onBill={async (format) => {
@@ -279,6 +294,7 @@ export default function OrdersPage() {
           orders={past}
           businessId={current.id}
           currency={current.currency}
+          showMoney={showsMoney(role)}
         />
       )}
     </div>
@@ -297,10 +313,12 @@ function ServedToday({
   orders,
   businessId,
   currency,
+  showMoney,
 }: {
   orders: Order[];
   businessId: string;
   currency: string;
+  showMoney: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -340,7 +358,7 @@ function ServedToday({
         <ul className="mt-4 space-y-2">
           {orders.map((order) => {
             const total = order.items.reduce(
-              (sum, i) => sum + Number(i.unitPrice) * i.quantity,
+              (sum, i) => sum + Number(i.unitPrice ?? 0) * i.quantity,
               0,
             );
             return (
@@ -351,6 +369,7 @@ function ServedToday({
                 currency={currency}
                 businessId={businessId}
                 busy={busy}
+                showMoney={showMoney}
                 onDownload={download}
               />
             );
@@ -367,6 +386,7 @@ function ServedOrderRow({
   currency,
   businessId,
   busy,
+  showMoney,
   onDownload,
 }: {
   order: Order;
@@ -374,6 +394,7 @@ function ServedOrderRow({
   currency: string;
   businessId: string;
   busy: string | null;
+  showMoney: boolean;
   onDownload: (order: Order, format: "bill" | "receipt") => void;
 }) {
   const [openTimeline, setOpenTimeline] = useState(false);
@@ -413,9 +434,11 @@ function ServedOrderRow({
           )}
           <span className="ml-auto text-[13px] text-muted">{openTimeline ? "▴" : "▾"}</span>
         </button>
-        <span className="tnum text-[14px] font-semibold">
-          {formatMoney(String(total), currency)}
-        </span>
+        {showMoney && (
+          <span className="tnum text-[14px] font-semibold">
+            {formatMoney(String(total), currency)}
+          </span>
+        )}
         {order.status === "completed" && (
           <span className="flex gap-1.5">
             <Button
@@ -464,6 +487,8 @@ function OrderCard({
   busy,
   businessId,
   nextLabel,
+  showMoney,
+  canCancel,
   onAdvance,
   onCancel,
   onBill,
@@ -474,6 +499,8 @@ function OrderCard({
   busy: boolean;
   businessId: string;
   nextLabel?: string;
+  showMoney: boolean;
+  canCancel: boolean;
   onAdvance: () => void;
   onCancel: () => void;
   onBill: (format: "bill" | "receipt") => void;
@@ -510,7 +537,7 @@ function OrderCard({
   }, [order.items]);
 
   const total = order.items.reduce(
-    (sum, i) => sum + Number(i.unitPrice) * i.quantity,
+    (sum, i) => sum + Number(i.unitPrice ?? 0) * i.quantity,
     0,
   );
 
@@ -590,13 +617,17 @@ function OrderCard({
       ))}
 
       <footer className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
-        <span className="tnum text-[14px] font-semibold">
-          {formatMoney(String(total), currency)}
-        </span>
+        {showMoney && (
+          <span className="tnum text-[14px] font-semibold">
+            {formatMoney(String(total), currency)}
+          </span>
+        )}
         <span className="flex flex-1 justify-end gap-1.5">
-          <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
-            Cancel
-          </Button>
+          {canCancel && (
+            <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
+              Cancel
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={() => onBill("bill")} disabled={busy}>
             Bill
           </Button>
