@@ -13,6 +13,7 @@ import {
 } from "./events";
 import { RealtimeBroadcaster } from "./realtime.broadcast";
 import { WebPushSender, type PushTarget } from "./web-push.sender";
+import { stripPrices } from "../orders/kitchen-shape";
 
 export interface NotificationView {
   id: number;
@@ -232,7 +233,9 @@ export class NotificationsService {
     channel: string;
     pushPublicKey: string;
   }> {
-    await this.businesses.assertOwns(userId, businessId);
+    const { role } = await this.businesses.assertAccess(userId, businessId, {
+      allow: ["owner", "kitchen"],
+    });
 
     const [rows, unread, newest] = await Promise.all([
       this.prisma.db.notification.findMany({
@@ -248,16 +251,19 @@ export class NotificationsService {
       }),
     ]);
 
-    return {
-      items: rows.map(toView),
-      unread,
-      // The newest id that exists, not the newest returned. A page truncated
-      // by `take` must not leave the cursor behind rows the client would
-      // then never ask for again.
-      cursor: newest ? Number(newest.id) : 0,
-      channel: businessChannel(businessId, this.env.REALTIME_CHANNEL_SECRET),
-      pushPublicKey: this.env.VAPID_PUBLIC_KEY,
-    };
+    return stripPrices(
+      {
+        items: rows.map(toView),
+        unread,
+        // The newest id that exists, not the newest returned. A page truncated
+        // by `take` must not leave the cursor behind rows the client would
+        // then never ask for again.
+        cursor: newest ? Number(newest.id) : 0,
+        channel: businessChannel(businessId, this.env.REALTIME_CHANNEL_SECRET),
+        pushPublicKey: this.env.VAPID_PUBLIC_KEY,
+      },
+      role,
+    );
   }
 
   /** Marks the named notifications read, or all of them when none are named. */
@@ -266,7 +272,9 @@ export class NotificationsService {
     businessId: string,
     ids: number[],
   ): Promise<{ unread: number }> {
-    await this.businesses.assertOwns(userId, businessId);
+    const { role } = await this.businesses.assertAccess(userId, businessId, {
+      allow: ["owner", "kitchen"],
+    });
 
     await this.prisma.db.notification.updateMany({
       // businessId stays in the filter even though RLS enforces it too —
@@ -282,7 +290,7 @@ export class NotificationsService {
     const unread = await this.prisma.db.notification.count({
       where: { businessId, readAt: null },
     });
-    return { unread };
+    return stripPrices({ unread }, role);
   }
 
   // ── Push subscriptions ────────────────────────────────────────────────────

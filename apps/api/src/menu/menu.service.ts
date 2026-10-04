@@ -3,6 +3,7 @@ import type { CategoryInput, MenuItemInput } from "@menu/shared";
 import { BusinessesService } from "../businesses/businesses.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { RevalidateClient } from "../public/revalidate.client";
+import { stripPrices } from "../orders/kitchen-shape";
 
 /**
  * All menu mutations.
@@ -26,8 +27,10 @@ export class MenuService {
 
   /** The owner's view: everything, including hidden and unavailable rows. */
   async fullMenu(userId: string, businessId: string) {
-    await this.businesses.assertOwns(userId, businessId);
-    return this.prisma.db.menuCategory.findMany({
+    const { role } = await this.businesses.assertAccess(userId, businessId, {
+      allow: ["owner", "kitchen"],
+    });
+    const categories = await this.prisma.db.menuCategory.findMany({
       where: { businessId },
       orderBy: { position: "asc" },
       include: {
@@ -40,6 +43,7 @@ export class MenuService {
         },
       },
     });
+    return stripPrices(categories, role);
   }
 
   // ── Categories ────────────────────────────────────────────────────────────

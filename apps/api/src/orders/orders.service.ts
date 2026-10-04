@@ -13,6 +13,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import type { CancelledLine, PlacedOrder } from "../notifications/events";
 import type { CancelOrderInput } from "@menu/shared";
 import { ALLOWED_TRANSITIONS, OPEN_STATUSES } from "./transitions";
+import { stripPrices } from "./kitchen-shape";
 
 export interface PlaceLine {
   itemId: string;
@@ -214,7 +215,9 @@ export class OrdersService {
   // ── Staff side ────────────────────────────────────────────────────────────
 
   async listForBusiness(userId: string, businessId: string, scope: "open" | "today") {
-    await this.businesses.assertOwns(userId, businessId);
+    const { role } = await this.businesses.assertAccess(userId, businessId, {
+      allow: ["owner", "kitchen"],
+    });
 
     // `business_day` is written by Postgres with CURRENT_DATE, so "today" has
     // to be asked of Postgres too. Building a local midnight in JS and
@@ -225,7 +228,7 @@ export class OrdersService {
       SELECT CURRENT_DATE AS today
     `;
 
-    return this.prisma.db.order.findMany({
+    const orders = await this.prisma.db.order.findMany({
       where: {
         businessId,
         ...(scope === "open"
@@ -245,6 +248,8 @@ export class OrdersService {
         cancellations: { orderBy: { createdAt: "asc" } },
       },
     });
+
+    return stripPrices(orders, role);
   }
 
   /**
@@ -256,7 +261,9 @@ export class OrdersService {
    * trade. This is called when a card is expanded and after it advances.
    */
   async listEvents(userId: string, businessId: string, orderId: string) {
-    await this.businesses.assertOwns(userId, businessId);
+    const { role } = await this.businesses.assertAccess(userId, businessId, {
+      allow: ["owner", "kitchen"],
+    });
 
     const order = await this.prisma.db.order.findFirst({
       where: { id: orderId, businessId },
@@ -273,13 +280,15 @@ export class OrdersService {
 
     // BigInt does not survive JSON.stringify, and the id is only ever a React
     // key on the way out.
-    return events.map((e) => ({
+    const mapped = events.map((e) => ({
       id: Number(e.id),
       kind: e.kind,
       at: e.at.toISOString(),
       data: e.data,
       actorId: e.actorId,
     }));
+
+    return stripPrices(mapped, role);
   }
 
   /**
