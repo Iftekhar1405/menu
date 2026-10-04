@@ -58,11 +58,28 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         router.replace("/login");
         return;
       }
-      const [meRes, bizRes] = await Promise.all([
-        api.get<Me>("/auth/me"),
-        api.get<Business[]>("/businesses/mine"),
-      ]);
+      const meRes = await api.get<Me>("/auth/me");
       setMe(meRes);
+
+      /*
+       * An account that still owes a PIN change can reach almost nothing:
+       * MustChangePinGuard refuses every route but /auth/me and
+       * /auth/pin/change. Asking for businesses here would 403, reject the
+       * load, and strand the person on the error screen below — which is the
+       * one place they cannot get to the screen that unblocks them. So we
+       * stop early and let the shell's gate send them to /change-pin.
+       *
+       * Fetching the two in parallel is what made this a dead end rather
+       * than a redirect; the second call is now conditional on being allowed
+       * to make it.
+       */
+      if (meRes.mustChangePin) {
+        setBusinesses([]);
+        setLoading(false);
+        return;
+      }
+
+      const bizRes = await api.get<Business[]>("/businesses/mine");
       setBusinesses(bizRes);
       setCurrentId((prev) => prev ?? bizRes[0]?.id ?? null);
       setLoading(false);
