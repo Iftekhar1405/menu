@@ -32,6 +32,8 @@ import { NotificationsController } from "./notifications/notifications.controlle
 import { NotificationsService } from "./notifications/notifications.service";
 import { RealtimeBroadcaster } from "./notifications/realtime.broadcast";
 import { WebPushSender } from "./notifications/web-push.sender";
+import { StaffController } from "./staff/staff.controller";
+import { StaffService } from "./staff/staff.service";
 
 @Module({
   imports: [PrismaModule, OtpChannelsModule, AuthModule, JwtModule.register({})],
@@ -50,6 +52,7 @@ import { WebPushSender } from "./notifications/web-push.sender";
     MerchController,
     AdminMerchController,
     NotificationsController,
+    StaffController,
   ],
   providers: [
     HealthService,
@@ -68,6 +71,7 @@ import { WebPushSender } from "./notifications/web-push.sender";
     NotificationsService,
     RealtimeBroadcaster,
     WebPushSender,
+    StaffService,
     // Authenticated by default: a new controller is protected unless it
     // explicitly opts out with @Public.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
