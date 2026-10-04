@@ -31,7 +31,17 @@ datasource db {
 
 enum UserRole {
   owner
+  kitchen
   platform_admin
+}
+
+enum StaffRole {
+  kitchen
+}
+
+enum StaffStatus {
+  active
+  suspended
 }
 
 enum BusinessType {
@@ -67,12 +77,44 @@ model User {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  /// True for an account an owner created. Gates the whole app until the
+  /// person picks their own PIN — until then the owner knows their
+  /// credential, and the audit trail means nothing.
+  mustChangePin  Boolean   @default(false) @map("must_change_pin")
+
   businesses     Business[]
   otpChallenges  OtpChallenge[]
   refreshTokens  RefreshToken[]
   pushSubscriptions PushSubscription[]
+  staffRoles     BusinessStaff[]
 
   @@map("users")
+}
+
+/// A person who works at a business but does not own it.
+///
+/// Deliberately not a general membership table: `Business.ownerId` is still
+/// the tenant boundary and every existing policy keys on it. This table adds
+/// a second, narrower way in, which is why its rows carry a status — ending
+/// someone's access has to be one column, not a deletion that takes their
+/// history with it.
+model BusinessStaff {
+  id          String      @id @default(uuid()) @db.Uuid
+  businessId  String      @map("business_id") @db.Uuid
+  userId      String      @map("user_id") @db.Uuid
+  role        StaffRole   @default(kitchen)
+  status      StaffStatus @default(active)
+  /// Which owner added them. Nulled rather than cascaded, so the audit trail
+  /// survives the author's account being removed.
+  createdById String?     @map("created_by_id") @db.Uuid
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, userId])
+  @@map("business_staff")
 }
 
 model OtpChallenge {
@@ -192,6 +234,7 @@ model Business {
   merchOrders MerchOrder[]
   notifications Notification[]
   cancellations OrderItemCancellation[]
+  staff        BusinessStaff[]
 
   @@index([ownerId])
   @@map("businesses")
@@ -453,11 +496,15 @@ model OrderEvent {
   kind       String
   data       Json     @default("{}")
   at         DateTime @default(now()) @db.Timestamptz(6)
+  /// Who caused it. Null for a diner, the system, or anything from before
+  /// staff accounts existed — which is honest: we do not know.
+  actorId    String?  @map("actor_id") @db.Uuid
 
   order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([orderId, id])
+  @@index([actorId, id(sort: Desc)])
   @@map("order_events")
 }
 
