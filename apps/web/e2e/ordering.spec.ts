@@ -244,3 +244,118 @@ test("the ordering page uses the layout the owner chose", async ({ page, browser
   await expect(diner.getByLabel("Search the menu")).toBeVisible();
   await diner.screenshot({ path: `${SHOTS}/22-ordering-grid.png`, fullPage: true });
 });
+
+/**
+ * Kitchen staff work a real placed order through cooking. The UI for adding
+ * the login itself is covered end to end by kitchen.spec.ts; this test needs
+ * a diner's placed order, which is exactly the fixture this file already
+ * builds, so the login here is created through the API directly rather than
+ * duplicating table-claim setup for a second time.
+ */
+test("kitchen staff move a real order from Accept to Ready, never see Served or money", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/signup");
+  const email = `kitchen-board${Date.now()}@kumar.test`;
+  await page.getByLabel("Your name").fill("Board Owner");
+  await page.getByLabel("Email or phone number").fill(email);
+  await typePin(page, "Choose a 6-digit PIN", PIN);
+  await page.getByLabel("Business name").fill("Board Test Kitchen");
+  await page.getByRole("button", { name: "Cafe" }).click();
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByRole("heading", { name: "Menu", exact: true })).toBeVisible();
+
+  await page.getByPlaceholder("Coffee").fill("Snacks");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Add a dish to Snacks" }).click();
+  await page.getByLabel("Name").fill("Vada");
+  await page.getByPlaceholder("140").first().fill("50");
+  await page.getByRole("button", { name: "Add dish" }).click();
+  await expect(page.getByRole("button", { name: /^Vada/ })).toBeVisible();
+
+  await page.getByRole("link", { name: "Tables" }).click();
+  await page.getByLabel("Add a table").fill("9");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.getByLabel(/Table name, currently 9/)).toBeVisible();
+  const token = await getTableToken(page);
+
+  const staffPhone = `+9198${String(Date.now()).slice(-8)}`;
+  const issuedPin = await createKitchenLogin(page, staffPhone);
+
+  // ── Diner places a real order ────────────────────────────────────────────
+  const diner = await context.newPage();
+  await diner.setViewportSize({ width: 420, height: 900 });
+  await diner.goto(`/t/${token}`);
+  await expect(diner).toHaveURL(/\/order$/);
+  await diner.getByRole("button", { name: "Add Vada" }).click();
+  await diner.getByRole("button", { name: "Place order" }).click();
+  await expect(diner.getByText("Sent to the kitchen")).toBeVisible();
+
+  // ── Kitchen signs in, in a separate browser context ──────────────────────
+  const kitchenContext = await context.browser()!.newContext();
+  const kitchen = await kitchenContext.newPage();
+  await kitchen.goto("/login");
+  await kitchen.getByLabel("Email or phone number").fill(staffPhone);
+  await typePin(kitchen, "6-digit PIN", issuedPin);
+
+  // The owner issued this PIN, so the account owes a PIN change before
+  // anything else works — same as every kitchen login, API-created or not.
+  await expect(kitchen).toHaveURL(/\/change-pin/);
+  const ownPin = "445566";
+  await typePin(kitchen, "PIN you were given", issuedPin);
+  await typePin(kitchen, "New PIN", ownPin);
+  await typePin(kitchen, "New PIN again", ownPin);
+  await kitchen.getByRole("button", { name: "Save PIN" }).click();
+  await expect(kitchen).toHaveURL(/\/login/);
+
+  await kitchen.getByLabel("Email or phone number").fill(staffPhone);
+  await typePin(kitchen, "6-digit PIN", ownPin);
+  await expect(kitchen).toHaveURL(/\/orders/);
+
+  // No money anywhere on the board.
+  await expect(kitchen.getByText(/₹/)).toHaveCount(0);
+
+  // Accept → Start → Ready. Completing (which bills) and cancelling are an
+  // owner's calls, not the kitchen's, so "Served" must never appear.
+  await kitchen.getByRole("button", { name: "Accept" }).click();
+  await expect(kitchen.getByRole("button", { name: "Start" })).toBeVisible();
+  await expect(kitchen.getByRole("button", { name: "Served" })).toHaveCount(0);
+
+  await kitchen.getByRole("button", { name: "Start" }).click();
+  await expect(kitchen.getByRole("button", { name: "Ready" })).toBeVisible();
+  await expect(kitchen.getByRole("button", { name: "Served" })).toHaveCount(0);
+
+  await kitchen.getByRole("button", { name: "Ready" }).click();
+  // Now sitting in the Ready column, where a kitchen login has no further
+  // button at all — only an owner can mark it Served.
+  await expect(kitchen.getByText("Vada")).toBeVisible();
+  await expect(kitchen.getByRole("button", { name: "Served" })).toHaveCount(0);
+  await expect(kitchen.getByText(/₹/)).toHaveCount(0);
+
+  await kitchenContext.close();
+});
+
+/** Creates a kitchen login through the owner API, returning the issued PIN. */
+async function createKitchenLogin(page: Page, identifier: string): Promise<string> {
+  return page.evaluate(async (phone) => {
+    const api = "http://localhost:4000";
+    const refresh = await fetch(`${api}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+    });
+    const { accessToken } = (await refresh.json()) as { accessToken: string };
+
+    const businesses = await fetch(`${api}/businesses/mine`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }).then((r) => r.json() as Promise<{ id: string }[]>);
+
+    const res = await fetch(`${api}/businesses/${businesses[0]!.id}/staff`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ fullName: "Kitchen Tester", identifier: phone, country: "IN" }),
+    }).then((r) => r.json() as Promise<{ pin: string }>);
+
+    return res.pin;
+  }, identifier);
+}

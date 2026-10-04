@@ -46,11 +46,26 @@ echo "  A = $A_BID"
 echo "  B = $B_BID"
 echo
 
-probe () { # description, expected-not-2xx, curl args...
+probe () { # description, [expected-status,] curl args...
   local desc="$1"; shift
+  # An exact code is opt-in: most call sites below just want "refused
+  # somehow" and pass straight to curl args. A caller that cares which
+  # refusal it gets (403 vs 404 is the difference between "no" and
+  # "doesn't even know this exists") puts a bare three-digit code first.
+  local want=""
+  case "${1:-}" in
+    [0-9][0-9][0-9]) want="$1"; shift ;;
+  esac
   local status
   status=$(curl -s -o /dev/null -w '%{http_code}' "$@")
-  if [ "${status:0:1}" = "2" ]; then
+  if [ -n "$want" ]; then
+    if [ "$status" = "$want" ]; then
+      printf '  ok    %-46s -> %s\n' "$desc" "$status"
+    else
+      printf '  LEAK  %-46s -> %s (expected %s)\n' "$desc" "$status" "$want"
+      FAILURES=$((FAILURES + 1))
+    fi
+  elif [ "${status:0:1}" = "2" ]; then
     printf '  LEAK  %-46s -> %s\n' "$desc" "$status"
     FAILURES=$((FAILURES + 1))
   else
@@ -149,6 +164,85 @@ if [ "$SEEN_BILL" = "null" ] || [ -z "$SEEN_BILL" ]; then
   echo "  ok    table 2 sees no bill it did not incur"
 else
   echo "  LEAK  table 2 sees a bill: $SEEN_BILL"
+  FAILURES=$((FAILURES + 1))
+fi
+
+echo
+echo "Kitchen staff — a third principal, scoped to its own tenant and to cooking:"
+
+login() { # identifier, pin
+  curl -s -X POST "$API/auth/login" -H 'Content-Type: application/json' \
+    -d "{\"identifier\":\"$1\",\"pin\":\"$2\",\"country\":\"IN\"}" | json_field '["accessToken"]'
+}
+
+echo "Creating a kitchen user inside tenant A…"
+K_PHONE=$(rand_phone)
+K_PIN=$(curl -s -X POST "$API/businesses/$A_BID/staff" \
+  -H "Authorization: Bearer $A_TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"fullName\":\"Kitchen A\",\"identifier\":\"$K_PHONE\",\"country\":\"IN\"}" \
+  | json_field '["pin"]')
+
+K_TOKEN=$(login "$K_PHONE" "$K_PIN")
+
+# The account owes a PIN change, so it can do nothing until it picks one.
+# Worth proving before the session is used for anything else.
+probe "kitchen owing a PIN change cannot read the board" 403 \
+  -H "Authorization: Bearer $K_TOKEN" "$API/businesses/$A_BID/orders"
+
+# Change it, then sign in again — changing a PIN revokes every session, this
+# one included, so the pre-change token must not go on working either.
+curl -s -o /dev/null -X POST "$API/auth/pin/change" \
+  -H "Authorization: Bearer $K_TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"currentPin\":\"$K_PIN\",\"newPin\":\"778899\"}"
+probe "pre-change kitchen token is revoked by the PIN change" \
+  -H "Authorization: Bearer $K_TOKEN" "$API/businesses/$A_BID/orders"
+K_TOKEN=$(login "$K_PHONE" "778899")
+
+# Real ids from tenant A, so the probes below fail on permission rather than
+# on a 404 for something that was never there.
+A_CAT=$(curl -s -X POST "$API/businesses/$A_BID/categories" \
+  -H "Authorization: Bearer $A_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"Mains"}' | json_field '["id"]')
+A_ITEM=$(curl -s -X POST "$API/businesses/$A_BID/items" \
+  -H "Authorization: Bearer $A_TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"categoryId\":\"$A_CAT\",\"name\":\"Dosa\",\"price\":\"120.00\"}" | json_field '["id"]')
+
+# A real placed order, so $A_ORDER names something that actually exists
+# rather than resolving empty and letting the status probes below pass for
+# the wrong reason (a 404 from a malformed URL rather than from RLS).
+A_KTABLE=$(curl -s -X POST "$API/businesses/$A_BID/tables" \
+  -H "Authorization: Bearer $A_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"label":"iso-kitchen"}' | json_field '["token"]')
+A_KSESSION=$(curl -s -X POST "$API/public/tables/resolve" -H 'Content-Type: application/json' \
+  -d "{\"token\":\"$A_KTABLE\"}" | json_field '["sessionToken"]')
+curl -s -o /dev/null -X POST "$API/public/table/order" -H "Authorization: Bearer $A_KSESSION" \
+  -H 'Content-Type: application/json' -d "{\"items\":[{\"itemId\":\"$A_ITEM\",\"quantity\":1}]}"
+A_ORDER=$(curl -s "$API/businesses/$A_BID/orders?scope=open" \
+  -H "Authorization: Bearer $A_TOKEN" | json_field '[0]["id"]')
+
+echo "Kitchen against the rest of its own tenant and tenant B — every line must be refused:"
+probe "kitchen cannot read tenant B's orders"     404 -H "Authorization: Bearer $K_TOKEN" "$API/businesses/$B_BID/orders"
+probe "kitchen cannot read its own venue's bills" 404 -H "Authorization: Bearer $K_TOKEN" "$API/businesses/$A_BID/bills"
+probe "kitchen cannot read tax settings"          404 -H "Authorization: Bearer $K_TOKEN" "$API/businesses/$A_BID/tax"
+probe "kitchen cannot list staff"                 404 -H "Authorization: Bearer $K_TOKEN" "$API/businesses/$A_BID/staff"
+probe "kitchen cannot create staff"               404 -H "Authorization: Bearer $K_TOKEN" -X POST "$API/businesses/$A_BID/staff" \
+  -H 'Content-Type: application/json' -d '{"fullName":"X","identifier":"+919000000000","country":"IN"}'
+probe "kitchen cannot edit a dish"                404 -H "Authorization: Bearer $K_TOKEN" -X PUT "$API/businesses/$A_BID/items/$A_ITEM" \
+  -H 'Content-Type: application/json' -d '{"name":"Hacked","price":"1.00"}'
+probe "kitchen cannot complete an order"          403 -H "Authorization: Bearer $K_TOKEN" -X PATCH "$API/businesses/$A_BID/orders/$A_ORDER/status" \
+  -H 'Content-Type: application/json' -d '{"status":"completed"}'
+probe "kitchen cannot cancel an order"            403 -H "Authorization: Bearer $K_TOKEN" -X PATCH "$API/businesses/$A_BID/orders/$A_ORDER/status" \
+  -H 'Content-Type: application/json' -d '{"status":"cancelled"}'
+
+# One positive assertion, so this section cannot pass merely because the
+# kitchen's token is invalid — it has to be a real, working, narrow account.
+echo "Checking the kitchen CAN do its own job…"
+KITCHEN_OWN=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $K_TOKEN" \
+  "$API/businesses/$A_BID/orders")
+if [ "${KITCHEN_OWN:0:1}" = "2" ]; then
+  echo "  ok    kitchen reads its own board                     -> $KITCHEN_OWN"
+else
+  echo "  BROKEN kitchen cannot read its own board              -> $KITCHEN_OWN"
   FAILURES=$((FAILURES + 1))
 fi
 
