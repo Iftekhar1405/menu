@@ -1,23 +1,19 @@
 import type { OrderStatus } from "@prisma/client";
 
 /**
- * The order state machine, in one place.
- *
- * Lifted out of the service so it can be asserted directly. The rules are
- * short enough to look obvious and subtle enough to get wrong — "can a ready
- * order go back to preparing" has a right answer, and it is the kind of thing
- * a refactor quietly changes.
+ * The state machine moved to @menu/shared when the board gained role-aware
+ * buttons: the browser needs the same table to decide what to draw, and the
+ * one thing worse than duplicating it is duplicating it across a network
+ * boundary. Re-exported here so the existing call sites and tests are
+ * unchanged.
  */
-
-/** Every value of the enum, in declaration order. */
-export const ORDER_STATUSES = [
-  "placed",
-  "accepted",
-  "preparing",
-  "ready",
-  "completed",
-  "cancelled",
-] as const satisfies readonly OrderStatus[];
+export {
+  ORDER_STATUSES,
+  ALLOWED_TRANSITIONS,
+  canTransition,
+  ROLE_TARGETS,
+  canRoleSetStatus,
+} from "@menu/shared";
 
 /**
  * What counts as an order still in play.
@@ -36,25 +32,3 @@ export const OPEN_STATUSES: OrderStatus[] = [
   "preparing",
   "ready",
 ];
-
-/**
- * What staff are allowed to move an order to.
- *
- * Forward skips are deliberate. The board only ever offers the next step, but
- * a kitchen mid-rush that taps Ready on something still marked New should not
- * be told to tap three more times first.
- */
-export const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  placed: ["accepted", "preparing", "ready", "completed", "cancelled"],
-  accepted: ["preparing", "ready", "completed", "cancelled"],
-  preparing: ["ready", "completed", "cancelled"],
-  ready: ["completed", "cancelled"],
-  // A finished order stays finished. Reopening one would put two open orders
-  // on a table that has since seated new diners.
-  completed: [],
-  cancelled: [],
-};
-
-export function canTransition(from: OrderStatus, to: OrderStatus): boolean {
-  return ALLOWED_TRANSITIONS[from].includes(to);
-}
