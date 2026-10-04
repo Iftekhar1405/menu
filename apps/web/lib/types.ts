@@ -12,8 +12,9 @@ export interface Me {
   fullName: string;
   email: string | null;
   phone: string | null;
-  role: "owner" | "platform_admin";
+  role: "owner" | "kitchen" | "platform_admin";
   verified: boolean;
+  mustChangePin: boolean;
 }
 
 export interface Business {
