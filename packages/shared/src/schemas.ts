@@ -277,3 +277,13 @@ export const staffStatusSchema = z.object({
   status: z.enum(["active", "suspended"]),
 });
 export type StaffStatusInput = z.infer<typeof staffStatusSchema>;
+
+/**
+ * A staff member replacing the PIN the owner chose for them. Until this
+ * clears, the owner still knows a valid credential for the account.
+ */
+export const pinChangeSchema = z.object({
+  currentPin: z.string().regex(/^\d{6}$/, "PIN must be exactly 6 digits"),
+  newPin: z.string().regex(/^\d{6}$/, "PIN must be exactly 6 digits"),
+});
+export type PinChangeInput = z.infer<typeof pinChangeSchema>;

@@ -4,6 +4,7 @@ import { AuthModule } from "./auth/auth.module";
 import { BusinessesController } from "./businesses/businesses.controller";
 import { BusinessesService } from "./businesses/businesses.service";
 import { JwtAuthGuard, RolesGuard } from "./common/guards";
+import { MustChangePinGuard } from "./common/must-change-pin.guard";
 import { HealthController } from "./health/health.controller";
 import { HealthService } from "./health/health.service";
 import { TenantInterceptor } from "./common/tenant.interceptor";
@@ -76,6 +77,9 @@ import { StaffService } from "./staff/staff.service";
     // explicitly opts out with @Public.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    // Runs after JwtAuthGuard so req.user is populated. Holds an
+    // owner-created account at the door until its PIN is replaced.
+    { provide: APP_GUARD, useClass: MustChangePinGuard },
     // Binds every authenticated request to its tenant transaction, so RLS
     // applies without any service having to remember to set it up.
     { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },

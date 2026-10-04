@@ -9,6 +9,7 @@ export interface RequestUser {
   id: string;
   role: string;
   verified: boolean;
+  mustChangePin: boolean;
 }
 
 @Injectable()
@@ -30,10 +31,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: AccessPayload): Promise<RequestUser> {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, role: true, verifiedAt: true },
+      select: { id: true, role: true, verifiedAt: true, mustChangePin: true },
     });
     if (!user) throw new UnauthorizedException("Session is no longer valid");
 
-    return { id: user.id, role: user.role, verified: user.verifiedAt !== null };
+    return {
+      id: user.id,
+      role: user.role,
+      verified: user.verifiedAt !== null,
+      mustChangePin: user.mustChangePin,
+    };
   }
 }
