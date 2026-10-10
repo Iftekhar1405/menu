@@ -6,6 +6,61 @@
 -- someone ordered a chai. Now the round carries its own status and the order's
 -- is derived, so the reset is not only unnecessary, it is wrong.
 
+
+-- next_kot_number takes its own lock, because its uniqueness is business-wide.
+--
+-- As first written in 20261005090000_order_rounds this was a bare
+--   SELECT COALESCE(MAX(kot_number), 0) + 1 ... WHERE business_id = $1
+-- under a header comment claiming it was "shaped exactly like
+-- next_daily_number: callers take the table's advisory lock first". Both
+-- halves of that were wrong, and this migration supersedes it.
+--
+-- next_daily_number does not rely on its caller at all: it takes its own
+-- business-and-day lock, pg_advisory_xact_lock(hashtext(biz || day)), before
+-- it reads its MAX (20260830083311_ordering). And a *table* lock could never
+-- have served here anyway — order_rounds_kot_key is UNIQUE
+-- (business_id, business_day, kot_number), so two diners at two different
+-- tables in one restaurant take two different table locks, never block each
+-- other, both read the same MAX, and the second one is handed
+-- `duplicate key value violates unique constraint "order_rounds_kot_key"`
+-- mid-order. Appending to an already-open table is the commonest thing
+-- place_table_round does and is exactly the path that reaches here without
+-- next_daily_number having incidentally taken the lock first.
+--
+-- The key is byte-for-byte the one next_daily_number already uses, so this
+-- introduces no new lock into the system — the two allocators simply queue
+-- behind each other, which they must, being numbered off the same business
+-- day. Deadlock-free because the only caller, place_table_round, has already
+-- taken its table lock by the time it gets here, so the acquisition order is
+-- always table-then-business and never the reverse: no other function in the
+-- schema takes a business-day lock at all (next_daily_number is called from
+-- place_table_round and nowhere else), and generate_bill's lock is on the
+-- disjoint key 'bill:' || business_id.
+--
+-- The lock lives in here rather than at the call site so the guarantee
+-- travels with the allocator: four test fixtures already call this function
+-- bare, and the next writer of order_rounds would otherwise have to know to
+-- take a lock whose key is not mentioned in the signature.
+CREATE OR REPLACE FUNCTION next_kot_number(p_business_id uuid, p_day date)
+RETURNS int
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  next_number int;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext(p_business_id::text || p_day::text));
+
+  SELECT COALESCE(MAX(kot_number), 0) + 1 INTO next_number
+  FROM order_rounds
+  WHERE business_id = p_business_id AND business_day = p_day;
+
+  RETURN next_number;
+END;
+$$;
+
+
 CREATE OR REPLACE FUNCTION place_table_round(
   p_table_id    uuid,
   p_business_id uuid,
@@ -49,7 +104,9 @@ BEGIN
   END IF;
 
   -- Serialise rounds for this table only. Other tables are unaffected.
-  -- Everything below that reads a MAX to allocate a number depends on this.
+  -- This is what makes the seq MAX below safe, and only that: seq is unique
+  -- per order, so a per-table lock covers it. kot_number is unique per
+  -- business and is locked separately, inside next_kot_number.
   PERFORM pg_advisory_xact_lock(hashtext(p_table_id::text));
 
   -- WARNING: the open-status list here is one of the hand-written copies.
@@ -95,8 +152,11 @@ BEGIN
     RETURNING id INTO v_order_id;
   END IF;
 
-  -- Safe as a plain MAX because the advisory lock above serialises every
-  -- round for this table, and KOT numbers are only ever allocated here.
+  -- Takes a business-and-day lock of its own, which the table lock above
+  -- cannot substitute for: a KOT number is unique across the whole venue, so
+  -- the other table's diner has to be made to wait too. Reached with the
+  -- table lock already held, which fixes the acquisition order at
+  -- table-then-business for every path through this function.
   v_kot := next_kot_number(p_business_id, v_day);
 
   INSERT INTO order_rounds
