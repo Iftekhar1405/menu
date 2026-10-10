@@ -426,9 +426,10 @@ model OrderRound {
   acceptedAt  DateTime?   @map("accepted_at") @db.Timestamptz(6)
   completedAt DateTime?   @map("completed_at") @db.Timestamptz(6)
 
-  business Business    @relation(fields: [businessId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  order    Order       @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  business Business     @relation(fields: [businessId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  order    Order        @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   items    OrderItem[]
+  events   OrderEvent[]
 
   @@unique([orderId, seq])
   @@unique([businessId, businessDay, kotNumber], map: "order_rounds_kot_key")
@@ -533,12 +534,16 @@ model OrderEvent {
   /// Who caused it. Null for a diner, the system, or anything from before
   /// staff accounts existed — which is honest: we do not know.
   actorId    String?  @map("actor_id") @db.Uuid
+  /// Null for order-level events; set for anything that happened to one round.
+  roundId    String?  @map("round_id") @db.Uuid
 
-  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  order    Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  business Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  round    OrderRound? @relation(fields: [roundId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([orderId, id])
   @@index([actorId, id(sort: Desc)])
+  @@index([roundId, id], map: "order_events_round_idx")
   @@map("order_events")
 }
 

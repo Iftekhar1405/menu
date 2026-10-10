@@ -578,6 +578,48 @@ describe.skipIf(!process.env.DATABASE_URL)("kitchen policies", () => {
       await admin.query("DELETE FROM tables WHERE id=$1", [tableId]);
     });
 
+    // Same regression as the order-level test above, for order_rounds_log_status:
+    // that trigger's INSERT into order_events runs in the kitchen account's own
+    // session, which order_events' RLS (owner-only ALL, plus a kitchen SELECT)
+    // does not grant INSERT to. Without SECURITY DEFINER on
+    // order_rounds_log_status_fn, this UPDATE is the one a kitchen user issues
+    // most often, and it would fail outright rather than merely logging nothing.
+    it("records the kitchen user who advanced a round, and the write succeeds", async () => {
+      const tableId = await freshTable("Audit4");
+      const o = await admin.query(
+        `INSERT INTO orders (id, business_id, table_id, business_day, daily_number, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, CURRENT_DATE, 96, now()) RETURNING id`,
+        [bizA, tableId],
+      );
+      const orderId = o.rows[0].id;
+      const round = await admin.query(
+        `INSERT INTO order_rounds
+           (id, business_id, order_id, seq, business_day, kot_number, status, placed_at)
+         VALUES (gen_random_uuid(), $1, $2, 1, CURRENT_DATE,
+                 next_kot_number($1, CURRENT_DATE), 'placed', now())
+         RETURNING id`,
+        [bizA, orderId],
+      );
+      const roundId = round.rows[0].id;
+
+      await asUser(kitchenA, async () => {
+        const r = await app.query("UPDATE order_rounds SET status='preparing' WHERE id=$1", [
+          roundId,
+        ]);
+        expect(r.rowCount).toBe(1);
+      });
+
+      const e = await admin.query(
+        "SELECT actor_id, round_id FROM order_events WHERE order_id=$1 AND kind='round.preparing'",
+        [orderId],
+      );
+      expect(e.rows[0].actor_id).toBe(kitchenA);
+      expect(e.rows[0].round_id).toBe(roundId);
+
+      await admin.query("DELETE FROM orders WHERE id=$1", [orderId]);
+      await admin.query("DELETE FROM tables WHERE id=$1", [tableId]);
+    });
+
     it("records the owner who moved an order", async () => {
       const tableId = await freshTable("Audit3");
       const o = await admin.query(
