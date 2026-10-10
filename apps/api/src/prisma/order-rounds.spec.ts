@@ -10,7 +10,7 @@ import { Client } from "pg";
 const ADMIN_URL = process.env.DIRECT_URL!;
 
 let admin: Client;
-let owner: string, bizA: string, bizB: string, orderA: string;
+let owner: string, bizA: string, bizB: string, orderA: string, orderB: string;
 
 beforeAll(async () => {
   admin = new Client({ connectionString: ADMIN_URL });
@@ -37,17 +37,24 @@ beforeAll(async () => {
   bizA = await biz("Rounds Test A");
   bizB = await biz("Rounds Test B");
 
-  const t = await admin.query(
-    `INSERT INTO tables (id, business_id, label, token, position)
-     VALUES (gen_random_uuid(), $1, '1', $2, 1) RETURNING id`,
-    [bizA, Math.random().toString(16).slice(2).padEnd(32, "0").slice(0, 32)],
-  );
-  const o = await admin.query(
-    `INSERT INTO orders (id, business_id, table_id, status, business_day, daily_number, updated_at)
-     VALUES (gen_random_uuid(), $1, $2, 'placed', CURRENT_DATE, 9001, now()) RETURNING id`,
-    [bizA, t.rows[0].id],
-  );
-  orderA = o.rows[0].id;
+  // One open order per business. bizB's exists so the kot_number test can
+  // run against a business with no rounds of its own, rather than against
+  // whatever the tests above it happen to have left on bizA.
+  const openOrder = async (businessId: string, dailyNumber: number) => {
+    const t = await admin.query(
+      `INSERT INTO tables (id, business_id, label, token, position)
+       VALUES (gen_random_uuid(), $1, '1', $2, 1) RETURNING id`,
+      [businessId, Math.random().toString(16).slice(2).padEnd(32, "0").slice(0, 32)],
+    );
+    const o = await admin.query(
+      `INSERT INTO orders (id, business_id, table_id, status, business_day, daily_number, updated_at)
+       VALUES (gen_random_uuid(), $1, $2, 'placed', CURRENT_DATE, $3, now()) RETURNING id`,
+      [businessId, t.rows[0].id, dailyNumber],
+    );
+    return o.rows[0].id as string;
+  };
+  orderA = await openOrder(bizA, 9001);
+  orderB = await openOrder(bizB, 9002);
 });
 
 afterAll(async () => {
@@ -89,6 +96,30 @@ describe("order_rounds", () => {
         [bizA, orderA],
       ),
     ).rejects.toThrow(/order_rounds_order_id_seq_key|duplicate key/);
+  });
+
+  // Without this, an implementation of next_kot_number that ignored its
+  // arguments and returned a constant 1 would pass every other test in this
+  // file. Task 5's concurrency fix is built directly on this function, and
+  // nothing else in the plan guards it.
+  it("counts kot_number up within one business day, per business", async () => {
+    const insert = (seq: number) =>
+      admin.query(
+        `INSERT INTO order_rounds
+           (id, business_id, order_id, seq, business_day, kot_number, status, placed_at)
+         VALUES (gen_random_uuid(), $1, $2, $3, CURRENT_DATE,
+                 next_kot_number($1, CURRENT_DATE), 'placed', now())
+         RETURNING kot_number`,
+        [bizB, orderB, seq],
+      );
+
+    // bizA already has a round on this same day, so a first round numbered 1
+    // here is also what proves the serial is scoped per business.
+    const first = await insert(1);
+    expect(first.rows[0].kot_number).toBe(1);
+
+    const second = await insert(2);
+    expect(second.rows[0].kot_number).toBe(2);
   });
 
   it("restarts kot_number per business day", async () => {

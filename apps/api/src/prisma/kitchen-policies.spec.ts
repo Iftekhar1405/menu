@@ -376,6 +376,53 @@ describe.skipIf(!process.env.DATABASE_URL)("kitchen policies", () => {
       expect(r.rows[0].status).toBe("preparing");
     });
 
+    // order_rounds_kitchen_update grants the whole row, exactly as
+    // orders_kitchen_write does; order_rounds_kitchen_guard is what narrows
+    // it. Without that trigger a kitchen account could rewrite order_id and
+    // move a round — and every item hanging off it — onto a different order,
+    // and so onto a different bill. Both halves in one test: the write the
+    // kitchen is for must still work, or a guard that refused everything
+    // would pass the negative half on its own.
+    it("lets the kitchen advance a round but not renumber or re-parent it", async () => {
+      const r = await admin.query("SELECT id FROM order_rounds WHERE business_id=$1", [bizA]);
+      const roundId = r.rows[0].id;
+
+      await asUser(kitchenA, async () => {
+        await app.query("UPDATE order_rounds SET status='preparing' WHERE id=$1", [roundId]);
+      });
+      const moved = await admin.query("SELECT status FROM order_rounds WHERE id=$1", [roundId]);
+      expect(moved.rows[0].status).toBe("preparing");
+
+      await expect(
+        asUser(kitchenA, () =>
+          app.query("UPDATE order_rounds SET kot_number=999 WHERE id=$1", [roundId]),
+        ),
+      ).rejects.toThrow(/only change a round's status/);
+
+      // A *different* order in the same business — the re-parenting that
+      // moves a round's items onto someone else's bill. Its table and order
+      // are left to the outer afterAll's `businesses` cascade.
+      const t = await admin.query(
+        `INSERT INTO tables (id, business_id, label, token, position)
+         VALUES (gen_random_uuid(), $1, 'Guard1', $2, 200) RETURNING id`,
+        [bizA, Math.random().toString(16).slice(2).padEnd(32, "0").slice(0, 32)],
+      );
+      const other = await admin.query(
+        `INSERT INTO orders (id, business_id, table_id, business_day, daily_number, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, CURRENT_DATE, 97, now()) RETURNING id`,
+        [bizA, t.rows[0].id],
+      );
+
+      await expect(
+        asUser(kitchenA, () =>
+          app.query("UPDATE order_rounds SET order_id=$2 WHERE id=$1", [
+            roundId,
+            other.rows[0].id,
+          ]),
+        ),
+      ).rejects.toThrow(/only change a round's status/);
+    });
+
     it("refuses the kitchen the statuses that touch a bill", async () => {
       await expect(
         asUser(kitchenA, () =>
