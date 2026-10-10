@@ -29,6 +29,12 @@ export {
  * derivation quietly treats the new status as terminal. See the
  * 20260927110000_order_events, 20260928000000_order_round_fixes and
  * 20261005091000_derive_order_status migrations.
+ *
+ * That it fails silently is not hypothetical: `cancel_table_order` holds a
+ * sixth copy that has already drifted. Its open-order lookup reads
+ * ('placed', 'preparing', 'ready') and never learned about 'accepted', so a
+ * diner cannot cancel an order the kitchen has accepted — they are told they
+ * have no open order. Repaired by the task that rewrites that function.
  */
 export const OPEN_STATUSES: OrderStatus[] = [
   "placed",

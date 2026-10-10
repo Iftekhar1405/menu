@@ -167,23 +167,15 @@ describe("derive_order_status", () => {
     expect(r.rows[0].completed_at).toBeNull();
   });
 
-  /**
-   * The derivation's UPDATE of `orders` runs in whatever session moved the
-   * round — for the kitchen, a session that RLS and `orders_kitchen_guard`
-   * both have opinions about. An UPDATE that RLS filters out affects zero
-   * rows and raises nothing, so the failure mode this guards against is a
-   * board that silently stops advancing.
-   */
-  it("carries the order with the round when the kitchen is the one moving it", async () => {
-    const id = await orderWithRounds(["placed"]);
-
+  /** Advances one round as an active kitchen staff user, over menu_app. */
+  async function kitchenAccepts(orderId: string, seq: number) {
     await app.query("BEGIN");
     await app.query("SELECT set_config('app.current_user_id', $1, true)", [kitchen]);
     try {
       const n = await app.query(
         `UPDATE order_rounds SET status = 'accepted', accepted_at = now()
-         WHERE order_id = $1`,
-        [id],
+         WHERE order_id = $1 AND seq = $2`,
+        [orderId, seq],
       );
       expect(n.rowCount).toBe(1);
       await app.query("COMMIT");
@@ -191,7 +183,40 @@ describe("derive_order_status", () => {
       await app.query("ROLLBACK");
       throw err;
     }
+  }
 
+  /**
+   * The derivation's UPDATE of `orders` runs in whatever session moved the
+   * round — for the kitchen, a session that RLS and `orders_kitchen_guard`
+   * both have opinions about.
+   *
+   * Two rounds, because the multi-round order is both the point of this
+   * feature and the harder half of that interaction. Accepting KOT 1 while
+   * KOT 2 is still waiting leaves the derived minimum at 'placed', so the
+   * trigger writes 'placed' onto a row already sitting in 'placed' — a value
+   * `orders_kitchen_guard` forbids the kitchen to *set*, and which only gets
+   * through because 20261004034321_rbac_kitchen_guards_fix made that
+   * whitelist conditional on the status actually changing. Simplify that
+   * clause away and every kitchen accept on a multi-round order starts
+   * raising 42501.
+   *
+   * Accepting KOT 2 afterwards is what proves the write lands at all: an
+   * UPDATE that RLS filters out affects zero rows and raises nothing, so
+   * "the order stayed 'placed'" would otherwise pass against a derivation
+   * that silently did nothing.
+   */
+  it("carries the order with the round when the kitchen is the one moving it", async () => {
+    const id = await orderWithRounds(["placed", "placed"]);
+
+    await kitchenAccepts(id, 1);
+    const r = await admin.query(
+      `SELECT status::text AS s FROM order_rounds WHERE order_id = $1 AND seq = 1`,
+      [id],
+    );
+    expect(r.rows[0].s).toBe("accepted");
+    expect(await statusOf(id)).toBe("placed");
+
+    await kitchenAccepts(id, 2);
     expect(await statusOf(id)).toBe("accepted");
   });
 });

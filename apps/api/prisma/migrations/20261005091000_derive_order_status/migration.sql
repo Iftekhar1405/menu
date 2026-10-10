@@ -18,12 +18,25 @@ AS $$
   SELECT COALESCE(
     -- The least advanced live round. An order is not ready while some part
     -- of it has not been started.
-    (SELECT r.status
-     FROM order_rounds r
-     WHERE r.order_id = p_order_id
-       AND r.status IN ('placed','accepted','preparing','ready')
-     ORDER BY array_position(
-       ARRAY['placed','accepted','preparing','ready']::"OrderStatus"[], r.status)
+    --
+    -- The live list is written once, as the array, and array_position does
+    -- both jobs: it ranks a live status and returns NULL for a terminal one,
+    -- so the same expression is the filter and the ordering. An `IN (...)`
+    -- filter beside the array would be a second copy of the list inside one
+    -- function, and the drift between them would be silent — a status in the
+    -- IN list but missing from the array ranks NULL, sorts last under ASC,
+    -- and is quietly never chosen rather than raising.
+    (SELECT ranked.status
+     FROM (
+       SELECT r.status,
+              array_position(
+                ARRAY['placed','accepted','preparing','ready']::"OrderStatus"[],
+                r.status) AS lifecycle_rank
+       FROM order_rounds r
+       WHERE r.order_id = p_order_id
+     ) ranked
+     WHERE ranked.lifecycle_rank IS NOT NULL
+     ORDER BY ranked.lifecycle_rank
      LIMIT 1),
     -- Everything is terminal. One completed round means food was served and
     -- a bill is owed; only an entirely cancelled order is cancelled.
@@ -55,8 +68,14 @@ $$;
 --     orders of the venues they are staff of, which is exactly the set of
 --     orders whose rounds order_rounds_kitchen_update lets them touch. A
 --     kitchen write only ever derives a *live* status, and derives 'placed'
---     only for an order already sitting in 'placed', so the status whitelist
---     in orders_kitchen_guard is never reached; completed_at is only written
+--     only for an order already sitting in 'placed' — the multi-round case,
+--     where the kitchen accepts KOT 1 while KOT 2 is still waiting. That
+--     second case clears orders_kitchen_guard only because
+--     20261004034321_rbac_kitchen_guards_fix made its whitelist conditional
+--     on `NEW.status IS DISTINCT FROM OLD.status`; against the guard as
+--     first committed in 20261004033454_rbac_kitchen_guards it would raise
+--     42501. If that clause is ever simplified away, every kitchen accept on
+--     a multi-round order breaks. completed_at is only written
 --     on the way into or out of a terminal state, which a kitchen round
 --     write cannot cause. (A kitchen attempt to reopen a completed order by
 --     pulling one of its rounds back to 'ready' is the exception, and it is
