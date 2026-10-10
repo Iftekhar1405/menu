@@ -18,13 +18,17 @@ export {
 /**
  * What counts as an order still in play.
  *
- * WARNING: this list is written out by hand in four other places, all of them
+ * WARNING: this list is written out by hand in five other places, all of them
  * SQL — the `orders_one_open_per_table` unique index, `place_table_round`'s
- * lookup of the order to append to, and `get_table_order`'s WHERE clause.
- * Adding a status here without adding it there does not fail loudly: the
- * index silently stops constraining accepted orders, and a table ends up with
- * two open orders and two bills. See the 20260927110000_order_events
- * migration.
+ * lookup of the order to append to, `get_table_order` (twice: its WHERE
+ * clause and the ORDER BY that puts a table's open order ahead of its last
+ * closed one), and `derive_order_status`, which walks it in order to pick the
+ * least advanced live round. Adding a status here without adding it there
+ * does not fail loudly: the index silently stops constraining accepted
+ * orders, a table ends up with two open orders and two bills, and the
+ * derivation quietly treats the new status as terminal. See the
+ * 20260927110000_order_events, 20260928000000_order_round_fixes and
+ * 20261005091000_derive_order_status migrations.
  */
 export const OPEN_STATUSES: OrderStatus[] = [
   "placed",
