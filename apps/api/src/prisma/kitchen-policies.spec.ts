@@ -15,7 +15,7 @@ const ADMIN_URL = process.env.DIRECT_URL;
 
 /** Every table a kitchen user is allowed to read. */
 const READABLE = [
-  "tables", "orders", "order_items", "order_events",
+  "tables", "orders", "order_rounds", "order_items", "order_events",
   "menu_categories", "menu_items", "menu_item_variants",
   "menu_item_photos", "notifications",
 ];
@@ -115,10 +115,19 @@ async function seedVenue(businessId: string, tableLabel: string) {
   );
   const orderId = order.rows[0].id as string;
 
+  const round = await admin.query(
+    `INSERT INTO order_rounds
+       (id, business_id, order_id, seq, business_day, kot_number, status, placed_at)
+     VALUES (gen_random_uuid(), $1, $2, 1, CURRENT_DATE,
+             next_kot_number($1, CURRENT_DATE), 'placed', now())
+     RETURNING id`,
+    [businessId, orderId],
+  );
+
   await admin.query(
-    `INSERT INTO order_items (id, order_id, business_id, name_snapshot, unit_price, quantity, batch)
-     VALUES (gen_random_uuid(), $1, $2, 'Thali', 99.00, 1, 1)`,
-    [orderId, businessId],
+    `INSERT INTO order_items (id, order_id, business_id, name_snapshot, unit_price, quantity, round_id)
+     VALUES (gen_random_uuid(), $1, $2, 'Thali', 99.00, 1, $3)`,
+    [orderId, businessId, round.rows[0].id],
   );
 
   await admin.query(
@@ -284,12 +293,12 @@ describe.skipIf(!process.env.DATABASE_URL)("kitchen policies", () => {
       `SELECT tablename FROM pg_policies
         WHERE schemaname='public' AND policyname LIKE '%\\_owner'`,
     );
-    // 15 pre-existing `_owner` policies plus `business_staff_owner`, added by
-    // this very migration — the owner's own counterpart to
-    // `business_staff_self_read`. Verified directly against the dev
-    // database after deploy; see task-3-report.md for the query.
+    // 15 pre-existing `_owner` policies, plus `business_staff_owner` from the
+    // kitchen-policies migration — the owner's own counterpart to
+    // `business_staff_self_read` — plus `order_rounds_owner` from the
+    // order_rounds migration.
     const owned = r.rows.map((x) => x.tablename as string);
-    expect(owned).toHaveLength(16);
+    expect(owned).toHaveLength(17);
 
     const k = await admin.query(
       `SELECT DISTINCT tablename FROM pg_policies

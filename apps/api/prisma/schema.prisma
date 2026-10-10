@@ -227,6 +227,7 @@ model Business {
   views      MenuView[]
   tables     Table[]
   orders     Order[]
+  orderRounds OrderRound[]
   orderEvents OrderEvent[]
   bills      Bill[]
   ratings    OrderRating[]
@@ -391,6 +392,7 @@ model Order {
 
   business Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
   table    Table       @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  rounds   OrderRound[]
   items    OrderItem[]
   events   OrderEvent[]
   bill     Bill?
@@ -402,6 +404,37 @@ model Order {
   @@index([businessId, status])
   @@index([tableId, status])
   @@map("orders")
+}
+
+/// One round of an order: what a table asked for in one go.
+///
+/// Status lives here rather than on the order so a chai ordered at 9pm does
+/// not drag a biryani that is already ready back to New. The order's own
+/// status is derived from these by trigger — see derive_order_status().
+model OrderRound {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  businessId  String      @map("business_id") @db.Uuid
+  orderId     String      @map("order_id") @db.Uuid
+  /// 1-based, per order. Migrated from the old order_items.batch.
+  seq         Int
+  /// Denormalised from the order so the KOT serial needs no join.
+  businessDay DateTime    @map("business_day") @db.Date
+  /// What the pass calls this ticket. Per business, per day.
+  kotNumber   Int         @map("kot_number")
+  status      OrderStatus @default(placed)
+  placedAt    DateTime    @default(now()) @map("placed_at") @db.Timestamptz(6)
+  acceptedAt  DateTime?   @map("accepted_at") @db.Timestamptz(6)
+  completedAt DateTime?   @map("completed_at") @db.Timestamptz(6)
+
+  business Business    @relation(fields: [businessId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  order    Order       @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  items    OrderItem[]
+
+  @@unique([orderId, seq])
+  @@unique([businessId, businessDay, kotNumber], map: "order_rounds_kot_key")
+  @@index([businessId, status], map: "order_rounds_business_status_idx")
+  @@index([orderId, seq], map: "order_rounds_order_idx")
+  @@map("order_rounds")
 }
 
 model OrderItem {
@@ -420,13 +453,14 @@ model OrderItem {
 
   quantity  Int
   /// Which round this arrived in, so staff can see what is new.
-  batch     Int
+  roundId   String   @map("round_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  round OrderRound @relation(fields: [roundId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   cancellations OrderItemCancellation[]
 
-  @@index([orderId, batch])
+  @@index([roundId, createdAt], map: "order_items_round_idx")
   @@index([businessId])
   @@map("order_items")
 }

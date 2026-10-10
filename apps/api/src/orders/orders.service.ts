@@ -247,7 +247,7 @@ export class OrdersService {
       orderBy: [{ isRunning: "desc" }, { status: "asc" }, { placedAt: "asc" }],
       include: {
         table: { select: { id: true, label: true } },
-        items: { orderBy: [{ batch: "asc" }, { createdAt: "asc" }] },
+        items: { orderBy: [{ round: { seq: "asc" } }, { createdAt: "asc" }] },
         // A cancelled line is deleted from `items` outright, so without this
         // the board would show an order quietly shrinking with no account of
         // why — and staff would go on cooking what is no longer there.
@@ -337,7 +337,7 @@ export class OrdersService {
       data: { isRunning: running },
       include: {
         table: { select: { id: true, label: true } },
-        items: { orderBy: [{ batch: "asc" }, { createdAt: "asc" }] },
+        items: { orderBy: [{ round: { seq: "asc" } }, { createdAt: "asc" }] },
         cancellations: { orderBy: { createdAt: "asc" } },
       },
     });
@@ -384,7 +384,7 @@ export class OrdersService {
       },
       include: {
         table: { select: { id: true, label: true } },
-        items: { orderBy: [{ batch: "asc" }, { createdAt: "asc" }] },
+        items: { orderBy: [{ round: { seq: "asc" } }, { createdAt: "asc" }] },
         cancellations: { orderBy: { createdAt: "asc" } },
       },
     });
