@@ -76,6 +76,14 @@ async function orderStatusAt(tableId: string): Promise<string> {
   return r.rows[0].s as string;
 }
 
+async function completedAtOf(tableId: string): Promise<Date | null> {
+  const r = await admin.query(
+    `SELECT completed_at FROM orders WHERE table_id = $1`,
+    [tableId],
+  );
+  return r.rows[0].completed_at as Date | null;
+}
+
 /**
  * A table whose biryani is already ready and whose chai has just gone in.
  * The whole point of the change is that these two dishes get different
@@ -205,5 +213,29 @@ describe("cancel_table_order", () => {
     const rounds = await roundsAt(tableId);
     expect(rounds.map((r) => r.status)).toEqual(["cancelled", "cancelled"]);
     expect(await orderStatusAt(tableId)).toBe("cancelled");
+
+    // Stamped by the derivation trigger now that this function no longer
+    // writes it by hand. get_table_order finds a closed order by
+    // `completed_at > now() - interval '2 hours'`, so losing the stamp would
+    // hand a diner who re-scans the QR an empty screen instead of the record
+    // of what they just cancelled.
+    expect(await completedAtOf(tableId)).not.toBeNull();
+  });
+
+  it("cancels the part of a mixed order that still qualifies, not nothing", async () => {
+    const tableId = await readyBiryaniAndFreshChai();
+    const [biryaniRound] = await roundsAt(tableId);
+
+    // "Cancel order", not "cancel this dish" — the only control an owner who
+    // has turned cancellation_items_enabled off gives their diners at all.
+    const res = await cancel(tableId, null);
+
+    expect(res.rows[0].r.orderCancelled).toBe(false);
+    const rounds = await roundsAt(tableId);
+    expect(rounds[1].status).toBe("cancelled");
+    expect(rounds[1].itemId).toBeNull();
+    // The dish on the pass is not collateral: still there, still ready.
+    expect(rounds[0].status).toBe("ready");
+    expect(rounds[0].itemId).toBe(biryaniRound.itemId);
   });
 });

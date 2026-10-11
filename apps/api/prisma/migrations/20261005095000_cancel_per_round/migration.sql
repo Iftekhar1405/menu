@@ -20,6 +20,22 @@
 -- the order. That is a product decision, open separately, and not something
 -- this refactor gets to make by accident.
 --
+-- That changes what "Cancel order" means, and the change is worth stating
+-- rather than leaving to be inferred. It used to take the whole order down,
+-- every line in it, because one order-level answer covered them all. It now
+-- takes down the part that still qualifies: the p_lines IS NULL expansion
+-- below selects only the lines whose own round is in the owner's list, and
+-- the rest stay on the order. A table with a ready biryani and a fresh chai
+-- who taps Cancel order loses the chai and keeps the biryani. Refusing the
+-- whole thing instead would have been the other available reading, and it is
+-- the wrong one: it leaves an owner who has turned cancellation_items_enabled
+-- off with a dead button from the moment any round advances, which is most of
+-- the service.
+--
+-- When nothing at all qualifies, the existing 'There is nothing left to
+-- cancel' is what the diner is told — the same message an order with no lines
+-- already produced, reused rather than reinvented.
+--
 -- The second is what happens to a round once its last dish goes. Cancelling
 -- deletes order_items, so an emptied round would sit there live and empty:
 -- a blank ticket on the pass, and an order pinned to that round's status for
@@ -105,17 +121,32 @@ BEGIN
       USING ERRCODE = 'check_violation';
   END IF;
 
-  -- The whole order is every live line, in full. Expanded here rather than
-  -- on the phone so a line added between the screen rendering and the tap is
-  -- included rather than silently left behind.
+  -- The whole order is every line the owner's policy still reaches, in full.
+  --
+  -- Expanded here rather than on the phone so a line added between the screen
+  -- rendering and the tap is included rather than silently left behind — and
+  -- filtered here, by the same policy the loop below applies per line, so the
+  -- one advanced round does not take the request down with it. Without the
+  -- join this would expand to the biryani on the pass, hit the guard in the
+  -- loop, and cancel nothing at all; the diner would be told their chai
+  -- cannot go because of a dish they were not asking about.
+  --
+  -- The loop still re-checks each line. That is not redundant: it is the only
+  -- check on the p_lines path, where the ids come from the phone.
   IF v_targets IS NULL THEN
     SELECT COALESCE(
-             jsonb_agg(jsonb_build_object('orderItemId', id, 'quantity', quantity)),
+             jsonb_agg(jsonb_build_object('orderItemId', i.id, 'quantity', i.quantity)),
              '[]'::jsonb)
       INTO v_targets
-    FROM order_items WHERE order_id = v_order.id;
+    FROM order_items i
+    JOIN order_rounds r ON r.id = i.round_id
+    WHERE i.order_id = v_order.id
+      AND r.status = ANY (v_biz.cancellation_statuses);
   END IF;
 
+  -- Reached by an order with no lines left, and now also by a whole-order
+  -- cancel where every round has moved past the owner's list. Both are the
+  -- same answer to the diner: there is nothing here you can still call back.
   IF jsonb_array_length(v_targets) = 0 THEN
     RAISE EXCEPTION 'There is nothing left to cancel' USING ERRCODE = 'check_violation';
   END IF;
