@@ -27,16 +27,25 @@ export {
  * does not fail loudly: the index silently stops constraining accepted
  * orders, a table ends up with two open orders and two bills, and the
  * derivation quietly treats the new status as terminal. See the
- * 20260927110000_order_events, 20260928000000_order_round_fixes and
- * 20261005091000_derive_order_status migrations — and, for
- * `get_table_order`'s two copies, 20261005094000_rounds_in_payloads, which
- * re-creates that function in full and so is where it now lives.
+ * 20260927110000_order_events and 20261005091000_derive_order_status
+ * migrations; for `place_table_round` and for `get_table_order`'s two copies,
+ * 20261005093000_place_round_per_round and 20261005094000_rounds_in_payloads
+ * respectively, each of which re-creates its function in full and so is where
+ * that copy now lives.
  *
  * That it fails silently is not hypothetical: `cancel_table_order` holds a
  * sixth copy that has already drifted. Its open-order lookup reads
  * ('placed', 'preparing', 'ready') and never learned about 'accepted', so a
- * diner cannot cancel an order the kitchen has accepted — they are told they
- * have no open order. Repaired by the task that rewrites that function.
+ * diner cannot cancel an order the counter has accepted but the kitchen has
+ * not started — they are told they have no open order. The same gap is in
+ * CANCELLABLE_STATUSES in packages/shared/src/enums.ts, which is what stops
+ * an owner putting 'accepted' in their cancellation policy.
+ *
+ * 20261005095000_cancel_per_round left both exactly as they are, on purpose.
+ * Whether a diner may still cancel after the counter has accepted is a
+ * decision about what diners are allowed to do, not a list that drifted, and
+ * it is not one a refactor of that function should make on the way past. It
+ * is open as its own question.
  */
 export const OPEN_STATUSES: OrderStatus[] = [
   "placed",
