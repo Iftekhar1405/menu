@@ -247,7 +247,18 @@ export class OrdersService {
       orderBy: [{ isRunning: "desc" }, { status: "asc" }, { placedAt: "asc" }],
       include: {
         table: { select: { id: true, label: true } },
-        items: { orderBy: [{ round: { seq: "asc" } }, { createdAt: "asc" }] },
+        // The board prints and advances one round at a time, so it needs the
+        // rounds themselves — each with its own status and KOT number, which
+        // a flattened item list cannot carry.
+        rounds: {
+          orderBy: { seq: "asc" },
+          include: { items: { orderBy: { createdAt: "asc" } } },
+        },
+        // The flat list stays: every existing reader of this payload still
+        // uses it. Ordering by createdAt alone is round order — a round's
+        // items are written in one statement, after every item of the round
+        // before it — so the join back to order_rounds buys nothing here.
+        items: { orderBy: { createdAt: "asc" } },
         // A cancelled line is deleted from `items` outright, so without this
         // the board would show an order quietly shrinking with no account of
         // why — and staff would go on cooking what is no longer there.
@@ -337,7 +348,11 @@ export class OrdersService {
       data: { isRunning: running },
       include: {
         table: { select: { id: true, label: true } },
-        items: { orderBy: [{ round: { seq: "asc" } }, { createdAt: "asc" }] },
+        rounds: {
+          orderBy: { seq: "asc" },
+          include: { items: { orderBy: { createdAt: "asc" } } },
+        },
+        items: { orderBy: { createdAt: "asc" } },
         cancellations: { orderBy: { createdAt: "asc" } },
       },
     });
@@ -384,7 +399,11 @@ export class OrdersService {
       },
       include: {
         table: { select: { id: true, label: true } },
-        items: { orderBy: [{ round: { seq: "asc" } }, { createdAt: "asc" }] },
+        rounds: {
+          orderBy: { seq: "asc" },
+          include: { items: { orderBy: { createdAt: "asc" } } },
+        },
+        items: { orderBy: { createdAt: "asc" } },
         cancellations: { orderBy: { createdAt: "asc" } },
       },
     });

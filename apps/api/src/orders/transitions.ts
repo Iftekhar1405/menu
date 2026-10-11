@@ -28,7 +28,9 @@ export {
  * orders, a table ends up with two open orders and two bills, and the
  * derivation quietly treats the new status as terminal. See the
  * 20260927110000_order_events, 20260928000000_order_round_fixes and
- * 20261005091000_derive_order_status migrations.
+ * 20261005091000_derive_order_status migrations — and, for
+ * `get_table_order`'s two copies, 20261005094000_rounds_in_payloads, which
+ * re-creates that function in full and so is where it now lives.
  *
  * That it fails silently is not hypothetical: `cancel_table_order` holds a
  * sixth copy that has already drifted. Its open-order lookup reads

@@ -32,6 +32,16 @@ const BOARD = [{
     lineNet: "228.57",
     taxAmount: "11.43",
   }],
+  // The board groups by round now, so the same prices appear a second time
+  // one level deeper. A recursive walk covers that for free — but only this
+  // fixture proves the shape the board actually sends is the shape walked.
+  rounds: [{
+    id: "r1",
+    seq: 1,
+    kotNumber: 7,
+    status: "placed",
+    items: [{ id: "i1", nameSnapshot: "Dosa", quantity: 2, unitPrice: "120.00" }],
+  }],
   cancellations: [{ id: "c1", nameSnapshot: "Idli", quantity: 1, unitPrice: "60.00" }],
   total: "240.00",
 }];
