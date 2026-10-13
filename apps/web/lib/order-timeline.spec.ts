@@ -197,6 +197,24 @@ describe("buildTimeline", () => {
     expect(steps.map((s) => s.label)).toEqual(["Placed"]);
   });
 
+  it("counts one tap once, though the log records it twice", () => {
+    // Accepting a round writes two rows: `round.accepted` from the round's
+    // own trigger, and `accepted` from the derivation that followed it onto
+    // the order. They are two facts about two things, but one action — and a
+    // timeline that drew both would say "Accepted" twice, two seconds apart,
+    // for something that happened once. The order's log is the one this
+    // screen tells the story from; the round's belongs to the round.
+    const steps = buildTimeline(
+      [
+        PLACED,
+        event(2, "round.accepted", "2026-09-27T14:32:00Z"),
+        event(3, "accepted", "2026-09-27T14:32:00Z"),
+      ],
+      { status: "accepted", showUpcoming: false },
+    );
+    expect(steps.map((s) => s.label)).toEqual(["Placed", "Accepted"]);
+  });
+
   it("reads the log in id order, not the order it arrived in", () => {
     const steps = buildTimeline(
       [event(2, "accepted", "2026-09-27T14:32:00Z"), PLACED],

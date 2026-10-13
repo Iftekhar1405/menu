@@ -103,17 +103,36 @@ test("a diner orders from a table and staff work it through", async ({ page, con
   // ── Staff see it and work it through ─────────────────────────────────────
   await page.getByRole("link", { name: "Orders" }).click();
   await expect(page.getByRole("heading", { name: "Table 7" })).toBeVisible();
-  await expect(page.getByText("Round 2")).toBeVisible();
+
+  // The board draws rounds, not one flat list of items. The round heading and
+  // the KOT number beside it come from `rounds` on the board's payload and
+  // from nowhere else — the flat item list cannot say which ticket a line was
+  // printed on — so seeing them here is what proves the payload carries them.
+  const roundOne = page.getByRole("region", { name: "Round 1" });
+  const roundTwo = page.getByRole("region", { name: "Round 2" });
+  await expect(roundOne).toBeVisible();
+  await expect(roundTwo.getByText(/KOT #\d+/)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/14-orders-board.png`, fullPage: true });
 
-  await page.getByRole("button", { name: "Start" }).click();
-  await expect(page.getByRole("button", { name: "Ready" })).toBeVisible();
+  // Each round is worked on its own. Round one goes all the way to the pass
+  // while round two sits untouched, which is the whole point of rounds: a
+  // coffee ordered late does not drag a plated dosa back to New.
+  await roundOne.getByRole("button", { name: "Accept" }).click();
+  await roundOne.getByRole("button", { name: "Start" }).click();
+  await roundOne.getByRole("button", { name: "Ready" }).click();
+  await expect(roundTwo.getByRole("button", { name: "Accept" })).toBeVisible();
 
-  // The diner sees the status change without touching anything.
+  // The order is only as advanced as its least advanced round, so the diner
+  // is not told their food is being made until round two is started too.
+  await roundTwo.getByRole("button", { name: "Accept" }).click();
+  await roundTwo.getByRole("button", { name: "Start" }).click();
   await expect(diner.getByText("Being made")).toBeVisible({ timeout: 15_000 });
 
-  await page.getByRole("button", { name: "Ready" }).click();
-  await page.getByRole("button", { name: "Served" }).click();
+  await roundTwo.getByRole("button", { name: "Ready" }).click();
+
+  // Settling the table is the one whole-order act left on the card: it
+  // finishes every round still live on it, and bills them together.
+  await page.getByRole("button", { name: "Serve all" }).click();
 
   // Completing frees the table: the running order view is gone, which is
   // "show only the current order, never previous ones". Since Phase 3 the

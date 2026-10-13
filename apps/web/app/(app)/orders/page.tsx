@@ -1,36 +1,49 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { canRoleSetStatus, formatMoney, type AccessRole } from "@menu/shared";
+import {
+  canRoleSetStatus,
+  deriveOrderStatus,
+  formatMoney,
+  type AccessRole,
+  type OrderStatus,
+} from "@menu/shared";
 import { api, downloadFile } from "@/lib/api-client";
 import { createFreshness } from "@/lib/freshness";
 import { useSession } from "@/components/session";
 import { useConfirm } from "@/components/confirm";
 import { Button, Empty, Segmented, cx } from "@/components/ui";
-import { buildTimeline, type OrderEvent, type OrderStatus } from "@/lib/order-timeline";
+import { buildTimeline, type OrderEvent } from "@/lib/order-timeline";
 import { OrderTimeline } from "@/components/order/timeline";
-import { columnsFor, showsMoney } from "@/lib/board-actions";
+import { columnsFor, nextActionFor, showsMoney, statusLabel } from "@/lib/board-actions";
+import type { Order, OrderRound } from "@/lib/types";
 
 type Status = OrderStatus;
 
-interface Order {
-  id: string;
-  status: Status;
-  dailyNumber: number;
-  placedAt: string;
-  isRunning: boolean;
-  table: { id: string; label: string };
-  items: {
-    id: string;
-    nameSnapshot: string;
-    variantSnapshot: string | null;
-    // Absent entirely for a kitchen caller: the API strips every price
-    // before it leaves the server (Task 7). The client follows the data
-    // rather than re-deciding who gets to see it.
-    unitPrice?: string;
-    quantity: number;
-    batch: number;
-  }[];
+/**
+ * The key identifying what is mid-write: an order on its own for a whole
+ * -table action, an order and a round for a single round's. Prefixed with the
+ * order id either way, so a card can tell at a glance that something of its
+ * own is in flight.
+ */
+function busyKey(orderId: string, roundId?: string): string {
+  return roundId ? `${orderId}:${roundId}` : orderId;
+}
+
+/**
+ * A round's status chip.
+ *
+ * Tinted only where the tint earns its keep: a plated round so the pass can
+ * see what is waiting to go out, and a cancelled one so nobody cooks it. The
+ * rest are quiet, because on a card with three rounds the items are what
+ * staff are reading.
+ */
+function chipClass(status: Status): string {
+  const base =
+    "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold tracking-[0.02em]";
+  if (status === "cancelled") return `${base} bg-[#FDF3F2] text-[#8C1D18]`;
+  if (status === "ready") return `${base} bg-[var(--accent-soft)] text-[var(--accent-strong)]`;
+  return `${base} bg-[var(--raised)] text-muted`;
 }
 
 /**
@@ -120,16 +133,25 @@ export default function OrdersPage() {
   if (!current) return null;
 
   /**
+   * Closes the table.
+   *
+   * The order-level endpoint has stopped being a step in the lifecycle —
+   * accepting, starting and plating all happen to a round now, because a
+   * table that adds a chai at nine has not un-cooked its biryani. What is
+   * left to the whole order is the whole-table act: finish everything still
+   * live on it, or cancel the lot. The API does exactly that, moving every
+   * live round, so a single round left behind can no longer hold the table
+   * open through the derivation.
+   *
    * Marking an order served also bills it. Two separate taps would leave
    * unbilled completed orders lying around, and the diner's 30-minute
    * download window starts the moment the order closes.
    */
-  async function advance(order: Order, status: Status) {
+  async function closeOrder(order: Order, status: "completed" | "cancelled") {
     if (!current) return;
 
-    // Only cancelling asks. Start / Ready / Served are tapped constantly
-    // during a service, and a dialog on those would be an obstacle rather
-    // than a safeguard.
+    // Only cancelling asks. Serving is tapped constantly during a service,
+    // and a dialog on it would be an obstacle rather than a safeguard.
     if (status === "cancelled") {
       const ok = await confirm({
         title: `Cancel table ${order.table.label}'s order?`,
@@ -140,7 +162,7 @@ export default function OrdersPage() {
       if (!ok) return;
     }
 
-    setBusy(order.id);
+    setBusy(busyKey(order.id));
 
     // From here until the write settles, no polled answer is trusted: a read
     // already in flight describes the order before this tap, and one issued
@@ -155,13 +177,9 @@ export default function OrdersPage() {
         .catch(() => undefined);
     }
 
-    // Optimistic: a member of staff tapping "Ready" should see it move now,
-    // not after a round trip through a busy kitchen's wifi.
-    setOrders((prev) =>
-      status === "completed" || status === "cancelled"
-        ? prev.filter((o) => o.id !== order.id)
-        : prev.map((o) => (o.id === order.id ? { ...o, status } : o)),
-    );
+    // Optimistic: a member of staff tapping "Served" should see the table
+    // clear now, not after a round trip through a busy kitchen's wifi.
+    setOrders((prev) => prev.filter((o) => o.id !== order.id));
 
     try {
       await api.patch(`/businesses/${current.id}/orders/${order.id}/status`, { status });
@@ -174,6 +192,55 @@ export default function OrdersPage() {
       // Reconcile now rather than waiting out the poll interval. A served
       // order also has to reach the list below, and another device may have
       // touched the board meanwhile.
+      await load();
+    }
+  }
+
+  /**
+   * Moves one round along, leaving its siblings where they are.
+   *
+   * The order's own status is not sent: the database derives it from every
+   * round. The browser computes the same answer with the same function, which
+   * is what lets the card jump to its new column on the tap rather than a
+   * poll interval later.
+   */
+  async function advanceRound(order: Order, round: OrderRound, status: Status) {
+    if (!current) return;
+
+    setBusy(busyKey(order.id, round.id));
+    const written = fresh.current.mutating();
+
+    const rounds = order.rounds.map((r) =>
+      r.id === round.id ? { ...r, status } : r,
+    );
+    const derived = deriveOrderStatus(rounds.map((r) => r.status));
+
+    // Serving the last live round closes the table, and a closed table owes a
+    // bill — same reasoning as closeOrder, which is the other way to get here.
+    if (derived === "completed") {
+      await api
+        .post(`/businesses/${current.id}/orders/${order.id}/bill`)
+        .catch(() => undefined);
+    }
+
+    setOrders((prev) =>
+      derived === "completed" || derived === "cancelled"
+        ? prev.filter((o) => o.id !== order.id)
+        : prev.map((o) => (o.id === order.id ? { ...o, rounds, status: derived } : o)),
+    );
+
+    try {
+      await api.patch(
+        `/businesses/${current.id}/orders/${order.id}/rounds/${round.id}/status`,
+        { status },
+      );
+    } catch {
+      // Swallowed on purpose, as above: a move the server refused — a
+      // transition it will not make, or a role it will not make it for — is
+      // corrected by the reload rather than by a second opinion here.
+    } finally {
+      written();
+      setBusy(null);
       await load();
     }
   }
@@ -258,13 +325,15 @@ export default function OrdersPage() {
                         order={order}
                         now={now}
                         currency={current.currency}
-                        busy={busy === order.id}
+                        busy={busy}
                         businessId={current.id}
-                        nextLabel={column.nextLabel}
+                        role={role}
                         showMoney={showsMoney(role)}
-                        canCancel={canRoleSetStatus(role, order.status, "cancelled")}
-                        onAdvance={() => column.next && void advance(order, column.next)}
-                        onCancel={() => void advance(order, "cancelled")}
+                        onAdvanceRound={(round, status) =>
+                          void advanceRound(order, round, status)
+                        }
+                        onClose={() => void closeOrder(order, "completed")}
+                        onCancel={() => void closeOrder(order, "cancelled")}
                         onBill={async (format) => {
                           await api
                             .post(`/businesses/${current.id}/orders/${order.id}/bill`)
@@ -486,22 +555,23 @@ function OrderCard({
   currency,
   busy,
   businessId,
-  nextLabel,
+  role,
   showMoney,
-  canCancel,
-  onAdvance,
+  onAdvanceRound,
+  onClose,
   onCancel,
   onBill,
 }: {
   order: Order;
   now: number;
   currency: string;
-  busy: boolean;
+  /** Whatever this board is mid-write on — see busyKey. */
+  busy: string | null;
   businessId: string;
-  nextLabel?: string;
+  role: AccessRole;
   showMoney: boolean;
-  canCancel: boolean;
-  onAdvance: () => void;
+  onAdvanceRound: (round: OrderRound, status: Status) => void;
+  onClose: () => void;
   onCancel: () => void;
   onBill: (format: "bill" | "receipt") => void;
 }) {
@@ -528,13 +598,22 @@ function OrderCard({
 
   const minutes = Math.max(0, Math.floor((now - new Date(order.placedAt).getTime()) / 60000));
 
-  const batches = useMemo(() => {
-    const map = new Map<number, Order["items"]>();
-    for (const item of order.items) {
-      map.set(item.batch, [...(map.get(item.batch) ?? []), item]);
-    }
-    return [...map.entries()].sort((a, b) => a[0] - b[0]);
-  }, [order.items]);
+  // Anything this card has in flight — a round of its own, or the whole
+  // table. Enough to lock the card's other buttons while it settles.
+  const working = busy !== null && busy.startsWith(order.id);
+
+  /*
+   * A single-round order is the common case and gets the card it always had:
+   * no round heading, no chip, one button in the footer. "Round 1" stamped on
+   * every card during a quiet service is noise, and the chip would only
+   * repeat the column the card is sitting in.
+   *
+   * Its one button is still a round action — the round is what moves, and the
+   * order's status follows by derivation — so it is the same action the
+   * multi-round cards show, just placed where staff already reach for it.
+   */
+  const solo = order.rounds.length === 1 ? order.rounds[0]! : null;
+  const soloAction = solo ? nextActionFor(role, solo.status) : null;
 
   const total = order.items.reduce(
     (sum, i) => sum + Number(i.unitPrice ?? 0) * i.quantity,
@@ -593,28 +672,57 @@ function OrderCard({
         </div>
       )}
 
-      {batches.map(([batch, items]) => (
-        <div key={batch} className="mt-3">
-          {batches.length > 1 && (
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--accent)]">
-              Round {batch}
-            </p>
-          )}
-          <ul className="space-y-1">
-            {items.map((item) => (
-              <li key={item.id} className="flex items-baseline gap-2 text-[14px]">
-                <span className="tnum shrink-0 font-semibold">{item.quantity}×</span>
-                <span className="min-w-0 flex-1">
-                  {item.nameSnapshot}
-                  {item.variantSnapshot && (
-                    <span className="text-muted"> · {item.variantSnapshot}</span>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+      {order.rounds.map((round) => {
+        const action = solo ? null : nextActionFor(role, round.status);
+        return (
+          <section
+            key={round.id}
+            // A labelled section is a landmark, which is how a screen reader
+            // reaches one round's items without reading the whole card. Only
+            // worth being a landmark when there is more than one of them.
+            aria-label={solo ? undefined : `Round ${round.seq}`}
+            className="mt-3"
+          >
+            {!solo && (
+              <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--accent)]">
+                  Round {round.seq}
+                  <span className="tnum ml-1.5 font-medium normal-case tracking-normal text-faint">
+                    KOT #{round.kotNumber}
+                  </span>
+                </p>
+                <span className={chipClass(round.status)}>{statusLabel(round.status)}</span>
+              </div>
+            )}
+            <ul className="space-y-1">
+              {round.items.map((item) => (
+                <li key={item.id} className="flex items-baseline gap-2 text-[14px]">
+                  <span className="tnum shrink-0 font-semibold">{item.quantity}×</span>
+                  <span className="min-w-0 flex-1">
+                    {item.nameSnapshot}
+                    {item.variantSnapshot && (
+                      <span className="text-muted"> · {item.variantSnapshot}</span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {action && (
+              <div className="mt-2 flex justify-end">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={busy === busyKey(order.id, round.id)}
+                  disabled={working}
+                  onClick={() => onAdvanceRound(round, action.status)}
+                >
+                  {action.label}
+                </Button>
+              </div>
+            )}
+          </section>
+        );
+      })}
 
       <footer className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
         {showMoney && (
@@ -623,17 +731,41 @@ function OrderCard({
           </span>
         )}
         <span className="flex flex-1 justify-end gap-1.5">
-          {canCancel && (
-            <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
+          {canRoleSetStatus(role, order.status, "cancelled") && (
+            <Button variant="ghost" size="sm" onClick={onCancel} disabled={working}>
               Cancel
             </Button>
           )}
-          <Button variant="ghost" size="sm" onClick={() => onBill("bill")} disabled={busy}>
+          <Button variant="ghost" size="sm" onClick={() => onBill("bill")} disabled={working}>
             Bill
           </Button>
-          {nextLabel && (
-            <Button variant="primary" size="sm" onClick={onAdvance} loading={busy}>
-              {nextLabel}
+          {solo && soloAction && (
+            <Button
+              variant="primary"
+              size="sm"
+              loading={busy === busyKey(order.id, solo.id)}
+              disabled={working}
+              onClick={() => onAdvanceRound(solo, soloAction.status)}
+            >
+              {soloAction.label}
+            </Button>
+          )}
+          {/*
+           * Settling a table is a whole-order act: the API finishes every
+           * round still live on it, so a forgotten round cannot hold the
+           * table open and bring it back onto the board. Only shown where it
+           * says something the round buttons do not — on one round it would
+           * be a second button doing the same thing.
+           */}
+          {!solo && canRoleSetStatus(role, order.status, "completed") && (
+            <Button
+              variant="primary"
+              size="sm"
+              loading={busy === busyKey(order.id)}
+              disabled={working}
+              onClick={onClose}
+            >
+              Serve all
             </Button>
           )}
         </span>

@@ -45,6 +45,37 @@ export function columnsFor(role: AccessRole): BoardColumn[] {
   );
 }
 
+/**
+ * The one move this role may make on a round in this state, or nothing.
+ *
+ * Drawn from the same COLUMNS table the columns are, so a label can never
+ * disagree between the column header and the button inside a card.
+ */
+export function nextActionFor(
+  role: AccessRole,
+  status: OrderStatus,
+): { status: OrderStatus; label: string } | null {
+  const column = COLUMNS.find((c) => c.status === status);
+  if (!column) return null;
+  if (!canRoleSetStatus(role, status, column.next)) return null;
+  return { status: column.next, label: column.nextLabel };
+}
+
+/**
+ * What a round's status chip says.
+ *
+ * The four live ones borrow the column titles, so a chip reading "Being made"
+ * can never sit in a column headed something else. The two terminal statuses
+ * have no column of their own — a card leaves the board when the whole order
+ * reaches them — but a single finished round inside a live order still has to
+ * say what it is.
+ */
+export function statusLabel(status: OrderStatus): string {
+  const column = COLUMNS.find((c) => c.status === status);
+  if (column) return column.title;
+  return status === "completed" ? "Served" : "Cancelled";
+}
+
 /** Belt to the API's braces: it already omits every price for kitchen. */
 export function showsMoney(role: AccessRole): boolean {
   return role === "owner";
