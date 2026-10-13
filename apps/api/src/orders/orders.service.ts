@@ -13,7 +13,7 @@ import { cleanPgMessage } from "../common/pg-message";
 import { NotificationsService } from "../notifications/notifications.service";
 import type { CancelledLine, PlacedOrder } from "../notifications/events";
 import { KITCHEN_BOARD } from "../notifications/visibility";
-import type { CancelOrderInput } from "@menu/shared";
+import type { AccessRole, CancelOrderInput } from "@menu/shared";
 import {
   ALLOWED_TRANSITIONS,
   OPEN_STATUSES,
@@ -348,7 +348,11 @@ export class OrdersService {
       data: { isRunning: running },
     });
 
-    return this.orderForBoard(businessId, orderId);
+    // `assertOwns` above admits owners and nobody else, so the role is not in
+    // doubt here. Named rather than inferred so the strip is visible at every
+    // call site: the day this route is opened to the kitchen, this line is
+    // what has to change, in the same edit.
+    return this.orderForBoard(businessId, orderId, "owner");
   }
 
   /**
@@ -358,9 +362,20 @@ export class OrdersService {
    * write is no longer the whole story: moving a round leaves the order's own
    * status to an AFTER trigger, and anything returned by the UPDATE that
    * caused it would carry the status from before the trigger ran.
+   *
+   * Stripped here, for the same reason stripPrices exists at all: this
+   * include is the same shape `listForBusiness` strips, and it is handed
+   * straight back by three mutating methods a kitchen account may call. A
+   * response that has left the server has leaked whatever is in it, whatever
+   * the browser then chooses to render — so the strip belongs at the one
+   * place all three share, not at each of them.
    */
-  private orderForBoard(businessId: string, orderId: string) {
-    return this.prisma.db.order.findFirstOrThrow({
+  private async orderForBoard(
+    businessId: string,
+    orderId: string,
+    role: AccessRole,
+  ) {
+    const order = await this.prisma.db.order.findFirstOrThrow({
       where: { id: orderId, businessId },
       include: {
         table: { select: { id: true, label: true } },
@@ -372,6 +387,8 @@ export class OrdersService {
         cancellations: { orderBy: { createdAt: "asc" } },
       },
     });
+
+    return stripPrices(order, role);
   }
 
   async setStatus(
@@ -415,7 +432,7 @@ export class OrdersService {
       },
     });
 
-    const updated = await this.orderForBoard(businessId, orderId);
+    const updated = await this.orderForBoard(businessId, orderId, role);
 
     // The diner's screen is listening on its table's topic. Nothing is
     // stored for them: they need the order's current state, which
@@ -453,9 +470,17 @@ export class OrdersService {
       allow: ["owner", "kitchen"],
     });
 
+    // The order's status comes back on the same read: it is what the kitchen
+    // bell below is keyed on, and asking for it after the write would be
+    // asking for the derived value, which is the thing being compared against.
     const round = await this.prisma.db.orderRound.findFirst({
       where: { id: roundId, orderId, businessId },
-      select: { id: true, status: true, seq: true },
+      select: {
+        id: true,
+        status: true,
+        seq: true,
+        order: { select: { status: true } },
+      },
     });
     if (!round) throw new NotFoundException("Round not found");
 
@@ -485,7 +510,28 @@ export class OrdersService {
       },
     });
 
-    return this.orderForBoard(businessId, orderId);
+    const updated = await this.orderForBoard(businessId, orderId, role);
+
+    // Unconditionally, not only when the order's derived status moved. The
+    // diner's payload carries the rounds themselves now — "the chai is ready,
+    // the dosa is not" — so accepting KOT 1 while KOT 2 is still waiting
+    // changes their screen without changing the order's status at all. Gating
+    // this on the derived status would leave them staring at a stale screen
+    // in precisely the multi-round case this whole feature exists for. The
+    // ping stores nothing, carries nothing, and swallows its own failures, so
+    // the cost of one the diner did not strictly need is nil.
+    await this.notifications.announceStatus(updated.tableId);
+
+    // The bell is a different matter, and stays conditional. It releases a
+    // notification row that is hidden from the kitchen until the ORDER
+    // reaches their board, so the thing it must key on is the order's status
+    // leaving `placed` — which here is something the derivation trigger
+    // decided, not something this method chose.
+    if (round.order.status === "placed" && KITCHEN_BOARD.includes(updated.status)) {
+      await this.notifications.announceReachedKitchen(businessId);
+    }
+
+    return updated;
   }
 }
 

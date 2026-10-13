@@ -1,23 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { stripPrices } from "./kitchen-shape";
-
-/**
- * Walks anything and reports every key that could carry money.
- *
- * Mirrors `PRICE_KEYS` in kitchen-shape.ts exactly — every name in that set
- * must appear here too, or a key could be dropped from the implementation
- * without any test noticing.
- */
-function priceKeys(value: unknown, found: string[] = []): string[] {
-  if (Array.isArray(value)) { value.forEach((v) => priceKeys(v, found)); return found; }
-  if (value && typeof value === "object") {
-    for (const [k, v] of Object.entries(value)) {
-      if (/^(unitPrice|price|taxRate|lineTotal|lineNet|taxAmount|total)$/.test(k)) found.push(k);
-      priceKeys(v, found);
-    }
-  }
-  return found;
-}
+import { priceKeys } from "./price-keys.testutil";
 
 const BOARD = [{
   id: "o1",
