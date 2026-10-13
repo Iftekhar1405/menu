@@ -1,4 +1,9 @@
-import { canRoleSetStatus, type AccessRole, type OrderStatus } from "@menu/shared";
+import {
+  canRoleSetStatus,
+  deriveOrderStatus,
+  type AccessRole,
+  type OrderStatus,
+} from "@menu/shared";
 
 export interface BoardColumn {
   status: OrderStatus;
@@ -74,6 +79,42 @@ export function statusLabel(status: OrderStatus): string {
   const column = COLUMNS.find((c) => c.status === status);
   if (column) return column.title;
   return status === "completed" ? "Served" : "Cancelled";
+}
+
+/**
+ * Which column a card belongs in, from its rounds — or null for a card this
+ * role's board does not show at all.
+ *
+ * Not simply `order.status`. That is derived from *every* round, and the
+ * kitchen's board does not start at the first one: a table whose biryani is
+ * being made and whose just-added chai is still `placed` derives, as an
+ * order, to `placed`, which is no column on a kitchen board. The card would
+ * vanish mid-cook, taking the dish they are actually cooking with it.
+ *
+ * So the lane is the derivation over the rounds this role's board shows. For
+ * an owner that is all of them, which is `order.status` by definition. For
+ * the kitchen it leaves out rounds nobody has accepted yet — the chai's own
+ * Accept button still renders inside the card, but an order whose only round
+ * is unaccepted stays off their board entirely, because accepting is a
+ * counter decision and not a kitchen one.
+ */
+export function columnFor(
+  role: AccessRole,
+  roundStatuses: OrderStatus[],
+): OrderStatus | null {
+  const start = COLUMNS.findIndex((c) => c.status === FIRST_COLUMN[role]);
+
+  // A terminal round is in no column at all, but it stays in the reckoning:
+  // the derivation is what decides whether anything is still live, and a
+  // table whose rounds are all finished belongs on nobody's board.
+  const mine = roundStatuses.filter((s) => {
+    const i = COLUMNS.findIndex((c) => c.status === s);
+    return i === -1 || i >= start;
+  });
+  if (mine.length === 0) return null;
+
+  const status = deriveOrderStatus(mine);
+  return COLUMNS.some((c) => c.status === status) ? status : null;
 }
 
 /** Belt to the API's braces: it already omits every price for kitchen. */

@@ -15,7 +15,13 @@ import { useConfirm } from "@/components/confirm";
 import { Button, Empty, Segmented, cx } from "@/components/ui";
 import { buildTimeline, type OrderEvent } from "@/lib/order-timeline";
 import { OrderTimeline } from "@/components/order/timeline";
-import { columnsFor, nextActionFor, showsMoney, statusLabel } from "@/lib/board-actions";
+import {
+  columnFor,
+  columnsFor,
+  nextActionFor,
+  showsMoney,
+  statusLabel,
+} from "@/lib/board-actions";
 import type { Order, OrderRound } from "@/lib/types";
 
 type Status = OrderStatus;
@@ -126,11 +132,42 @@ export default function OrdersPage() {
   const grouped = useMemo(() => {
     const map = new Map<Status, Order[]>();
     for (const column of columns) map.set(column.status, []);
-    for (const order of orders) map.get(order.status)?.push(order);
+    for (const order of orders) {
+      const lane = columnFor(role, order.rounds.map((r) => r.status));
+      // Null is a decision, not an accident: this board has no column for
+      // this card. For the kitchen that is a table whose only round nobody
+      // has accepted yet, which is deliberately not theirs to see.
+      if (lane === null) continue;
+      // Every lane columnFor can name is a column this board renders, so the
+      // bucket is always there.
+      map.get(lane)!.push(order);
+    }
     return map;
-  }, [orders, columns]);
+  }, [orders, columns, role]);
 
   if (!current) return null;
+
+  /**
+   * Bills a table that the write before it has just closed.
+   *
+   * Strictly after that write, and only if it succeeded. A bill posted first
+   * is a silent money bug in both directions: if the status write then fails
+   * — and on the round endpoint a concurrent move from another device is an
+   * ordinary 409 — the table stays open with a bill frozen against it, and
+   * `generate_bill` hands that same bill back unchanged forever, so every
+   * round added afterwards is never billed.
+   *
+   * Posted after, the worst case is a closed table whose bill has not been
+   * generated yet, and generating is idempotent: the Bill button, and the
+   * "Earlier today" downloads, ask for it again before fetching the PDF.
+   * That is why a failure here is swallowed rather than surfaced.
+   */
+  async function billIfClosed(order: Order, status: Status) {
+    if (!current || status !== "completed") return;
+    await api
+      .post(`/businesses/${current.id}/orders/${order.id}/bill`)
+      .catch(() => undefined);
+  }
 
   /**
    * Closes the table.
@@ -143,9 +180,10 @@ export default function OrdersPage() {
    * live round, so a single round left behind can no longer hold the table
    * open through the derivation.
    *
-   * Marking an order served also bills it. Two separate taps would leave
-   * unbilled completed orders lying around, and the diner's 30-minute
-   * download window starts the moment the order closes.
+   * Marking an order served also bills it — after the write that closes it,
+   * never before; see billIfClosed. Two separate taps would leave unbilled
+   * completed orders lying around, and the diner's 30-minute download window
+   * starts the moment the order closes.
    */
   async function closeOrder(order: Order, status: "completed" | "cancelled") {
     if (!current) return;
@@ -171,18 +209,13 @@ export default function OrdersPage() {
     // staff were seeing on every Start.
     const written = fresh.current.mutating();
 
-    if (status === "completed") {
-      await api
-        .post(`/businesses/${current.id}/orders/${order.id}/bill`)
-        .catch(() => undefined);
-    }
-
     // Optimistic: a member of staff tapping "Served" should see the table
     // clear now, not after a round trip through a busy kitchen's wifi.
     setOrders((prev) => prev.filter((o) => o.id !== order.id));
 
     try {
       await api.patch(`/businesses/${current.id}/orders/${order.id}/status`, { status });
+      await billIfClosed(order, status);
     } catch {
       // Swallowed on purpose: the reload below is what corrects an optimistic
       // move the server refused.
@@ -215,14 +248,6 @@ export default function OrdersPage() {
     );
     const derived = deriveOrderStatus(rounds.map((r) => r.status));
 
-    // Serving the last live round closes the table, and a closed table owes a
-    // bill — same reasoning as closeOrder, which is the other way to get here.
-    if (derived === "completed") {
-      await api
-        .post(`/businesses/${current.id}/orders/${order.id}/bill`)
-        .catch(() => undefined);
-    }
-
     setOrders((prev) =>
       derived === "completed" || derived === "cancelled"
         ? prev.filter((o) => o.id !== order.id)
@@ -234,6 +259,10 @@ export default function OrdersPage() {
         `/businesses/${current.id}/orders/${order.id}/rounds/${round.id}/status`,
         { status },
       );
+      // Serving the last live round closes the table, so this is the same
+      // billing moment closeOrder has — and, as there, strictly after the
+      // write that creates it.
+      await billIfClosed(order, derived);
     } catch {
       // Swallowed on purpose, as above: a move the server refused — a
       // transition it will not make, or a role it will not make it for — is
