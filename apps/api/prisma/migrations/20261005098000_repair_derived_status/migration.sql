@@ -45,19 +45,43 @@
 -- 20261004035044_rbac_kitchen_audit). A repair that moved orders silently would
 -- be the harder one to explain afterwards.
 --
--- LOCKING: nothing taken beyond the row locks the UPDATE needs, and nothing
--- needed. A round moved concurrently fires the derivation, whose UPDATE of the
--- same orders row blocks on ours and then re-derives from the rounds as they
--- stand at that moment — so the trigger writes last and a mid-flight order
--- cannot be left holding our stale value. The converse, this statement waiting
--- on a request's row lock, is a wait and not a cycle. It is still a full scan of
--- orders inside the migration's transaction, so it belongs in the same quiet
--- window as the rest of this plan's migrations rather than mid-service.
+-- LOCKING: the LOCK TABLE below is load-bearing, not belt and braces. Without
+-- it this statement is unsound against any concurrent writer it blocks on.
+--
+-- Under READ COMMITTED, when an UPDATE blocks on a row lock and the blocking
+-- transaction commits, Postgres runs EvalPlanQual: it re-reads the TARGET row
+-- at its new version, but `d` below is a separate range-table entry and is NOT
+-- re-scanned — the saved pre-snapshot tuple is reused. The recheck therefore
+-- compares a freshly-correct o.status against a STALE d.status, finds them
+-- distinct, and writes the stale value. This is the documented
+-- inconsistent-snapshot behaviour of an updating command joined to other rows,
+-- and no ordering argument rescues it.
+--
+-- It is not theoretical here, because a stuck order is both the row class this
+-- repairs and a row a diner can still place a round into. place_table_round
+-- appends a round, the derivation writes 'placed', this statement unblocks and
+-- overwrites it with 'cancelled' plus a completed_at — a live round orphaned
+-- under a terminal order, which is worse than what it was sent to fix. The
+-- trigger does not undo it either: order_rounds_derive_status_fn computes
+-- v_status once, before its own UPDATE, so it does not re-derive on unblocking
+-- any more than this does. The window is this statement's whole runtime, which
+-- is a full scan calling derive_order_status per row.
+--
+-- SHARE ROW EXCLUSIVE conflicts with the ROW EXCLUSIVE that every INSERT and
+-- UPDATE takes. Writers therefore queue behind this migration and this
+-- migration never blocks on a writer it has already excluded, so the
+-- blocked-then-unblocked recheck above cannot arise — and the waiting is
+-- one-directional, so there is still no cycle. The price is that writes to
+-- orders stop for the statement's duration, which is the other reason this
+-- belongs in the same quiet window as the rest of this plan's migrations
+-- rather than mid-service.
 --
 -- Runs as the migration role, which writes past the FORCE ROW LEVEL SECURITY on
 -- orders. That is the same assumption 20261005090000_order_rounds' backfill
 -- already makes on this branch; had it not held, that backfill was a no-op too
 -- and nothing here would work.
+
+LOCK TABLE orders IN SHARE ROW EXCLUSIVE MODE;
 
 UPDATE orders o
 SET status = d.status,

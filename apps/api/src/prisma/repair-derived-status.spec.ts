@@ -14,7 +14,9 @@ import { resolve } from "node:path";
  * changes nothing, and it goes on changing nothing however often it runs.
  *
  * The statement is read from the migration file rather than retyped, so a copy
- * drifting from what ships is not a failure mode this test can have.
+ * drifting from what ships is not a failure mode this test can have. That also
+ * means what runs here is genuinely table-wide, which this file has to take
+ * seriously rather than wish away — see the transaction in the test body.
  *
  * Admin connection throughout, deliberately. The migration runs as the
  * migration role, and the divergent row it exists to repair can only be
@@ -32,6 +34,8 @@ const REPAIR = readFileSync(
 );
 
 let admin: Client;
+/** A second session, for observing what the repair's table lock does to one. */
+let other: Client;
 let owner: string, biz: string;
 let broken: string, healthy: string;
 
@@ -77,9 +81,31 @@ async function orderRow(id: string) {
   return r.rows[0];
 }
 
+/** Both of this test's orders, in full, for comparing a run against the last. */
+async function ourOrders() {
+  const r = await admin.query(
+    `SELECT id, status::text AS status, completed_at, updated_at
+       FROM orders WHERE business_id = $1 ORDER BY id`,
+    [biz],
+  );
+  return r.rows;
+}
+
+/** How many of this test's orders disagree with their rounds. */
+async function ourDivergentCount(): Promise<number> {
+  const r = await admin.query(
+    `SELECT count(*)::int AS n FROM orders
+      WHERE business_id = $1 AND status IS DISTINCT FROM derive_order_status(id)`,
+    [biz],
+  );
+  return r.rows[0].n;
+}
+
 beforeAll(async () => {
   admin = new Client({ connectionString: ADMIN_URL });
   await admin.connect();
+  other = new Client({ connectionString: ADMIN_URL });
+  await other.connect();
 
   const u = await admin.query(
     `INSERT INTO users (id, pin_hash, full_name, phone, verified_at, updated_at)
@@ -118,6 +144,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await other.end();
   await admin.query("DELETE FROM businesses WHERE id = $1", [biz]);
   await admin.query("DELETE FROM users WHERE id = $1", [owner]);
   await admin.end();
@@ -128,28 +155,81 @@ describe("20261005098000_repair_derived_status", () => {
     // Precondition, so a seed that silently failed cannot be mistaken for a
     // repair that silently worked.
     expect((await orderRow(broken)).status).toBe("ready");
-    const before = await orderRow(healthy);
 
-    await admin.query(REPAIR);
+    // Everything below runs inside one transaction that is rolled back, and
+    // every assertion is scoped to this test's own business.
+    //
+    // The statement under test is unqualified, because it is a migration and is
+    // meant to be. This suite is not: vitest runs its files in parallel against
+    // one database, and kitchen-policies.spec.ts hand-writes orders.status
+    // fixtures its rounds do not derive — exactly the rows this repairs.
+    // Committing a table-wide write in the middle of that would silently
+    // rewrite another file's fixture, and asserting anything table-wide here
+    // would observe it. Rolled back, neither can happen; and the SHARE ROW
+    // EXCLUSIVE lock the migration takes holds other writers off for the few
+    // milliseconds this runs, which is what makes the comparisons below
+    // deterministic rather than a race.
+    await admin.query("BEGIN");
+    try {
+      const before = await orderRow(healthy);
 
-    const fixed = await orderRow(broken);
-    expect(fixed.status).toBe("cancelled");
-    // The trigger owns completed_at too, so the repair has to carry it or the
-    // row lands terminal with no completion time.
-    expect(fixed.completed_at).not.toBeNull();
+      await admin.query(REPAIR);
 
-    // The order that was already right is untouched — not re-derived to the
-    // same value, not touched at all. updated_at is how that shows.
-    expect(await orderRow(healthy)).toEqual(before);
+      const fixed = await orderRow(broken);
+      expect(fixed.status).toBe("cancelled");
+      // The trigger owns completed_at too, so the repair has to carry it or the
+      // row lands terminal with no completion time.
+      expect(fixed.completed_at).not.toBeNull();
 
-    // The property that actually matters. Zero rows across the WHOLE database,
-    // not just this business: the derivation is an invariant every committed
-    // row obeys, so a second pass has nothing to find — and neither would a
-    // first pass against a database the defect never ran on.
-    const second = await admin.query(REPAIR);
-    expect(second.rowCount).toBe(0);
+      // The order that was already right is untouched — not re-derived to the
+      // same value, not touched at all. updated_at is how that shows.
+      expect(await orderRow(healthy)).toEqual(before);
 
-    const third = await admin.query(REPAIR);
-    expect(third.rowCount).toBe(0);
+      expect(await ourDivergentCount()).toBe(0);
+
+      // The property that actually matters, asserted per row rather than by the
+      // statement's table-wide row count: once the derivation holds, further
+      // passes change nothing at all — which is also what a first pass against
+      // a database the defect never ran on would do.
+      const settled = await ourOrders();
+      await admin.query(REPAIR);
+      expect(await ourOrders()).toEqual(settled);
+      await admin.query(REPAIR);
+      expect(await ourOrders()).toEqual(settled);
+    } finally {
+      await admin.query("ROLLBACK");
+    }
+  });
+
+  // The LOCK TABLE this statement opens with is load-bearing, and reads as
+  // noise: it is the kind of line a later edit deletes for tidiness. Without
+  // it, an UPDATE that blocks on a concurrent writer and then unblocks rechecks
+  // the target row at its new version but reuses the pre-snapshot tuple for the
+  // joined `d` — so it writes a stale status over a freshly correct one. On the
+  // very rows this repairs that means overwriting a brand-new round's 'placed'
+  // with 'cancelled'. Asserting the exclusion behaviourally is the only way to
+  // notice the line going missing.
+  it("holds concurrent writers off orders while it runs", async () => {
+    await admin.query("BEGIN");
+    try {
+      await admin.query(REPAIR);
+
+      await other.query("BEGIN");
+      await other.query("SET LOCAL lock_timeout = '250ms'");
+      await expect(
+        other.query(`UPDATE orders SET updated_at = now() WHERE id = $1`, [healthy]),
+      ).rejects.toMatchObject({ code: "55P03" });
+      await other.query("ROLLBACK");
+    } finally {
+      await admin.query("ROLLBACK");
+    }
+
+    // And lets them straight through again once it is done, so what the test
+    // above saw was this statement's lock and not a table wedged by something
+    // else.
+    await other.query("BEGIN");
+    await other.query("SET LOCAL lock_timeout = '250ms'");
+    await other.query(`UPDATE orders SET updated_at = now() WHERE id = $1`, [healthy]);
+    await other.query("ROLLBACK");
   });
 });
