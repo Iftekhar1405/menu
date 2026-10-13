@@ -18,6 +18,7 @@ import {
   ALLOWED_TRANSITIONS,
   OPEN_STATUSES,
   canRoleSetStatus,
+  canTransition,
 } from "./transitions";
 import { stripPrices } from "./kitchen-shape";
 
@@ -391,6 +392,21 @@ export class OrdersService {
     return stripPrices(order, role);
   }
 
+  /**
+   * Moves the whole table along — and, at `completed`, closes it.
+   *
+   * Still the board's one-tap action on an order card, so it keeps its route
+   * and its signature. What changed underneath is who writes `orders.status`:
+   * nobody here. The column is derived from the rounds by trigger, so this
+   * method moves the rounds and lets the derivation follow. Writing it here
+   * as well was two authors for one fact — and the hand-written value was not
+   * even the one that lasted, since the next round to move silently replaced
+   * it with what the rounds actually said.
+   *
+   * That makes closing a table literally that: finish everything still live
+   * on it. A single round left behind holds the order open through the
+   * derivation, and the table the owner just settled reappears on the board.
+   */
   async setStatus(
     userId: string,
     businessId: string,
@@ -423,12 +439,48 @@ export class OrdersService {
       throw new ForbiddenException(`You cannot move an order to ${next}`);
     }
 
-    await this.prisma.db.order.update({
-      where: { id: orderId },
+    // Which live rounds this move actually applies to.
+    //
+    // A round already at or past `next` is left where it is, not refused. The
+    // order's status is its LEAST advanced live round, so a table reading
+    // "Being made" can already hold a round that is ready; tapping Ready on
+    // it is a legal move on the order and a no-op on that round. Refusing the
+    // whole call because one round had nowhere left to go would make exactly
+    // the multi-round table this feature exists for unservable. Closing a
+    // table is the case where nothing is excluded: every live status can
+    // reach `completed`.
+    //
+    // Terminal rounds are out of it entirely, which is the other half of the
+    // same rule — a chai cancelled an hour ago is not completed when the
+    // table is.
+    const movable = OPEN_STATUSES.filter((from) => canTransition(from, next));
+
+    // One statement, not a read followed by an update each. It is the same
+    // set either way — the filter above is the state machine, which is the
+    // same thing the per-round check would have asked — and the round trips
+    // a staff board makes over a hotel's wifi are the budget that matters
+    // here (see TENANT_TX_TIMEOUT_MS). Atomic without asking for it either:
+    // the whole request already runs inside the transaction TenantInterceptor
+    // opened, and prisma.db is that transaction's client — which is why it
+    // has no $transaction of its own to wrap this in.
+    //
+    // No role check beyond the one already made on the order.
+    // `canRoleSetStatus` is `canTransition` and ROLE_TARGETS together; the
+    // filter above has settled the first for every round this touches, and
+    // the second asks only about `next` and the person, neither of which
+    // varies from one round to the next.
+    await this.prisma.db.orderRound.updateMany({
+      where: { orderId, businessId, status: { in: movable } },
       data: {
         status: next,
+        // `undefined`, not null, for the same reason as setRoundStatus: a
+        // timestamp this move did not produce is left out of the UPDATE
+        // rather than overwritten. It is also what keeps a kitchen move
+        // legal — order_rounds_kitchen_guard rejects a staff write that so
+        // much as names completed_at.
+        acceptedAt: next === "accepted" ? new Date() : undefined,
         completedAt:
-          next === "completed" || next === "cancelled" ? new Date() : null,
+          next === "completed" || next === "cancelled" ? new Date() : undefined,
       },
     });
 
@@ -444,7 +496,12 @@ export class OrdersService {
     // needs telling — nothing else on this path reaches the staff topic.
     // Keyed on the move out of `placed` rather than on `accepted` alone,
     // because the state machine lets an owner skip straight to `preparing`.
-    if (order.status === "placed" && KITCHEN_BOARD.includes(next)) {
+    //
+    // Against the derived status rather than the one asked for, as
+    // setRoundStatus does: where the order ended up is something the
+    // derivation decided from every round, and it is what the kitchen's board
+    // filter and RLS will go on. `next` is only what was requested.
+    if (order.status === "placed" && KITCHEN_BOARD.includes(updated.status)) {
       await this.notifications.announceReachedKitchen(businessId);
     }
 
