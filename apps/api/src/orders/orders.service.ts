@@ -469,20 +469,38 @@ export class OrdersService {
     // filter above has settled the first for every round this touches, and
     // the second asks only about `next` and the person, neither of which
     // varies from one round to the next.
-    await this.prisma.db.orderRound.updateMany({
+    const { count } = await this.prisma.db.orderRound.updateMany({
       where: { orderId, businessId, status: { in: movable } },
       data: {
         status: next,
         // `undefined`, not null, for the same reason as setRoundStatus: a
         // timestamp this move did not produce is left out of the UPDATE
         // rather than overwritten. It is also what keeps a kitchen move
-        // legal — order_rounds_kitchen_guard rejects a staff write that so
-        // much as names completed_at.
+        // legal — order_rounds_kitchen_guard compares completed_at and raises
+        // 42501 on a staff write that changes it, and `new Date()` always
+        // would.
         acceptedAt: next === "accepted" ? new Date() : undefined,
         completedAt:
           next === "completed" || next === "cancelled" ? new Date() : undefined,
       },
     });
+
+    // Nothing moved, so no trigger fired, so the order's status is wherever it
+    // already was — and the caller would otherwise be told 200, which is
+    // indistinguishable from having worked. On healthy data this cannot
+    // happen: the order's status IS its least advanced live round, that round
+    // sits at a status the guard above has just proved can reach `next`, and
+    // so it is in `movable`. It can happen on a row the hand-write this method
+    // used to do left divergent — a live `orders.status` over rounds that are
+    // all terminal, which the derivation would never produce. Such an order
+    // can never be closed, and `orders_one_open_per_table` then blocks the
+    // table taking any new order at all. Loud, with the id in it, beats a
+    // table that silently stops working and no line anywhere saying why.
+    if (count === 0) {
+      throw new ConflictException(
+        `Order ${orderId} has no live round to move to ${next}; its status disagrees with its rounds`,
+      );
+    }
 
     const updated = await this.orderForBoard(businessId, orderId, role);
 

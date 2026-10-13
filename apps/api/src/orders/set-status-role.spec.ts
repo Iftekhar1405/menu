@@ -7,11 +7,13 @@ import { OrdersService } from "./orders.service";
  * @param derived what the derivation leaves the order at once the rounds have
  *                moved — what `orderForBoard` reads back, not what was asked
  *                for. Defaults to `from`, for the tests that never get that far.
+ * @param moved   how many rounds the one UPDATE matched. Zero is the divergent
+ *                row described below, not an ordinary call.
  */
 function service(
   role: "owner" | "kitchen",
   from: string,
-  { derived = from }: { derived?: string } = {},
+  { derived = from, moved = 1 }: { derived?: string; moved?: number } = {},
 ) {
   const businesses = {
     assertAccess: vi.fn().mockResolvedValue({ business: { id: "b1" }, role }),
@@ -32,7 +34,7 @@ function service(
           cancellations: [],
         }),
       },
-      orderRound: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      orderRound: { updateMany: vi.fn().mockResolvedValue({ count: moved }) },
     },
   };
   const notifications = { announceStatus: vi.fn(), announceReachedKitchen: vi.fn() };
@@ -187,8 +189,9 @@ describe("setStatus and the table's rounds", () => {
   // Same rule as setRoundStatus: a timestamp this move did not produce stays
   // out of the UPDATE entirely. Stamping completed_at on a round that only
   // started cooking would tell every later reader it was served — and
-  // order_rounds_kitchen_guard rejects a staff write that names the column at
-  // all, so this is also what keeps the kitchen's own buttons working.
+  // order_rounds_kitchen_guard raises 42501 on a staff write that *changes*
+  // the column, which `new Date()` always would, so this is also what keeps
+  // the kitchen's own buttons working.
   it("stamps no completion time on a round that only started cooking", async () => {
     const s = service("kitchen", "accepted", { derived: "preparing" });
 
@@ -207,5 +210,25 @@ describe("setStatus and the table's rounds", () => {
     await s.setStatus("u", "b1", "o1", "completed" as never);
 
     expect(roundWrite(s).data.completedAt).toBeInstanceOf(Date);
+  });
+
+  // A row the old hand-write left divergent — a live orders.status over rounds
+  // that are all terminal — matches nothing, fires no trigger and changes
+  // nothing. Returning 200 for that would be the worst available answer: the
+  // table can never be closed, orders_one_open_per_table then refuses it any
+  // new order, and nothing anywhere says why. Only a mock can reach this
+  // state; the derivation cannot produce it and neither can this method now.
+  it("refuses, rather than silently succeeding, when no round moved", async () => {
+    const s = service("owner", "preparing", { moved: 0 });
+
+    await expect(
+      s.setStatus("u", "b1", "o1", "completed" as never),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // Named in the message, or the log says a table is stuck without saying
+    // which one.
+    await expect(
+      s.setStatus("u", "b1", "o1", "completed" as never),
+    ).rejects.toThrow(/o1/);
   });
 });
