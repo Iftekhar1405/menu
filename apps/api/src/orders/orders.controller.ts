@@ -186,6 +186,23 @@ export class OrdersController {
   }
 
   /**
+   * Moves one round of an order along, leaving its siblings where they are.
+   *
+   * The round-level counterpart of the route above. The order's own status
+   * follows by derivation, so there is no second call to make.
+   */
+  @Patch(":id/rounds/:rid/status")
+  setRoundStatus(
+    @CurrentUser() user: RequestUser,
+    @Param("bid") bid: string,
+    @Param("id") id: string,
+    @Param("rid") rid: string,
+    @Body(new ZodBody(statusSchema)) body: z.infer<typeof statusSchema>,
+  ) {
+    return this.orders.setRoundStatus(user.id, bid, id, rid, body.status);
+  }
+
+  /**
    * Clears — or sets — the running-order flag on one order.
    *
    * The body carries a boolean both ways although only the clearing action

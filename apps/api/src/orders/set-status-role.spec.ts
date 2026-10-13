@@ -10,7 +10,17 @@ function service(role: "owner" | "kitchen", from: string) {
     db: {
       order: {
         findFirst: vi.fn().mockResolvedValue({ id: "o1", status: from }),
-        update: vi.fn().mockResolvedValue({ id: "o1", status: "ready", items: [], cancellations: [] }),
+        update: vi.fn().mockResolvedValue({ id: "o1" }),
+        // What the board is told, read back after the write rather than
+        // returned by it — see orderForBoard.
+        findFirstOrThrow: vi.fn().mockResolvedValue({
+          id: "o1",
+          tableId: "t1",
+          status: "ready",
+          rounds: [],
+          items: [],
+          cancellations: [],
+        }),
       },
     },
   };

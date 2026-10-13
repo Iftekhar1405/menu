@@ -343,9 +343,25 @@ export class OrdersService {
       );
     }
 
-    return this.prisma.db.order.update({
+    await this.prisma.db.order.update({
       where: { id: orderId },
       data: { isRunning: running },
+    });
+
+    return this.orderForBoard(businessId, orderId);
+  }
+
+  /**
+   * One order in the shape the staff board draws.
+   *
+   * A read rather than an `include` on the write it follows, because the
+   * write is no longer the whole story: moving a round leaves the order's own
+   * status to an AFTER trigger, and anything returned by the UPDATE that
+   * caused it would carry the status from before the trigger ran.
+   */
+  private orderForBoard(businessId: string, orderId: string) {
+    return this.prisma.db.order.findFirstOrThrow({
+      where: { id: orderId, businessId },
       include: {
         table: { select: { id: true, label: true } },
         rounds: {
@@ -390,23 +406,16 @@ export class OrdersService {
       throw new ForbiddenException(`You cannot move an order to ${next}`);
     }
 
-    const updated = await this.prisma.db.order.update({
+    await this.prisma.db.order.update({
       where: { id: orderId },
       data: {
         status: next,
         completedAt:
           next === "completed" || next === "cancelled" ? new Date() : null,
       },
-      include: {
-        table: { select: { id: true, label: true } },
-        rounds: {
-          orderBy: { seq: "asc" },
-          include: { items: { orderBy: { createdAt: "asc" } } },
-        },
-        items: { orderBy: { createdAt: "asc" } },
-        cancellations: { orderBy: { createdAt: "asc" } },
-      },
     });
+
+    const updated = await this.orderForBoard(businessId, orderId);
 
     // The diner's screen is listening on its table's topic. Nothing is
     // stored for them: they need the order's current state, which
@@ -423,6 +432,60 @@ export class OrdersService {
     }
 
     return updated;
+  }
+
+  /**
+   * Moves one round along.
+   *
+   * The order's own status is not written here — the derivation trigger does
+   * it, atomically, from every round. Writing both would be two authors for
+   * one fact, and they would disagree the first time two rounds moved at
+   * once.
+   */
+  async setRoundStatus(
+    userId: string,
+    businessId: string,
+    orderId: string,
+    roundId: string,
+    next: OrderStatus,
+  ) {
+    const { role } = await this.businesses.assertAccess(userId, businessId, {
+      allow: ["owner", "kitchen"],
+    });
+
+    const round = await this.prisma.db.orderRound.findFirst({
+      where: { id: roundId, orderId, businessId },
+      select: { id: true, status: true, seq: true },
+    });
+    if (!round) throw new NotFoundException("Round not found");
+
+    // The same two refusals, for the same two reasons, as setStatus: the
+    // state machine refusing is a fact about the round and reads as 409; a
+    // role refusing is a fact about the person and reads as 403.
+    if (!ALLOWED_TRANSITIONS[round.status].includes(next)) {
+      throw new ConflictException(
+        `Round ${round.seq} is ${round.status} and cannot be moved to ${next}`,
+      );
+    }
+    if (!canRoleSetStatus(role, round.status, next)) {
+      throw new ForbiddenException(`You cannot move a round to ${next}`);
+    }
+
+    await this.prisma.db.orderRound.update({
+      where: { id: roundId },
+      data: {
+        status: next,
+        // `undefined`, not null: a timestamp this move did not produce is
+        // left out of the UPDATE entirely rather than overwritten with null.
+        // A round that is accepted, then started, keeps the minute it was
+        // accepted — which is the only thing accepted_at is for.
+        acceptedAt: next === "accepted" ? new Date() : undefined,
+        completedAt:
+          next === "completed" || next === "cancelled" ? new Date() : undefined,
+      },
+    });
+
+    return this.orderForBoard(businessId, orderId);
   }
 }
 

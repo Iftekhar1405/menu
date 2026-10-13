@@ -423,6 +423,37 @@ describe.skipIf(!process.env.DATABASE_URL)("kitchen policies", () => {
       ).rejects.toThrow(/only change a round's status/);
     });
 
+    // The guard as first written refused the kitchen the status 'completed'
+    // but left completed_at open, so a kitchen account could stamp a round
+    // completed without ever naming the status — half a rule.
+    // 20261005097000_round_guard_completed_at pins it, as orders_kitchen_guard
+    // has always pinned the equivalent orders.completed_at. accepted_at stays
+    // open because 'accepted' is a status the kitchen may set, and both halves
+    // are asserted together: a guard that refused every timestamp would pass
+    // the negative half on its own while breaking every kitchen accept.
+    it("lets the kitchen stamp a round accepted but not completed", async () => {
+      const r = await admin.query("SELECT id FROM order_rounds WHERE business_id=$1", [bizA]);
+      const roundId = r.rows[0].id;
+
+      await asUser(kitchenA, async () => {
+        await app.query(
+          "UPDATE order_rounds SET status='accepted', accepted_at=now() WHERE id=$1",
+          [roundId],
+        );
+      });
+      const stamped = await admin.query(
+        "SELECT accepted_at FROM order_rounds WHERE id=$1",
+        [roundId],
+      );
+      expect(stamped.rows[0].accepted_at).not.toBeNull();
+
+      await expect(
+        asUser(kitchenA, () =>
+          app.query("UPDATE order_rounds SET completed_at=now() WHERE id=$1", [roundId]),
+        ),
+      ).rejects.toThrow(/only change a round's status/);
+    });
+
     it("refuses the kitchen the statuses that touch a bill", async () => {
       await expect(
         asUser(kitchenA, () =>
