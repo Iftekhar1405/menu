@@ -20,6 +20,21 @@ async function typePin(page: Page, label: string, digits: string) {
   }
 }
 
+/**
+ * Adds one table from the Tables page, which must already be open.
+ *
+ * The form is behind "+ Add table" rather than on the page, so every caller
+ * needs the same two steps. The confirmation is the per-table select
+ * checkbox: on a table's card the name is plain text, and the checkbox is the
+ * only node that carries it in an accessible name.
+ */
+async function addTable(page: Page, label: string) {
+  await page.getByRole("button", { name: "+ Add table" }).click();
+  await page.getByLabel("Table name / number").fill(label);
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.getByLabel(`Select ${label}`)).toBeAttached();
+}
+
 test("a diner orders from a table and staff work it through", async ({ page, context }) => {
   // ── Owner sets up a menu and a table ─────────────────────────────────────
   await page.goto("/signup");
@@ -51,9 +66,7 @@ test("a diner orders from a table and staff work it through", async ({ page, con
   await expect(page.getByRole("button", { name: /^Filter coffee/ })).toBeVisible();
 
   await page.getByRole("link", { name: "Tables" }).click();
-  await page.getByLabel("Add a table").fill("7");
-  await page.getByRole("button", { name: "Add", exact: true }).click();
-  await expect(page.getByLabel(/Table name, currently 7/)).toBeVisible();
+  await addTable(page, "7");
   await page.screenshot({ path: `${SHOTS}/10-tables.png`, fullPage: true });
 
   // ── Diner scans the card ─────────────────────────────────────────────────
@@ -95,8 +108,10 @@ test("a diner orders from a table and staff work it through", async ({ page, con
   await diner.getByRole("button", { name: "Add Filter coffee, Single" }).click();
   await diner.getByRole("button", { name: "Place order" }).click();
 
-  await expect(diner.getByText("Round 1")).toBeVisible();
-  await expect(diner.getByText("Round 2")).toBeVisible();
+  // By role: placing a round also raises a "Round 2 added" toast, which a
+  // bare text match collides with.
+  await expect(diner.getByRole("heading", { name: "Round 1" })).toBeVisible();
+  await expect(diner.getByRole("heading", { name: "Round 2" })).toBeVisible();
   await expect(diner.getByText("₹435")).toBeVisible();
   await diner.screenshot({ path: `${SHOTS}/13-diner-order.png`, fullPage: true });
 
@@ -140,8 +155,8 @@ test("a diner orders from a table and staff work it through", async ({ page, con
   await expect(diner.getByRole("heading", { name: "Your bill" })).toBeVisible({
     timeout: 15_000,
   });
-  await expect(diner.getByText("Round 1")).toHaveCount(0);
-  await expect(diner.getByText("Round 2")).toHaveCount(0);
+  await expect(diner.getByRole("heading", { name: "Round 1" })).toHaveCount(0);
+  await expect(diner.getByRole("heading", { name: "Round 2" })).toHaveCount(0);
 });
 
 test("a diner cannot reach another table's order by editing the URL", async ({
@@ -162,12 +177,8 @@ test("a diner cannot reach another table's order by editing the URL", async ({
   await expect(pageA.getByRole("heading", { name: "Menu", exact: true })).toBeVisible();
 
   await pageA.getByRole("link", { name: "Tables" }).click();
-  await pageA.getByLabel("Add a table").fill("1");
-  await pageA.getByRole("button", { name: "Add", exact: true }).click();
-  await expect(pageA.getByLabel(/Table name, currently 1/)).toBeVisible();
-  await pageA.getByLabel("Add a table").fill("2");
-  await pageA.getByRole("button", { name: "Add", exact: true }).click();
-  await expect(pageA.getByLabel(/Table name, currently 2/)).toBeVisible();
+  await addTable(pageA, "1");
+  await addTable(pageA, "2");
 
   const [token1, token2] = await getTableTokens(pageA);
 
@@ -200,7 +211,11 @@ async function getTableToken(page: Page): Promise<string> {
 async function getTableTokens(page: Page): Promise<string[]> {
   return page.evaluate(async () => {
     const api = "http://localhost:4000";
-    const refresh = await fetch(`${api}/auth/refresh`, {
+    // Through the web app's own /api/auth proxy, not straight at the API.
+    // The refresh cookie is deliberately scoped to Path=/api/auth on this
+    // origin so Safari treats it as first-party, which means a direct call to
+    // the API's /auth/refresh is sent without it and comes back unauthorised.
+    const refresh = await fetch("/api/auth/refresh", {
       method: "POST",
       credentials: "include",
     });
@@ -237,9 +252,7 @@ test("the ordering page uses the layout the owner chose", async ({ page, browser
   await expect(page.getByRole("button", { name: /^Samosa/ })).toBeVisible();
 
   await page.getByRole("link", { name: "Tables" }).click();
-  await page.getByLabel("Add a table").fill("1");
-  await page.getByRole("button", { name: "Add", exact: true }).click();
-  await expect(page.getByLabel(/Table name, currently 1/)).toBeVisible();
+  await addTable(page, "1");
   const token = await getTableToken(page);
 
   // Editorial is the default: one dish per row, not a grid.
@@ -265,13 +278,17 @@ test("the ordering page uses the layout the owner chose", async ({ page, browser
 });
 
 /**
- * Kitchen staff work a real placed order through cooking. The UI for adding
- * the login itself is covered end to end by kitchen.spec.ts; this test needs
- * a diner's placed order, which is exactly the fixture this file already
+ * Kitchen staff work a real order through cooking. The UI for adding the
+ * login itself is covered end to end by kitchen.spec.ts; this test needs a
+ * diner's placed order, which is exactly the fixture this file already
  * builds, so the login here is created through the API directly rather than
  * duplicating table-claim setup for a second time.
+ *
+ * The handover is half the point. A kitchen board starts at Accepted, so the
+ * round only becomes theirs once the counter has taken the table on — before
+ * that the card is on the owner's board and nowhere else.
  */
-test("kitchen staff move a real order from Accept to Ready, never see Served or money", async ({
+test("kitchen staff cook an accepted round to Ready, never see Served or money", async ({
   page,
   context,
 }) => {
@@ -294,9 +311,7 @@ test("kitchen staff move a real order from Accept to Ready, never see Served or 
   await expect(page.getByRole("button", { name: /^Vada/ })).toBeVisible();
 
   await page.getByRole("link", { name: "Tables" }).click();
-  await page.getByLabel("Add a table").fill("9");
-  await page.getByRole("button", { name: "Add", exact: true }).click();
-  await expect(page.getByLabel(/Table name, currently 9/)).toBeVisible();
+  await addTable(page, "9");
   const token = await getTableToken(page);
 
   const staffPhone = `+9198${String(Date.now()).slice(-8)}`;
@@ -335,9 +350,20 @@ test("kitchen staff move a real order from Accept to Ready, never see Served or 
   // No money anywhere on the board.
   await expect(kitchen.getByText(/₹/)).toHaveCount(0);
 
-  // Accept → Start → Ready. Completing (which bills) and cancelling are an
-  // owner's calls, not the kitchen's, so "Served" must never appear.
-  await kitchen.getByRole("button", { name: "Accept" }).click();
+  // The ticket is not theirs yet. A kitchen board opens at Accepted, so an
+  // order whose only round nobody has taken on is on nobody's pass — taking
+  // a table on is a counter decision, and a pass crowded with orders the
+  // counter has not honoured is noise the kitchen cannot act on.
+  await expect(kitchen.getByText("Vada")).toHaveCount(0);
+
+  // The owner takes it on, and only then does it reach the kitchen. Their
+  // board polls, so this is the first thing to wait for rather than assert.
+  await page.getByRole("link", { name: "Orders" }).click();
+  await page.getByRole("button", { name: "Accept" }).click();
+  await expect(kitchen.getByText("Vada")).toBeVisible();
+
+  // Start → Ready. Completing (which bills) and cancelling are an owner's
+  // calls, not the kitchen's, so "Served" must never appear.
   await expect(kitchen.getByRole("button", { name: "Start" })).toBeVisible();
   await expect(kitchen.getByRole("button", { name: "Served" })).toHaveCount(0);
 
@@ -359,7 +385,9 @@ test("kitchen staff move a real order from Accept to Ready, never see Served or 
 async function createKitchenLogin(page: Page, identifier: string): Promise<string> {
   return page.evaluate(async (phone) => {
     const api = "http://localhost:4000";
-    const refresh = await fetch(`${api}/auth/refresh`, {
+    // Same reason as getTableTokens: the refresh cookie only reaches the
+    // same-origin /api/auth proxy, never the API's own /auth path.
+    const refresh = await fetch("/api/auth/refresh", {
       method: "POST",
       credentials: "include",
     });
@@ -378,3 +406,90 @@ async function createKitchenLogin(page: Page, identifier: string): Promise<strin
     return res.pin;
   }, identifier);
 }
+
+/**
+ * The reason rounds exist at all.
+ *
+ * A table orders a biryani at eight, the kitchen plates it, and at nine the
+ * same table adds a chai. Status used to live on the order, so the chai
+ * dragged the biryani back to New and the pass cooked it a second time. A
+ * round now carries its own status, and the order's is derived as its least
+ * advanced round — so the card does move back to New, because something on
+ * that table really is unstarted, but the biryani inside it does not.
+ *
+ * This is the one case worth paying a browser for. Nothing smaller can catch
+ * the regression: it needs a real round row with its own status (Postgres and
+ * its derive trigger), a board payload that carries every round (the API's
+ * `rounds` include), and a card that draws and advances each round on its own
+ * (React). A unit test on any one of those three keeps passing while a table
+ * loses its dinner.
+ */
+test("a second round does not drag the first one backwards", async ({ page, context }) => {
+  // ── An owner with one table and two dishes ───────────────────────────────
+  await page.goto("/signup");
+  await page.getByLabel("Your name").fill("Rounds Owner");
+  await page.getByLabel("Email or phone number").fill(`rounds${Date.now()}@kumar.test`);
+  await typePin(page, "Choose a 6-digit PIN", PIN);
+  await page.getByLabel("Business name").fill("Rounds Biryani House");
+  await page.getByRole("button", { name: "Restaurant" }).click();
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByRole("heading", { name: "Menu", exact: true })).toBeVisible();
+
+  await page.getByPlaceholder("Coffee").fill("Mains");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  for (const [dish, price] of [
+    ["Chicken Biryani", "260"],
+    ["Irani Chai", "20"],
+  ]) {
+    await page.getByRole("button", { name: "Add a dish to Mains" }).click();
+    await page.getByLabel("Name").fill(dish!);
+    await page.getByPlaceholder("140").first().fill(price!);
+    await page.getByRole("button", { name: "Add dish" }).click();
+    await expect(page.getByRole("button", { name: new RegExp(`^${dish}`) })).toBeVisible();
+  }
+
+  await page.getByRole("link", { name: "Tables" }).click();
+  await addTable(page, "8");
+  const token = await getTableToken(page);
+
+  // ── Eight o'clock: the biryani, cooked all the way to the pass ───────────
+  const diner = await context.newPage();
+  await diner.setViewportSize({ width: 420, height: 900 });
+  await diner.goto(`/t/${token}`);
+  await expect(diner).toHaveURL(/\/order$/);
+  await diner.getByRole("button", { name: "Add Chicken Biryani" }).click();
+  await diner.getByRole("button", { name: "Place order" }).click();
+  await expect(diner.getByText("Sent to the kitchen")).toBeVisible();
+
+  await page.getByRole("link", { name: "Orders" }).click();
+  await expect(page.getByRole("heading", { name: "Table 8" })).toBeVisible();
+  await page.getByRole("button", { name: "Accept" }).click();
+  await page.getByRole("button", { name: "Start" }).click();
+  await page.getByRole("button", { name: "Ready" }).click();
+
+  // A lone round is drawn without a heading or a chip — one card saying
+  // "Round 1" on every table would be noise — so the proof it reached the
+  // pass is the only move an owner has left on it.
+  await expect(page.getByRole("button", { name: "Served" })).toBeVisible();
+
+  // ── Nine o'clock: the same table adds a chai ─────────────────────────────
+  await diner.getByRole("button", { name: "Menu" }).click();
+  await diner.getByRole("button", { name: "Add Irani Chai" }).click();
+  await diner.getByRole("button", { name: "Place order" }).click();
+  // By role, not by text: placing a round also raises a "Round 2 added"
+  // toast, so a bare text match is ambiguous.
+  await expect(diner.getByRole("heading", { name: "Round 2" })).toBeVisible();
+
+  // The card is back in New, because the table's least advanced round is the
+  // chai. The biryani is untouched by that: still Ready, still plated.
+  await expect(page.getByTestId("round-1-status")).toHaveText("Ready");
+  await expect(page.getByTestId("round-2-status")).toHaveText("New");
+
+  // And each round still offers only its own move, so nobody can re-cook the
+  // biryani by working the card the chai put in front of them.
+  const roundOne = page.getByRole("region", { name: "Round 1" });
+  const roundTwo = page.getByRole("region", { name: "Round 2" });
+  await expect(roundOne.getByText(/KOT #\d+/)).toBeVisible();
+  await expect(roundOne.getByRole("button", { name: "Accept" })).toHaveCount(0);
+  await expect(roundTwo.getByRole("button", { name: "Accept" })).toBeVisible();
+});

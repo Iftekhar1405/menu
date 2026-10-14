@@ -720,7 +720,15 @@ function OrderCard({
                     KOT #{round.kotNumber}
                   </span>
                 </p>
-                <span className={chipClass(round.status)}>{statusLabel(round.status)}</span>
+                <span
+                  // Named by the round's seq rather than its id, so a test can
+                  // say "round 2 is still New" without first reading an id out
+                  // of the payload it is there to check.
+                  data-testid={`round-${round.seq}-status`}
+                  className={chipClass(round.status)}
+                >
+                  {statusLabel(round.status)}
+                </span>
               </div>
             )}
             <ul className="space-y-1">
