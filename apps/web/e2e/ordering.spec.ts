@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 
 /**
  * Phase 2: a diner scans their table's card and orders from it.
@@ -19,6 +19,33 @@ async function typePin(page: Page, label: string, digits: string) {
     await page.getByLabel(`${label}, digit ${i + 1} of 6`).fill(digits[i]!);
   }
 }
+
+/**
+ * A browser context that is actually cleaned up.
+ *
+ * Playwright tears down the `page` and `context` fixtures for you; a context
+ * built from `browser` is yours to close, and nothing closes it if the test
+ * fails first. That matters more here than it looks: every page left alive
+ * goes on polling — the board every five seconds, the diner's order every
+ * few — against the single `next dev` server the whole suite shares, for as
+ * long as the worker lives. Several runs' worth of those stack up behind
+ * whatever test is trying to run now.
+ */
+const opened: BrowserContext[] = [];
+
+async function freshContext(browser: Browser): Promise<BrowserContext> {
+  const context = await browser.newContext();
+  opened.push(context);
+  return context;
+}
+
+test.afterEach(async () => {
+  // splice so a failure to close one does not strand the rest, and so a
+  // retry does not try to close the same context twice.
+  await Promise.all(
+    opened.splice(0).map((c) => c.close().catch(() => undefined)),
+  );
+});
 
 /**
  * Adds one table from the Tables page, which must already be open.
@@ -74,7 +101,7 @@ test("a diner orders from a table and staff work it through", async ({ page, con
   await diner.setViewportSize({ width: 420, height: 900 });
 
   // With no session at all, /order must offer the scanner — not an error.
-  const stranger = await (await diner.context().browser()!.newContext()).newPage();
+  const stranger = await (await freshContext(diner.context().browser()!)).newPage();
   await stranger.goto("/order");
   await expect(
     stranger.getByRole("heading", { name: "Scan the code on your table" }),
@@ -166,7 +193,7 @@ test("a diner orders from a table and staff work it through", async ({ page, con
 test("a diner cannot reach another table's order by editing the URL", async ({
   browser,
 }) => {
-  const contextA = await browser.newContext();
+  const contextA = await freshContext(browser);
   const pageA = await contextA.newPage();
 
   // Owner with two tables.
@@ -187,12 +214,12 @@ test("a diner cannot reach another table's order by editing the URL", async ({
   const [token1, token2] = await getTableTokens(pageA);
 
   // Diner at table 1.
-  const diner1 = await (await browser.newContext()).newPage();
+  const diner1 = await (await freshContext(browser)).newPage();
   await diner1.goto(`/t/${token1}`);
   await expect(diner1.getByText("Table 1")).toBeVisible();
 
   // Diner at table 2, in a separate browser context.
-  const diner2 = await (await browser.newContext()).newPage();
+  const diner2 = await (await freshContext(browser)).newPage();
   await diner2.goto(`/t/${token2}`);
   await expect(diner2.getByText("Table 2")).toBeVisible();
 
@@ -204,7 +231,6 @@ test("a diner cannot reach another table's order by editing the URL", async ({
     await expect(diner2.getByText("Table 1")).toHaveCount(0);
   }
 
-  await contextA.close();
 });
 
 /** Reads table tokens through the owner API, as a printed card would carry them. */
@@ -260,7 +286,7 @@ test("the ordering page uses the layout the owner chose", async ({ page, browser
   const token = await getTableToken(page);
 
   // Editorial is the default: one dish per row, not a grid.
-  const diner = await (await browser.newContext()).newPage();
+  const diner = await (await freshContext(browser)).newPage();
   await diner.setViewportSize({ width: 420, height: 900 });
   await diner.goto(`/t/${token}`);
   await expect(diner.getByRole("button", { name: "Add Samosa" })).toBeVisible();
@@ -332,7 +358,7 @@ test("kitchen staff cook an accepted round to Ready, never see Served or money",
   await expect(diner.getByText("Sent to the kitchen")).toBeVisible();
 
   // ── Kitchen signs in, in a separate browser context ──────────────────────
-  const kitchenContext = await context.browser()!.newContext();
+  const kitchenContext = await freshContext(context.browser()!);
   const kitchen = await kitchenContext.newPage();
   await kitchen.goto("/login");
   await kitchen.getByLabel("Email or phone number").fill(staffPhone);
@@ -383,7 +409,6 @@ test("kitchen staff cook an accepted round to Ready, never see Served or money",
   await expect(kitchen.getByRole("button", { name: "Served" })).toHaveCount(0);
   await expect(kitchen.getByText(/₹/)).toHaveCount(0);
 
-  await kitchenContext.close();
 });
 
 /** Creates a kitchen login through the owner API, returning the issued PIN. */
