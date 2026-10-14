@@ -149,14 +149,18 @@ test("a diner orders from a table and staff work it through", async ({ page, con
   // finishes every round still live on it, and bills them together.
   await page.getByRole("button", { name: "Serve all" }).click();
 
-  // Completing frees the table: the running order view is gone, which is
-  // "show only the current order, never previous ones". Since Phase 3 the
-  // bill takes its place rather than an empty state.
+  // Completing frees the table, but it does not wipe the diner's screen.
+  // get_table_order deliberately keeps handing back an order for two hours
+  // after it closes, so a diner re-scanning sees their receipt rather than an
+  // empty page (20260928000000_order_round_fixes). So both rounds stay up;
+  // what changes is that they now read as served, with the bill beneath them.
   await expect(diner.getByRole("heading", { name: "Your bill" })).toBeVisible({
     timeout: 15_000,
   });
-  await expect(diner.getByRole("heading", { name: "Round 1" })).toHaveCount(0);
-  await expect(diner.getByRole("heading", { name: "Round 2" })).toHaveCount(0);
+  await expect(diner.getByRole("heading", { name: "Round 1" })).toBeVisible();
+  await expect(diner.getByRole("heading", { name: "Round 2" })).toBeVisible();
+  // "Enjoy." is the completed status hint, and only that one.
+  await expect(diner.getByText("Enjoy.")).toBeVisible();
 });
 
 test("a diner cannot reach another table's order by editing the URL", async ({
@@ -263,7 +267,8 @@ test("the ordering page uses the layout the owner chose", async ({ page, browser
   await expect(diner.locator("ul.grid")).toHaveCount(0);
 
   // Switch to Grid, and the ordering page must follow.
-  await page.getByRole("link", { name: "Appearance" }).click();
+  // "Menu design" in the sidebar — lib/nav.ts labels /appearance that way.
+  await page.getByRole("link", { name: "Menu design" }).click();
   await page.getByRole("button", { name: /Grid/ }).click();
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Your menu is updated.")).toBeVisible();
