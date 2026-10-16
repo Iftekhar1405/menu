@@ -4,7 +4,7 @@ export type BusinessType = (typeof BUSINESS_TYPES)[number];
 export const DIET_TAGS = ["veg", "non_veg", "vegan", "egg"] as const;
 export type DietTag = (typeof DIET_TAGS)[number];
 
-export const USER_ROLES = ["owner", "platform_admin"] as const;
+export const USER_ROLES = ["owner", "kitchen", "platform_admin"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
 export const OTP_PURPOSES = ["verify", "recover"] as const;

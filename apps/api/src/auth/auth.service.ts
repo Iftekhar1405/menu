@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -278,6 +279,31 @@ export class AuthService {
 
     // A PIN change must not leave older sessions alive.
     await this.tokens.revokeAllForUser(user.id);
+  }
+
+  // ── Forced PIN change ────────────────────────────────────────────────────
+
+  /**
+   * Changing a PIN kills every other session, which is the same rule a reset
+   * already follows: whoever knew the old PIN stops being able to use it.
+   */
+  async changePin(userId: string, currentPin: string, newPin: string): Promise<void> {
+    this.pins.assertValidPin(newPin);
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException("Session is no longer valid");
+
+    if (!(await this.pins.verifyPin(currentPin, user.pinHash))) {
+      throw new UnauthorizedException("That PIN is not correct");
+    }
+    if (currentPin === newPin) {
+      throw new BadRequestException("Please choose a different PIN");
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { pinHash: await this.pins.hashPin(newPin), mustChangePin: false },
+    });
+    await this.tokens.revokeAllForUser(userId);
   }
 
   // ── Shared ────────────────────────────────────────────────────────────────

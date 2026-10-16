@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -11,8 +12,15 @@ import { TenantContext } from "../prisma/tenant-context";
 import { cleanPgMessage } from "../common/pg-message";
 import { NotificationsService } from "../notifications/notifications.service";
 import type { CancelledLine, PlacedOrder } from "../notifications/events";
-import type { CancelOrderInput } from "@menu/shared";
-import { ALLOWED_TRANSITIONS, OPEN_STATUSES } from "./transitions";
+import { KITCHEN_BOARD } from "../notifications/visibility";
+import type { AccessRole, CancelOrderInput } from "@menu/shared";
+import {
+  ALLOWED_TRANSITIONS,
+  OPEN_STATUSES,
+  canRoleSetStatus,
+  canTransition,
+} from "./transitions";
+import { stripPrices } from "./kitchen-shape";
 
 export interface PlaceLine {
   itemId: string;
@@ -214,7 +222,9 @@ export class OrdersService {
   // ── Staff side ────────────────────────────────────────────────────────────
 
   async listForBusiness(userId: string, businessId: string, scope: "open" | "today") {
-    await this.businesses.assertOwns(userId, businessId);
+    const { role } = await this.businesses.assertAccess(userId, businessId, {
+      allow: ["owner", "kitchen"],
+    });
 
     // `business_day` is written by Postgres with CURRENT_DATE, so "today" has
     // to be asked of Postgres too. Building a local midnight in JS and
@@ -225,7 +235,7 @@ export class OrdersService {
       SELECT CURRENT_DATE AS today
     `;
 
-    return this.prisma.db.order.findMany({
+    const orders = await this.prisma.db.order.findMany({
       where: {
         businessId,
         ...(scope === "open"
@@ -238,13 +248,26 @@ export class OrdersService {
       orderBy: [{ isRunning: "desc" }, { status: "asc" }, { placedAt: "asc" }],
       include: {
         table: { select: { id: true, label: true } },
-        items: { orderBy: [{ batch: "asc" }, { createdAt: "asc" }] },
+        // The board prints and advances one round at a time, so it needs the
+        // rounds themselves — each with its own status and KOT number, which
+        // a flattened item list cannot carry.
+        rounds: {
+          orderBy: { seq: "asc" },
+          include: { items: { orderBy: { createdAt: "asc" } } },
+        },
+        // The flat list stays: every existing reader of this payload still
+        // uses it. Ordering by createdAt alone is round order — a round's
+        // items are written in one statement, after every item of the round
+        // before it — so the join back to order_rounds buys nothing here.
+        items: { orderBy: { createdAt: "asc" } },
         // A cancelled line is deleted from `items` outright, so without this
         // the board would show an order quietly shrinking with no account of
         // why — and staff would go on cooking what is no longer there.
         cancellations: { orderBy: { createdAt: "asc" } },
       },
     });
+
+    return stripPrices(orders, role);
   }
 
   /**
@@ -256,7 +279,9 @@ export class OrdersService {
    * trade. This is called when a card is expanded and after it advances.
    */
   async listEvents(userId: string, businessId: string, orderId: string) {
-    await this.businesses.assertOwns(userId, businessId);
+    const { role } = await this.businesses.assertAccess(userId, businessId, {
+      allow: ["owner", "kitchen"],
+    });
 
     const order = await this.prisma.db.order.findFirst({
       where: { id: orderId, businessId },
@@ -273,12 +298,15 @@ export class OrdersService {
 
     // BigInt does not survive JSON.stringify, and the id is only ever a React
     // key on the way out.
-    return events.map((e) => ({
+    const mapped = events.map((e) => ({
       id: Number(e.id),
       kind: e.kind,
       at: e.at.toISOString(),
       data: e.data,
+      actorId: e.actorId,
     }));
+
+    return stripPrices(mapped, role);
   }
 
   /**
@@ -316,24 +344,78 @@ export class OrdersService {
       );
     }
 
-    return this.prisma.db.order.update({
+    await this.prisma.db.order.update({
       where: { id: orderId },
       data: { isRunning: running },
+    });
+
+    // `assertOwns` above admits owners and nobody else, so the role is not in
+    // doubt here. Named rather than inferred so the strip is visible at every
+    // call site: the day this route is opened to the kitchen, this line is
+    // what has to change, in the same edit.
+    return this.orderForBoard(businessId, orderId, "owner");
+  }
+
+  /**
+   * One order in the shape the staff board draws.
+   *
+   * A read rather than an `include` on the write it follows, because the
+   * write is no longer the whole story: moving a round leaves the order's own
+   * status to an AFTER trigger, and anything returned by the UPDATE that
+   * caused it would carry the status from before the trigger ran.
+   *
+   * Stripped here, for the same reason stripPrices exists at all: this
+   * include is the same shape `listForBusiness` strips, and it is handed
+   * straight back by three mutating methods a kitchen account may call. A
+   * response that has left the server has leaked whatever is in it, whatever
+   * the browser then chooses to render — so the strip belongs at the one
+   * place all three share, not at each of them.
+   */
+  private async orderForBoard(
+    businessId: string,
+    orderId: string,
+    role: AccessRole,
+  ) {
+    const order = await this.prisma.db.order.findFirstOrThrow({
+      where: { id: orderId, businessId },
       include: {
         table: { select: { id: true, label: true } },
-        items: { orderBy: [{ batch: "asc" }, { createdAt: "asc" }] },
+        rounds: {
+          orderBy: { seq: "asc" },
+          include: { items: { orderBy: { createdAt: "asc" } } },
+        },
+        items: { orderBy: { createdAt: "asc" } },
         cancellations: { orderBy: { createdAt: "asc" } },
       },
     });
+
+    return stripPrices(order, role);
   }
 
+  /**
+   * Moves the whole table along — and, at `completed`, closes it.
+   *
+   * Still the board's one-tap action on an order card, so it keeps its route
+   * and its signature. What changed underneath is who writes `orders.status`:
+   * nobody here. The column is derived from the rounds by trigger, so this
+   * method moves the rounds and lets the derivation follow. Writing it here
+   * as well was two authors for one fact — and the hand-written value was not
+   * even the one that lasted, since the next round to move silently replaced
+   * it with what the rounds actually said.
+   *
+   * That makes closing a table literally that: finish everything still live
+   * on it. A single round left behind holds the order open through the
+   * derivation, and the table the owner just settled reappears on the board.
+   */
   async setStatus(
     userId: string,
     businessId: string,
     orderId: string,
     next: OrderStatus,
   ) {
-    await this.businesses.assertOwns(userId, businessId);
+    const { role } = await this.businesses.assertAccess(userId, businessId, {
+      allow: ["owner", "kitchen"],
+    });
 
     const order = await this.prisma.db.order.findFirst({
       where: { id: orderId, businessId },
@@ -343,30 +425,186 @@ export class OrdersService {
 
     // A finished order stays finished. Reopening one would put two open orders
     // on a table that has since seated new diners.
+    //
+    // Two different refusals on purpose. The state machine refusing is a
+    // fact about the order and reads as 409; a role refusing is a fact about
+    // the person and reads as 403. Collapsing them would tell a kitchen user
+    // their order was in the wrong state when it was not.
     if (!ALLOWED_TRANSITIONS[order.status].includes(next)) {
       throw new ConflictException(
         `An order that is ${order.status} cannot be moved to ${next}`,
       );
     }
+    if (!canRoleSetStatus(role, order.status, next)) {
+      throw new ForbiddenException(`You cannot move an order to ${next}`);
+    }
 
-    const updated = await this.prisma.db.order.update({
-      where: { id: orderId },
+    // Which live rounds this move actually applies to.
+    //
+    // A round already at or past `next` is left where it is, not refused. The
+    // order's status is its LEAST advanced live round, so a table reading
+    // "Being made" can already hold a round that is ready; tapping Ready on
+    // it is a legal move on the order and a no-op on that round. Refusing the
+    // whole call because one round had nowhere left to go would make exactly
+    // the multi-round table this feature exists for unservable. Closing a
+    // table is the case where nothing is excluded: every live status can
+    // reach `completed`.
+    //
+    // Terminal rounds are out of it entirely, which is the other half of the
+    // same rule — a chai cancelled an hour ago is not completed when the
+    // table is.
+    const movable = OPEN_STATUSES.filter((from) => canTransition(from, next));
+
+    // One statement, not a read followed by an update each. It is the same
+    // set either way — the filter above is the state machine, which is the
+    // same thing the per-round check would have asked — and the round trips
+    // a staff board makes over a hotel's wifi are the budget that matters
+    // here (see TENANT_TX_TIMEOUT_MS). Atomic without asking for it either:
+    // the whole request already runs inside the transaction TenantInterceptor
+    // opened, and prisma.db is that transaction's client — which is why it
+    // has no $transaction of its own to wrap this in.
+    //
+    // No role check beyond the one already made on the order.
+    // `canRoleSetStatus` is `canTransition` and ROLE_TARGETS together; the
+    // filter above has settled the first for every round this touches, and
+    // the second asks only about `next` and the person, neither of which
+    // varies from one round to the next.
+    const { count } = await this.prisma.db.orderRound.updateMany({
+      where: { orderId, businessId, status: { in: movable } },
       data: {
         status: next,
+        // `undefined`, not null, for the same reason as setRoundStatus: a
+        // timestamp this move did not produce is left out of the UPDATE
+        // rather than overwritten. It is also what keeps a kitchen move
+        // legal — order_rounds_kitchen_guard compares completed_at and raises
+        // 42501 on a staff write that changes it, and `new Date()` always
+        // would.
+        acceptedAt: next === "accepted" ? new Date() : undefined,
         completedAt:
-          next === "completed" || next === "cancelled" ? new Date() : null,
-      },
-      include: {
-        table: { select: { id: true, label: true } },
-        items: { orderBy: [{ batch: "asc" }, { createdAt: "asc" }] },
-        cancellations: { orderBy: { createdAt: "asc" } },
+          next === "completed" || next === "cancelled" ? new Date() : undefined,
       },
     });
+
+    // Nothing moved, so no trigger fired, so the order's status is wherever it
+    // already was — and the caller would otherwise be told 200, which is
+    // indistinguishable from having worked. On healthy data this cannot
+    // happen: the order's status IS its least advanced live round, that round
+    // sits at a status the guard above has just proved can reach `next`, and
+    // so it is in `movable`. It can happen on a row the hand-write this method
+    // used to do left divergent — a live `orders.status` over rounds that are
+    // all terminal, which the derivation would never produce. Such an order
+    // can never be closed, and `orders_one_open_per_table` then blocks the
+    // table taking any new order at all. Loud, with the id in it, beats a
+    // table that silently stops working and no line anywhere saying why.
+    if (count === 0) {
+      throw new ConflictException(
+        `Order ${orderId} has no live round to move to ${next}; its status disagrees with its rounds`,
+      );
+    }
+
+    const updated = await this.orderForBoard(businessId, orderId, role);
 
     // The diner's screen is listening on its table's topic. Nothing is
     // stored for them: they need the order's current state, which
     // get_table_order already returns, not a log of how it got there.
     await this.notifications.announceStatus(updated.tableId);
+
+    // Leaving `placed` is the moment this order becomes the kitchen's. Their
+    // bell has been holding the diner's "New order" row back until now, so it
+    // needs telling — nothing else on this path reaches the staff topic.
+    // Keyed on the move out of `placed` rather than on `accepted` alone,
+    // because the state machine lets an owner skip straight to `preparing`.
+    //
+    // Against the derived status rather than the one asked for, as
+    // setRoundStatus does: where the order ended up is something the
+    // derivation decided from every round, and it is what the kitchen's board
+    // filter and RLS will go on. `next` is only what was requested.
+    if (order.status === "placed" && KITCHEN_BOARD.includes(updated.status)) {
+      await this.notifications.announceReachedKitchen(businessId);
+    }
+
+    return updated;
+  }
+
+  /**
+   * Moves one round along.
+   *
+   * The order's own status is not written here — the derivation trigger does
+   * it, atomically, from every round. Writing both would be two authors for
+   * one fact, and they would disagree the first time two rounds moved at
+   * once.
+   */
+  async setRoundStatus(
+    userId: string,
+    businessId: string,
+    orderId: string,
+    roundId: string,
+    next: OrderStatus,
+  ) {
+    const { role } = await this.businesses.assertAccess(userId, businessId, {
+      allow: ["owner", "kitchen"],
+    });
+
+    // The order's status comes back on the same read: it is what the kitchen
+    // bell below is keyed on, and asking for it after the write would be
+    // asking for the derived value, which is the thing being compared against.
+    const round = await this.prisma.db.orderRound.findFirst({
+      where: { id: roundId, orderId, businessId },
+      select: {
+        id: true,
+        status: true,
+        seq: true,
+        order: { select: { status: true } },
+      },
+    });
+    if (!round) throw new NotFoundException("Round not found");
+
+    // The same two refusals, for the same two reasons, as setStatus: the
+    // state machine refusing is a fact about the round and reads as 409; a
+    // role refusing is a fact about the person and reads as 403.
+    if (!ALLOWED_TRANSITIONS[round.status].includes(next)) {
+      throw new ConflictException(
+        `Round ${round.seq} is ${round.status} and cannot be moved to ${next}`,
+      );
+    }
+    if (!canRoleSetStatus(role, round.status, next)) {
+      throw new ForbiddenException(`You cannot move a round to ${next}`);
+    }
+
+    await this.prisma.db.orderRound.update({
+      where: { id: roundId },
+      data: {
+        status: next,
+        // `undefined`, not null: a timestamp this move did not produce is
+        // left out of the UPDATE entirely rather than overwritten with null.
+        // A round that is accepted, then started, keeps the minute it was
+        // accepted — which is the only thing accepted_at is for.
+        acceptedAt: next === "accepted" ? new Date() : undefined,
+        completedAt:
+          next === "completed" || next === "cancelled" ? new Date() : undefined,
+      },
+    });
+
+    const updated = await this.orderForBoard(businessId, orderId, role);
+
+    // Unconditionally, not only when the order's derived status moved. The
+    // diner's payload carries the rounds themselves now — "the chai is ready,
+    // the dosa is not" — so accepting KOT 1 while KOT 2 is still waiting
+    // changes their screen without changing the order's status at all. Gating
+    // this on the derived status would leave them staring at a stale screen
+    // in precisely the multi-round case this whole feature exists for. The
+    // ping stores nothing, carries nothing, and swallows its own failures, so
+    // the cost of one the diner did not strictly need is nil.
+    await this.notifications.announceStatus(updated.tableId);
+
+    // The bell is a different matter, and stays conditional. It releases a
+    // notification row that is hidden from the kitchen until the ORDER
+    // reaches their board, so the thing it must key on is the order's status
+    // leaving `placed` — which here is something the derivation trigger
+    // decided, not something this method chose.
+    if (round.order.status === "placed" && KITCHEN_BOARD.includes(updated.status)) {
+      await this.notifications.announceReachedKitchen(businessId);
+    }
 
     return updated;
   }

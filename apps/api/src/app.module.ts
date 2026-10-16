@@ -4,6 +4,7 @@ import { AuthModule } from "./auth/auth.module";
 import { BusinessesController } from "./businesses/businesses.controller";
 import { BusinessesService } from "./businesses/businesses.service";
 import { JwtAuthGuard, RolesGuard } from "./common/guards";
+import { MustChangePinGuard } from "./common/must-change-pin.guard";
 import { HealthController } from "./health/health.controller";
 import { HealthService } from "./health/health.service";
 import { TenantInterceptor } from "./common/tenant.interceptor";
@@ -32,6 +33,8 @@ import { NotificationsController } from "./notifications/notifications.controlle
 import { NotificationsService } from "./notifications/notifications.service";
 import { RealtimeBroadcaster } from "./notifications/realtime.broadcast";
 import { WebPushSender } from "./notifications/web-push.sender";
+import { StaffController } from "./staff/staff.controller";
+import { StaffService } from "./staff/staff.service";
 
 @Module({
   imports: [PrismaModule, OtpChannelsModule, AuthModule, JwtModule.register({})],
@@ -50,6 +53,7 @@ import { WebPushSender } from "./notifications/web-push.sender";
     MerchController,
     AdminMerchController,
     NotificationsController,
+    StaffController,
   ],
   providers: [
     HealthService,
@@ -68,10 +72,14 @@ import { WebPushSender } from "./notifications/web-push.sender";
     NotificationsService,
     RealtimeBroadcaster,
     WebPushSender,
+    StaffService,
     // Authenticated by default: a new controller is protected unless it
     // explicitly opts out with @Public.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    // Runs after JwtAuthGuard so req.user is populated. Holds an
+    // owner-created account at the door until its PIN is replaced.
+    { provide: APP_GUARD, useClass: MustChangePinGuard },
     // Binds every authenticated request to its tenant transaction, so RLS
     // applies without any service having to remember to set it up.
     { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },

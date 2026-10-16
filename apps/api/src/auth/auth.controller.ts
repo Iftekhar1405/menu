@@ -13,11 +13,13 @@ import {
   loginSchema,
   otpRequestSchema,
   otpVerifySchema,
+  pinChangeSchema,
   pinResetSchema,
   signupSchema,
   type LoginInput,
   type OtpRequestInput,
   type OtpVerifyInput,
+  type PinChangeInput,
   type PinResetInput,
   type SignupInput,
 } from "@menu/shared";
@@ -134,12 +136,34 @@ export class AuthController {
     await this.auth.resetPin(body);
   }
 
+  /**
+   * Lets the holder of an owner-created account replace the PIN the owner
+   * chose for them. Required before anything else works — see
+   * MustChangePinGuard.
+   */
+  @HttpCode(204)
+  @Post("pin/change")
+  async changePin(
+    @CurrentUser() user: RequestUser,
+    @Body(new ZodBody(pinChangeSchema)) body: PinChangeInput,
+  ) {
+    await this.auth.changePin(user.id, body.currentPin, body.newPin);
+  }
+
   /** Who am I — used by the web app to hydrate the session on load. */
   @Get("me")
   async me(@CurrentUser() user: RequestUser) {
     const record = await this.prisma.user.findUnique({
       where: { id: user.id },
-      select: { id: true, fullName: true, email: true, phone: true, role: true, verifiedAt: true },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        phone: true,
+        role: true,
+        verifiedAt: true,
+        mustChangePin: true,
+      },
     });
     if (!record) throw new UnauthorizedException();
     return {
@@ -149,6 +173,7 @@ export class AuthController {
       phone: record.phone,
       role: record.role,
       verified: record.verifiedAt !== null,
+      mustChangePin: record.mustChangePin,
     };
   }
 }

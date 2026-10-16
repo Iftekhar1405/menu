@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import type { Table } from "@prisma/client";
 import { BusinessesService } from "../businesses/businesses.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { stripPrices } from "../orders/kitchen-shape";
 
 /**
  * Tokens are 32 hex characters from a CSPRNG — 128 bits. Guessing one is not a
@@ -21,11 +22,19 @@ export class TablesService {
   ) {}
 
   async list(userId: string, businessId: string): Promise<Table[]> {
-    await this.businesses.assertOwns(userId, businessId);
-    return this.prisma.db.table.findMany({
+    const { role } = await this.businesses.assertAccess(userId, businessId, {
+      allow: ["owner", "kitchen"],
+    });
+    const tables = await this.prisma.db.table.findMany({
       where: { businessId },
       orderBy: { position: "asc" },
     });
+    // `Table` carries no money column today, so this strips nothing — it is
+    // here for uniformity at the boundary, not because this row needs it.
+    // Keep the wrap anyway: it is a no-op now and the one line standing
+    // between a future price-bearing column on this model and kitchen
+    // staff seeing it unguarded.
+    return stripPrices(tables, role);
   }
 
   async create(userId: string, businessId: string, label: string): Promise<Table> {

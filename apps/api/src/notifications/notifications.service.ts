@@ -13,6 +13,9 @@ import {
 } from "./events";
 import { RealtimeBroadcaster } from "./realtime.broadcast";
 import { WebPushSender, type PushTarget } from "./web-push.sender";
+import { redactMoneyFromText, stripPrices } from "../orders/kitchen-shape";
+import { cursorFor, pendingFor, visibleTo } from "./visibility";
+import type { AccessRole } from "@menu/shared";
 
 export interface NotificationView {
   id: number;
@@ -190,6 +193,33 @@ export class NotificationsService {
     }
   }
 
+  /**
+   * Wakes the staff feed without storing anything.
+   *
+   * Putting an order on the kitchen's board writes no notification of its
+   * own — the row that describes it was written when the diner placed it.
+   * What the move changes is who may read that row: it is hidden from the
+   * kitchen until then (see notifications/visibility.ts). Without this ping
+   * the kitchen's bell would only discover it on the next unrelated event,
+   * which on a quiet evening is the order after it — far too late to be a
+   * notification.
+   *
+   * Warn, never throw: the status change is already committed and the person
+   * who made it is watching a button.
+   */
+  async announceReachedKitchen(businessId: string): Promise<void> {
+    try {
+      await this.realtime.ping(
+        businessChannel(businessId, this.env.REALTIME_CHANNEL_SECRET),
+        {},
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Could not wake the staff feed for business ${businessId}: ${describe(err)}`,
+      );
+    }
+  }
+
   private async deliverPush(emitted: EmitResult): Promise<void> {
     const { dead } = await this.push.send(emitted.subscriptions, {
       id: emitted.notification.id,
@@ -232,32 +262,50 @@ export class NotificationsService {
     channel: string;
     pushPublicKey: string;
   }> {
-    await this.businesses.assertOwns(userId, businessId);
+    const { role } = await this.businesses.assertAccess(userId, businessId, {
+      allow: ["owner", "kitchen"],
+    });
 
-    const [rows, unread, newest] = await Promise.all([
+    const since_ = await this.feedFloor(role, businessId, userId);
+    const visible = visibleTo(role, businessId, since_);
+    const pending = pendingFor(role, businessId, since_);
+
+    const [rows, unread, newest, oldestPending] = await Promise.all([
       this.prisma.db.notification.findMany({
-        where: { businessId, ...(since !== null && { id: { gt: since } }) },
+        where: { ...visible, ...(since !== null && { id: { gt: since } }) },
         orderBy: { id: "desc" },
         take: limit,
       }),
-      this.prisma.db.notification.count({ where: { businessId, readAt: null } }),
+      this.prisma.db.notification.count({ where: { ...visible, readAt: null } }),
       this.prisma.db.notification.findFirst({
-        where: { businessId },
+        where: visible,
         orderBy: { id: "desc" },
         select: { id: true },
       }),
+      // Oldest first: the cursor has to stop below the *earliest* row still
+      // waiting on an accept, not the latest.
+      pending
+        ? this.prisma.db.notification.findFirst({
+            where: pending,
+            orderBy: { id: "asc" },
+            select: { id: true },
+          })
+        : null,
     ]);
 
-    return {
-      items: rows.map(toView),
-      unread,
-      // The newest id that exists, not the newest returned. A page truncated
-      // by `take` must not leave the cursor behind rows the client would
-      // then never ask for again.
-      cursor: newest ? Number(newest.id) : 0,
-      channel: businessChannel(businessId, this.env.REALTIME_CHANNEL_SECRET),
-      pushPublicKey: this.env.VAPID_PUBLIC_KEY,
-    };
+    return stripPrices(
+      {
+        items: rows.map(toView).map((n) => redactNotificationMoney(n, role)),
+        unread,
+        cursor: cursorFor(
+          newest ? Number(newest.id) : 0,
+          oldestPending ? Number(oldestPending.id) : null,
+        ),
+        channel: businessChannel(businessId, this.env.REALTIME_CHANNEL_SECRET),
+        pushPublicKey: this.env.VAPID_PUBLIC_KEY,
+      },
+      role,
+    );
   }
 
   /** Marks the named notifications read, or all of them when none are named. */
@@ -266,13 +314,25 @@ export class NotificationsService {
     businessId: string,
     ids: number[],
   ): Promise<{ unread: number }> {
-    await this.businesses.assertOwns(userId, businessId);
+    const { role } = await this.businesses.assertAccess(userId, businessId, {
+      allow: ["owner", "kitchen"],
+    });
+
+    const visible = visibleTo(
+      role,
+      businessId,
+      await this.feedFloor(role, businessId, userId),
+    );
 
     await this.prisma.db.notification.updateMany({
-      // businessId stays in the filter even though RLS enforces it too —
-      // the ids came from the client.
+      // Scoped to what this reader can actually see, not just to the ids they
+      // sent — which came from a client, and which RLS alone would let an
+      // owner's "mark all" apply venue-wide. For the kitchen the scoping is
+      // load-bearing: marking a still-hidden row read would hand it over
+      // already-acknowledged once the order was accepted, so it would never
+      // chime and never raise the badge. A silently dropped order.
       where: {
-        businessId,
+        ...visible,
         readAt: null,
         ...(ids.length > 0 && { id: { in: ids.map((n) => BigInt(n)) } }),
       },
@@ -280,9 +340,38 @@ export class NotificationsService {
     });
 
     const unread = await this.prisma.db.notification.count({
-      where: { businessId, readAt: null },
+      where: { ...visible, readAt: null },
     });
-    return { unread };
+    return stripPrices({ unread }, role);
+  }
+
+  /**
+   * The earliest notification a reader is entitled to, or null for all of them.
+   *
+   * Staff see the service they are working, not the venue's history.
+   * Notifications are business-scoped, so without this a kitchen member who
+   * started this morning opens the bell to a week of other people's rounds —
+   * noise they cannot act on, about tables that have long since paid and
+   * left. Their own start date is the only sensible floor, and it is already
+   * on the row that grants them access.
+   *
+   * Owners keep the full history: it is their venue.
+   *
+   * A staff row that has gone missing between the access check and here
+   * floors the feed at *now* rather than opening it: the safe direction for
+   * a question we cannot answer is fewer notifications, not all of them.
+   */
+  private async feedFloor(
+    role: AccessRole,
+    businessId: string,
+    userId: string,
+  ): Promise<Date | null> {
+    if (role === "owner") return null;
+    const staff = await this.prisma.db.businessStaff.findFirst({
+      where: { businessId, userId, status: "active" },
+      select: { createdAt: true },
+    });
+    return staff?.createdAt ?? new Date();
   }
 
   // ── Push subscriptions ────────────────────────────────────────────────────
@@ -314,6 +403,26 @@ export class NotificationsService {
   async removePush(userId: string, endpoint: string): Promise<void> {
     await this.prisma.db.pushSubscription.deleteMany({ where: { userId, endpoint } });
   }
+}
+
+/**
+ * Blanks the money a notification's rendered sentence carries, for a reader
+ * who is not allowed to see it.
+ *
+ * `stripPrices` works on keys; `title` and `body` are prose composed at emit
+ * time with the total already interpolated, so only the text itself can be
+ * cleaned. See redactMoneyFromText for why this happens at read time.
+ */
+function redactNotificationMoney(
+  n: NotificationView,
+  role: AccessRole,
+): NotificationView {
+  if (role === "owner") return n;
+  return {
+    ...n,
+    title: redactMoneyFromText(n.title),
+    body: redactMoneyFromText(n.body),
+  };
 }
 
 function toView(row: {

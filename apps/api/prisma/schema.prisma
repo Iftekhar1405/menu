@@ -31,7 +31,17 @@ datasource db {
 
 enum UserRole {
   owner
+  kitchen
   platform_admin
+}
+
+enum StaffRole {
+  kitchen
+}
+
+enum StaffStatus {
+  active
+  suspended
 }
 
 enum BusinessType {
@@ -67,12 +77,44 @@ model User {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  /// True for an account an owner created. Gates the whole app until the
+  /// person picks their own PIN — until then the owner knows their
+  /// credential, and the audit trail means nothing.
+  mustChangePin  Boolean   @default(false) @map("must_change_pin")
+
   businesses     Business[]
   otpChallenges  OtpChallenge[]
   refreshTokens  RefreshToken[]
   pushSubscriptions PushSubscription[]
+  staffRoles     BusinessStaff[]
 
   @@map("users")
+}
+
+/// A person who works at a business but does not own it.
+///
+/// Deliberately not a general membership table: `Business.ownerId` is still
+/// the tenant boundary and every existing policy keys on it. This table adds
+/// a second, narrower way in, which is why its rows carry a status — ending
+/// someone's access has to be one column, not a deletion that takes their
+/// history with it.
+model BusinessStaff {
+  id          String      @id @default(uuid()) @db.Uuid
+  businessId  String      @map("business_id") @db.Uuid
+  userId      String      @map("user_id") @db.Uuid
+  role        StaffRole   @default(kitchen)
+  status      StaffStatus @default(active)
+  /// Which owner added them. Nulled rather than cascaded, so the audit trail
+  /// survives the author's account being removed.
+  createdById String?     @map("created_by_id") @db.Uuid
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, userId])
+  @@map("business_staff")
 }
 
 model OtpChallenge {
@@ -185,6 +227,7 @@ model Business {
   views      MenuView[]
   tables     Table[]
   orders     Order[]
+  orderRounds OrderRound[]
   orderEvents OrderEvent[]
   bills      Bill[]
   ratings    OrderRating[]
@@ -192,6 +235,7 @@ model Business {
   merchOrders MerchOrder[]
   notifications Notification[]
   cancellations OrderItemCancellation[]
+  staff        BusinessStaff[]
 
   @@index([ownerId])
   @@map("businesses")
@@ -348,6 +392,7 @@ model Order {
 
   business Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
   table    Table       @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  rounds   OrderRound[]
   items    OrderItem[]
   events   OrderEvent[]
   bill     Bill?
@@ -359,6 +404,38 @@ model Order {
   @@index([businessId, status])
   @@index([tableId, status])
   @@map("orders")
+}
+
+/// One round of an order: what a table asked for in one go.
+///
+/// Status lives here rather than on the order so a chai ordered at 9pm does
+/// not drag a biryani that is already ready back to New. The order's own
+/// status is derived from these by trigger — see derive_order_status().
+model OrderRound {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  businessId  String      @map("business_id") @db.Uuid
+  orderId     String      @map("order_id") @db.Uuid
+  /// 1-based, per order. Migrated from the old order_items.batch.
+  seq         Int
+  /// Denormalised from the order so the KOT serial needs no join.
+  businessDay DateTime    @map("business_day") @db.Date
+  /// What the pass calls this ticket. Per business, per day.
+  kotNumber   Int         @map("kot_number")
+  status      OrderStatus @default(placed)
+  placedAt    DateTime    @default(now()) @map("placed_at") @db.Timestamptz(6)
+  acceptedAt  DateTime?   @map("accepted_at") @db.Timestamptz(6)
+  completedAt DateTime?   @map("completed_at") @db.Timestamptz(6)
+
+  business Business     @relation(fields: [businessId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  order    Order        @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  items    OrderItem[]
+  events   OrderEvent[]
+
+  @@unique([orderId, seq])
+  @@unique([businessId, businessDay, kotNumber], map: "order_rounds_kot_key")
+  @@index([businessId, status], map: "order_rounds_business_status_idx")
+  @@index([orderId, seq], map: "order_rounds_order_idx")
+  @@map("order_rounds")
 }
 
 model OrderItem {
@@ -377,13 +454,14 @@ model OrderItem {
 
   quantity  Int
   /// Which round this arrived in, so staff can see what is new.
-  batch     Int
+  roundId   String   @map("round_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  round OrderRound @relation(fields: [roundId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   cancellations OrderItemCancellation[]
 
-  @@index([orderId, batch])
+  @@index([roundId, createdAt], map: "order_items_round_idx")
   @@index([businessId])
   @@map("order_items")
 }
@@ -453,11 +531,19 @@ model OrderEvent {
   kind       String
   data       Json     @default("{}")
   at         DateTime @default(now()) @db.Timestamptz(6)
+  /// Who caused it. Null for a diner, the system, or anything from before
+  /// staff accounts existed — which is honest: we do not know.
+  actorId    String?  @map("actor_id") @db.Uuid
+  /// Null for order-level events; set for anything that happened to one round.
+  roundId    String?  @map("round_id") @db.Uuid
 
-  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  order    Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  business Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  round    OrderRound? @relation(fields: [roundId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([orderId, id])
+  @@index([actorId, id(sort: Desc)])
+  @@index([roundId, id], map: "order_events_round_idx")
   @@map("order_events")
 }
 

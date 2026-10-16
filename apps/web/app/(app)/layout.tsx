@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import { SessionProvider, useSession } from "@/components/session";
 import { logout } from "@/lib/api-client";
 import { Button, cx, Sheet, SheetGrabber } from "@/components/ui";
@@ -12,31 +12,20 @@ import { NotificationsProvider } from "@/components/notifications/provider";
 import { NotificationBell } from "@/components/notifications/bell";
 import { NotificationToasts } from "@/components/notifications/toasts";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { canSee, navFor, type NavItem, type Role } from "@/lib/nav";
 
-/**
- * The first four are what an owner touches during a service; the rest are
- * things you set up once and rarely return to. That split is what decides
- * which sections get a tab on a phone and which live behind More — not the
- * order they happen to appear in on a desktop sidebar, which is the same
- * list either way.
+/** Icons for each nav entry, keyed by href. Kept separate from nav.ts so
+ * that file stays free of React and can run under a node test environment.
  */
-const NAV = [
-  { href: "/dashboard",   label: "Overview",       icon: OverviewIcon },
-  { href: "/orders",      label: "Orders",          icon: OrdersIcon },
-  { href: "/menu",        label: "Menu",            icon: MenuIcon },
-  { href: "/tables",      label: "Tables",          icon: TablesIcon },
-  { href: "/billing",     label: "Billing",         icon: BillingIcon },
-  { href: "/appearance",  label: "Menu design",     icon: AppearanceIcon },
-  { href: "/qr",          label: "QR code",         icon: QrIcon },
-  { href: "/merch",       label: "Printed cards",   icon: CardsIcon },
-  { href: "/settings",    label: "Settings",        icon: SettingsIcon },
-];
+const ICONS: Record<string, ComponentType> = {
+  "/dashboard": OverviewIcon, "/orders": OrdersIcon, "/menu": MenuIcon,
+  "/dishes": MenuIcon, "/tables": TablesIcon, "/billing": BillingIcon,
+  "/appearance": AppearanceIcon, "/qr": QrIcon, "/merch": CardsIcon,
+  "/settings": SettingsIcon, "/admin": CardsIcon,
+};
 
 /** How many of those get their own tab. The rest go behind More. */
 const TABS = 4;
-
-/** Ours. Hidden from owners, and refused by the API even if they find it. */
-const ADMIN_NAV = [{ href: "/admin", label: "Card orders", icon: CardsIcon }];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -55,9 +44,37 @@ function Shell({ children }: { children: React.ReactNode }) {
   const confirm = useConfirm();
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const items = [...NAV, ...(me?.role === "platform_admin" ? ADMIN_NAV : [])];
+  const role = (me?.role ?? "owner") as Role;
+  const items = navFor(role);
   const tabs = items.slice(0, TABS);
   const rest = items.slice(TABS);
+
+  /*
+   * Two gates, one effect, and the order between them matters.
+   *
+   * An owner-created account must change its PIN before anything else works
+   * — that check has to run first and `return` on a redirect, because if the
+   * section gate below ran first a kitchen user who owes a PIN change and
+   * lands on `/settings` would be bounced to `/orders` and then immediately
+   * on to `/change-pin`, a visible double redirect.
+   *
+   * `/change-pin` is in every role's allow-list in `lib/nav.ts`, so once
+   * `mustChangePin` is cleared the second branch can never bounce the user
+   * off the page they're already sitting on — no loop.
+   *
+   * This is cosmetic only, same as `canSee` itself: it stops a stale tab or
+   * a typed URL from rendering a screen this account shouldn't see. The real
+   * boundary is `MustChangePinGuard` on the API, which refuses every other
+   * route server-side regardless of what this effect does.
+   */
+  useEffect(() => {
+    if (loading || !me) return;
+    if (me.mustChangePin && pathname !== "/change-pin") {
+      router.replace("/change-pin");
+      return;
+    }
+    if (!me.mustChangePin && !canSee(role, pathname)) router.replace("/orders");
+  }, [loading, me, role, pathname, router]);
 
   async function signOut() {
     const ok = await confirm({
@@ -151,7 +168,7 @@ function Shell({ children }: { children: React.ReactNode }) {
             <nav aria-label="Sections" className="flex min-w-0 flex-col gap-0.5">
               {items.map((item) => {
                 const active = pathname === item.href;
-                const Icon = item.icon;
+                const Icon = ICONS[item.href]!;
                 return (
                   <Link
                     key={item.href}
@@ -210,21 +227,23 @@ function Shell({ children }: { children: React.ReactNode }) {
           {tabs.map((item) => (
             <Tab key={item.href} item={item} active={pathname === item.href} />
           ))}
-          <button
-            type="button"
-            onClick={() => setMoreOpen(true)}
-            aria-haspopup="dialog"
-            aria-expanded={moreOpen}
-            className={cx(
-              "spring flex min-w-0 flex-1 flex-col items-center justify-center gap-1 py-2",
-              rest.some((i) => i.href === pathname)
-                ? "text-[var(--accent)]"
-                : "text-faint",
-            )}
-          >
-            <MoreIcon />
-            <span className="text-[10.5px] font-medium leading-none">More</span>
-          </button>
+          {rest.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setMoreOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={moreOpen}
+              className={cx(
+                "spring flex min-w-0 flex-1 flex-col items-center justify-center gap-1 py-2",
+                rest.some((i) => i.href === pathname)
+                  ? "text-[var(--accent)]"
+                  : "text-faint",
+              )}
+            >
+              <MoreIcon />
+              <span className="text-[10.5px] font-medium leading-none">More</span>
+            </button>
+          )}
         </nav>
 
         {/* ── More sheet ─────────────────────────────────────────────────── */}
@@ -261,7 +280,7 @@ function Shell({ children }: { children: React.ReactNode }) {
               <ul className="overflow-hidden rounded-2xl border border-line">
                 {rest.map((item, i) => {
                   const active = pathname === item.href;
-                  const Icon = item.icon;
+                  const Icon = ICONS[item.href]!;
                   return (
                     <li key={item.href}>
                       <Link
@@ -306,10 +325,10 @@ function Tab({
   item,
   active,
 }: {
-  item: { href: string; label: string; icon: () => React.ReactElement };
+  item: NavItem;
   active: boolean;
 }) {
-  const Icon = item.icon;
+  const Icon = ICONS[item.href]!;
   return (
     <Link
       href={item.href}

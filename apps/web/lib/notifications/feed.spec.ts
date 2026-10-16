@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { emptyFeed, mergeFeed, markReadLocally, type FeedItem } from "./feed";
+import {
+  emptyFeed,
+  mergeFeed,
+  markReadLocally,
+  takeUnannounced,
+  type FeedItem,
+} from "./feed";
 
 function item(id: number, over: Partial<FeedItem> = {}): FeedItem {
   return {
@@ -118,5 +124,50 @@ describe("markReadLocally", () => {
       initial: true,
     });
     expect(markReadLocally(feed, [1]).unread).toBe(1);
+  });
+});
+
+describe("announcing once, ever", () => {
+  const item = (id: number): FeedItem => ({
+    id,
+    kind: "order.placed",
+    title: `New order · Table A${id}`,
+    body: "Coffee (Small)",
+    data: {},
+    orderId: `o${id}`,
+    tableId: `t${id}`,
+    createdAt: "2026-10-04T08:51:42.500Z",
+    readAt: null,
+  });
+
+  it("passes a notification through the first time", () => {
+    expect(takeUnannounced(new Set(), [item(1), item(2)]).map((i) => i.id))
+      .toEqual([1, 2]);
+  });
+
+  // The one that bit: StrictMode invokes the setFeed updater twice in
+  // development, so the same `fresh` list reaches announce twice and the
+  // kitchen saw two identical "New order · Table A1" toasts for one order.
+  it("drops the second call with the same rows", () => {
+    const seen = new Set<number>();
+    const fresh = [item(1), item(2)];
+    takeUnannounced(seen, fresh);
+    expect(takeUnannounced(seen, fresh)).toEqual([]);
+  });
+
+  it("still lets a genuinely new row through afterwards", () => {
+    const seen = new Set<number>();
+    takeUnannounced(seen, [item(1)]);
+    expect(takeUnannounced(seen, [item(1), item(2)]).map((i) => i.id)).toEqual([2]);
+  });
+
+  // A tablet left open for a week must not grow this without bound, and the
+  // ids it forgets must be older than anything the feed still holds.
+  it("trims to the newest ids once it has seen too many", () => {
+    const seen = new Set<number>();
+    for (let id = 1; id <= 1001; id++) takeUnannounced(seen, [item(id)]);
+    expect(seen.size).toBe(500);
+    expect(seen.has(1001)).toBe(true);
+    expect(seen.has(1)).toBe(false);
   });
 });

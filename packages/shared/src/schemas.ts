@@ -260,3 +260,30 @@ export const qrSheetSchema = z.object({
   style: z.enum(SHEET_STYLES).default("card"),
 });
 export type QrSheetInput = z.infer<typeof qrSheetSchema>;
+
+/**
+ * An owner creating a kitchen-staff login. There is no invitation flow —
+ * the owner picks the identifier, and the server mints the PIN — so the
+ * only thing to validate here is the account's name and how to reach it.
+ */
+export const staffCreateSchema = z.object({
+  fullName: z.string().min(1, "Please enter their name").max(80),
+  identifier: z.string().min(1, "Enter a phone number or email address"),
+  country: z.string().length(2).default("IN"),
+});
+export type StaffCreateInput = z.infer<typeof staffCreateSchema>;
+
+export const staffStatusSchema = z.object({
+  status: z.enum(["active", "suspended"]),
+});
+export type StaffStatusInput = z.infer<typeof staffStatusSchema>;
+
+/**
+ * A staff member replacing the PIN the owner chose for them. Until this
+ * clears, the owner still knows a valid credential for the account.
+ */
+export const pinChangeSchema = z.object({
+  currentPin: z.string().regex(/^\d{6}$/, "PIN must be exactly 6 digits"),
+  newPin: z.string().regex(/^\d{6}$/, "PIN must be exactly 6 digits"),
+});
+export type PinChangeInput = z.infer<typeof pinChangeSchema>;

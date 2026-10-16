@@ -105,3 +105,52 @@ export function markReadLocally(feed: Feed, ids: number[]): Feed {
 
   return { ...feed, items, unread: items.filter((i) => i.readAt === null).length };
 }
+
+/**
+ * How many announced ids to remember, and how many to keep when trimming.
+ *
+ * Comfortably more than `MAX_ITEMS`, so the memory of what has already
+ * chimed always outlives the feed rows that would otherwise look new again.
+ * A tablet left open for a week would accumulate these forever otherwise.
+ */
+const MAX_ANNOUNCED = 1000;
+const KEEP_ANNOUNCED = 500;
+
+/**
+ * Of these, the ones that have not already been announced — and remembers
+ * them, so the next caller gets nothing.
+ *
+ * `mergeFeed` decides what is new relative to the rows held in state, which
+ * is the right question but not a durable answer: React invokes a state
+ * updater twice in development under StrictMode, and two refreshes can
+ * overlap and carry the same row — more easily now that the kitchen's cursor
+ * is deliberately held back over rows that are not visible to it yet. Both
+ * produce the same `fresh` list twice, and the result is an order that
+ * chimes twice and shows two identical toasts.
+ *
+ * Announcing is the one effect here that cannot be made idempotent by being
+ * repeated correctly — a second chime is a second order as far as the person
+ * hearing it is concerned. So the set lives outside React's control flow and
+ * answers "has this id ever been announced", which no amount of re-running
+ * can change.
+ *
+ * Mutates `announced` in place: it is a ref, and the whole point is that it
+ * survives the render that discovers it.
+ */
+export function takeUnannounced(
+  announced: Set<number>,
+  fresh: FeedItem[],
+): FeedItem[] {
+  const first = fresh.filter((i) => !announced.has(i.id));
+  for (const item of first) announced.add(item.id);
+
+  if (announced.size > MAX_ANNOUNCED) {
+    // Newest kept: an id old enough to be trimmed is also long gone from
+    // `items`, so nothing that could still be re-delivered is forgotten.
+    const keep = [...announced].sort((a, b) => b - a).slice(0, KEEP_ANNOUNCED);
+    announced.clear();
+    for (const id of keep) announced.add(id);
+  }
+
+  return first;
+}

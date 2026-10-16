@@ -21,6 +21,7 @@ import {
   emptyFeed,
   markReadLocally,
   mergeFeed,
+  takeUnannounced,
   type Feed,
   type FeedItem,
 } from "@/lib/notifications/feed";
@@ -97,6 +98,10 @@ export function NotificationsProvider({
   // re-creating them would tear down and rebuild the socket on every order.
   const cursor = useRef(0);
   const booted = useRef(false);
+  // What has already chimed. Outside React state on purpose — see
+  // takeUnannounced: a second chime is a second order to the person hearing
+  // it, so this has to survive a re-run of the update that produced it.
+  const announced = useRef<Set<number>>(new Set());
 
   // ── Sound ───────────────────────────────────────────────────────────────
 
@@ -133,13 +138,14 @@ export function NotificationsProvider({
   // ── Reading ─────────────────────────────────────────────────────────────
 
   const announce = useCallback((fresh: FeedItem[]) => {
-    if (fresh.length === 0) return;
+    const first = takeUnannounced(announced.current, fresh);
+    if (first.length === 0) return;
 
     chime.current?.play("order");
 
-    setToasts((current) => [...fresh, ...current].slice(0, MAX_TOASTS));
+    setToasts((current) => [...first, ...current].slice(0, MAX_TOASTS));
 
-    for (const item of fresh) {
+    for (const item of first) {
       escalation.current?.arm(item.id);
       showOsNotification(item);
     }
@@ -190,6 +196,7 @@ export function NotificationsProvider({
 
     booted.current = false;
     cursor.current = 0;
+    announced.current.clear();
     setFeed(emptyFeed);
 
     let channel: LiveChannel | null = null;
