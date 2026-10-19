@@ -12,6 +12,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
   const station = {
     findFirst: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     findMany: vi.fn(),
   };
   const output = { deleteMany: vi.fn() };
@@ -133,5 +134,61 @@ describe("StationsService.attachOutput", () => {
     const { svc, queryRaw } = makeDeps();
     await svc.create("u1", "b1", "Counter");
     expect(String(queryRaw.mock.calls[0]![0])).toContain("create_print_station");
+  });
+
+  it("passes the values it was given, not just the right function name", async () => {
+    // Checking the SQL text alone only catches a typo in the function name.
+    // A swapped businessId/stationId would still name attach_station_output
+    // correctly while writing against the wrong venue's row — this checks
+    // what was actually interpolated into the call.
+    const { svc, station, queryRaw } = makeDeps();
+    station.findFirst.mockResolvedValue({ id: "s7", businessId: "b9", revokedAt: null });
+
+    await svc.attachOutput("u1", "b9", "s7", output);
+
+    const [, ...values] = queryRaw.mock.calls[0]!;
+    expect(values).toEqual([
+      "b9",
+      "s7",
+      output.job,
+      output.deviceLabel,
+      output.deviceKey,
+      output.transport,
+      output.paperWidth,
+    ]);
+  });
+
+  it("turns a function's refusal into a status rather than a 500", async () => {
+    // Reachable, not theoretical: an owner can revoke a station in the
+    // window between resolve() checking it and this $queryRaw running.
+    // Without error mapping, attach_station_output's own RAISE EXCEPTION
+    // arrives as raw Postgres text and Nest answers 500.
+    const { svc, station, queryRaw } = makeDeps();
+    station.findFirst.mockResolvedValue({ id: "s1", businessId: "b1", revokedAt: null });
+    queryRaw.mockRejectedValueOnce(new Error("ERROR: no such station"));
+
+    await expect(svc.attachOutput("u1", "b1", "s1", output)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+});
+
+describe("StationsService.revoke", () => {
+  it("revokes only within the business named in the URL", async () => {
+    // RLS does not object when an owner's two venues both belong to them —
+    // only the URL's :bid says which shop this request is about.
+    const { svc, station } = makeDeps();
+    await svc.revoke("u1", "b1", "s1");
+    expect(station.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "s1", businessId: "b1" } }),
+    );
+  });
+
+  it("404s when the pairing matches nothing", async () => {
+    // Venue A's :bid paired with venue B's station id: the owner reaches
+    // both, so RLS allows the update, but it should touch nothing here.
+    const { svc, station } = makeDeps();
+    station.updateMany.mockResolvedValue({ count: 0 });
+    return expect(svc.revoke("u1", "b1", "s1")).rejects.toBeInstanceOf(NotFoundException);
   });
 });

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   GoneException,
   Injectable,
@@ -8,9 +9,45 @@ import type { PrintStation, StationOutput } from "@prisma/client";
 import type { StationOutputInput } from "@menu/shared";
 import { BusinessesService } from "../businesses/businesses.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { cleanPgMessage } from "../common/pg-message";
 
 /** Who may reach a station at all. Narrowed per job in attachOutput. */
 const STATION_ROLES = { allow: ["owner", "kitchen"] as const };
+
+/**
+ * Turns a SECURITY DEFINER function's RAISE EXCEPTION into an HTTP status,
+ * the same precedent as `place_table_round`'s own catch
+ * (orders.service.ts:88-103). `create_print_station` and
+ * `attach_station_output` re-check the caller themselves — RLS is not going
+ * to — and raise exactly two messages by hand:
+ *
+ *  - "not your business": the caller has no access to this business at all.
+ *  - "no such station": attach_station_output's own existence check. This is
+ *    reachable, not theoretical — an owner can revoke a station in the
+ *    window between resolve() seeing it live and this call reaching
+ *    Postgres.
+ *
+ * Anything else that looks like a RAISE EXCEPTION becomes a 400 with the
+ * message cleaned up for a person, same as every other SQL-raised error in
+ * this API. Without this wrapper both functions' own guards arrive as raw
+ * Postgres text and Nest answers 500.
+ */
+async function fromFunction<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "";
+    if (/not your business/.test(message)) {
+      throw new ForbiddenException("Not your business");
+    }
+    if (/no such station/.test(message)) {
+      throw new NotFoundException("Station not found");
+    }
+    const match = /ERROR: (.+)/.exec(message);
+    if (match) throw new BadRequestException(cleanPgMessage(match[1]!));
+    throw err;
+  }
+}
 
 @Injectable()
 export class StationsService {
@@ -72,9 +109,11 @@ export class StationsService {
     await this.businesses.assertAccess(userId, businessId, {
       allow: [...STATION_ROLES.allow],
     });
-    const rows = await this.prisma.db.$queryRaw<
-      { station: PrintStation }[]
-    >`SELECT create_print_station(${businessId}::uuid, ${name}) AS station`;
+    const rows = await fromFunction(() =>
+      this.prisma.db.$queryRaw<
+        { station: PrintStation }[]
+      >`SELECT create_print_station(${businessId}::uuid, ${name}) AS station`,
+    );
     return rows[0]!.station;
   }
 
@@ -94,13 +133,22 @@ export class StationsService {
     return this.prisma.db.printStation.update({ where: { id: stationId }, data: { name } });
   }
 
-  /** Revoked, not deleted: the receipts pointing at it are the record. */
+  /**
+   * Revoked, not deleted: the receipts pointing at it are the record.
+   *
+   * Scoped to `businessId` as well as `stationId` — RLS alone does not
+   * object to the mismatch when an owner has two venues: a station id from
+   * venue B against venue A's `:bid` in the URL is still a row that owner
+   * may write. Without this, that pairing silently revokes a machine in a
+   * shop nobody asked about, and nothing tells the caller why.
+   */
   async revoke(userId: string, businessId: string, stationId: string) {
     await this.businesses.assertAccess(userId, businessId, { allow: ["owner"] });
-    return this.prisma.db.printStation.update({
-      where: { id: stationId },
+    const { count } = await this.prisma.db.printStation.updateMany({
+      where: { id: stationId, businessId },
       data: { revokedAt: new Date() },
     });
+    if (count === 0) throw new NotFoundException("Station not found");
   }
 
   /**
@@ -130,12 +178,14 @@ export class StationsService {
 
     // Same door as create(): the upsert lives inside attach_station_output,
     // which is also what makes re-linking a swapped printer work.
-    const rows = await this.prisma.db.$queryRaw<{ output: StationOutput }[]>`
+    const rows = await fromFunction(() =>
+      this.prisma.db.$queryRaw<{ output: StationOutput }[]>`
       SELECT attach_station_output(
         ${businessId}::uuid, ${stationId}::uuid, ${body.job}::"PrintJob",
         ${body.deviceLabel}, ${body.deviceKey}, ${body.transport}::"PrintTransport",
         ${body.paperWidth}::smallint
-      ) AS output`;
+      ) AS output`,
+    );
     return rows[0]!.output;
   }
 
