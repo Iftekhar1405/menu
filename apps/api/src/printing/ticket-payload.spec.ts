@@ -132,6 +132,21 @@ describe("billTicketFrom", () => {
     expect(billTicketFrom({ ...bill, pricesIncludeTax: false }, 14).taxLine).toBe("GST 5% (excl.)");
   });
 
+  it("keeps a second address line when there is one", () => {
+    // Every other fixture leaves addressLine2 null, so without this the
+    // whole array element can be deleted from the implementation and the
+    // suite stays green — a second address line would silently never print.
+    const two = billTicketFrom(
+      { ...bill, business: { ...bill.business, addressLine2: "Road No. 12" } },
+      14,
+    );
+    expect(two.addressLines).toEqual([
+      "12-3-45 Banjara Hills",
+      "Road No. 12",
+      "Hyderabad 500034",
+    ]);
+  });
+
   it("folds the address into lines, skipping the parts that are not set", () => {
     // Most venues fill in two of these six fields. Blank lines on a
     // receipt look like a broken printer.
