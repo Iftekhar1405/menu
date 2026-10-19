@@ -287,3 +287,21 @@ export const pinChangeSchema = z.object({
   newPin: z.string().regex(/^\d{6}$/, "PIN must be exactly 6 digits"),
 });
 export type PinChangeInput = z.infer<typeof pinChangeSchema>;
+
+export const stationCreateSchema = z.object({
+  name: z.string().trim().min(1).max(40),
+});
+export type StationCreateInput = z.infer<typeof stationCreateSchema>;
+
+export const stationRenameSchema = stationCreateSchema;
+export type StationRenameInput = StationCreateInput;
+
+export const stationOutputSchema = z.object({
+  job: z.enum(["token", "kitchen", "bill"]),
+  deviceLabel: z.string().trim().min(1).max(120),
+  /// vendorId:productId:serial, as the browser reported it.
+  deviceKey: z.string().trim().min(1).max(200),
+  transport: z.enum(["usb", "serial"]),
+  paperWidth: z.union([z.literal(58), z.literal(80)]),
+});
+export type StationOutputInput = z.infer<typeof stationOutputSchema>;
