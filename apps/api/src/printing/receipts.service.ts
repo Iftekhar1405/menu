@@ -9,8 +9,23 @@ import { loadEnv, usesRealtime } from "../config/env";
 import { BillingService } from "../billing/billing.service";
 import { businessChannel } from "../notifications/channel-name";
 import { PrismaService } from "../prisma/prisma.service";
+import { translatePgError } from "./pg-errors";
 import { StationsService } from "./stations.service";
 import { billTicketFrom, kitchenTicketFrom, tokenTicketFrom } from "./ticket-payload";
+
+/**
+ * The one error `claim()` must catch ahead of everything else.
+ *
+ * `print_receipts_claim_key` is the unique index that makes the insert the
+ * claim: when two tabs race, the loser's violation means "someone else took
+ * it", not "something is wrong". It must never reach `translatePgError`,
+ * whose generic `ERROR:` handler would turn it into a 400 the station page
+ * shows as a real failure — see the comment at the call site.
+ */
+function isClaimConflict(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : "";
+  return message.includes("print_receipts_claim_key") || message.includes("23505");
+}
 
 /**
  * How far back a station will print without being asked.
@@ -191,22 +206,18 @@ export class ReceiptsService {
         ) AS receipt`;
       receipt = rows[0]!.receipt;
     } catch (e) {
-      const message = e instanceof Error ? e.message : "";
-
-      // ORDER MATTERS. The unique violation is checked FIRST and by name:
-      // it is the whole concurrency control, and the generic ERROR: handler
-      // below would otherwise turn a lost race into a 400 that the station
-      // page treats as a real failure instead of "someone else took it".
-      if (message.includes("print_receipts_claim_key") || message.includes("23505")) {
+      // ORDER MATTERS, and must stay structurally so, not just by
+      // convention: the unique violation is checked here, before
+      // `translatePgError` ever sees the error. Folding this into that
+      // shared translator's generic `ERROR:` handler — the obvious
+      // "de-duplicate this" cleanup — would put the race check behind it,
+      // which turns a lost race into a 400 the station page shows as a real
+      // failure instead of "someone else took it". The isClaimConflict
+      // check above exists so this ordering has a name, not just a comment.
+      if (isClaimConflict(e)) {
         throw new ConflictException("Another station tab already took this ticket");
       }
-      if (message.includes("not your business")) {
-        throw new ForbiddenException("That station is not yours");
-      }
-      if (message.includes("no such station") || message.includes("no such event")) {
-        throw new NotFoundException("Station or event not found");
-      }
-      throw e;
+      translatePgError(e);
     }
 
     const ticket = await this.ticketFor(userId, businessId, station, event, body.job);

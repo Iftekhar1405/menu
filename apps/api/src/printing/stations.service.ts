@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ForbiddenException,
   GoneException,
   Injectable,
@@ -9,45 +8,10 @@ import type { PrintStation, StationOutput } from "@prisma/client";
 import type { StationOutputInput } from "@menu/shared";
 import { BusinessesService } from "../businesses/businesses.service";
 import { PrismaService } from "../prisma/prisma.service";
-import { cleanPgMessage } from "../common/pg-message";
+import { fromFunction } from "./pg-errors";
 
 /** Who may reach a station at all. Narrowed per job in attachOutput. */
 const STATION_ROLES = { allow: ["owner", "kitchen"] as const };
-
-/**
- * Turns a SECURITY DEFINER function's RAISE EXCEPTION into an HTTP status,
- * the same precedent as `place_table_round`'s own catch
- * (orders.service.ts:88-103). `create_print_station` and
- * `attach_station_output` re-check the caller themselves — RLS is not going
- * to — and raise exactly two messages by hand:
- *
- *  - "not your business": the caller has no access to this business at all.
- *  - "no such station": attach_station_output's own existence check. This is
- *    reachable, not theoretical — an owner can revoke a station in the
- *    window between resolve() seeing it live and this call reaching
- *    Postgres.
- *
- * Anything else that looks like a RAISE EXCEPTION becomes a 400 with the
- * message cleaned up for a person, same as every other SQL-raised error in
- * this API. Without this wrapper both functions' own guards arrive as raw
- * Postgres text and Nest answers 500.
- */
-async function fromFunction<T>(run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "";
-    if (/not your business/.test(message)) {
-      throw new ForbiddenException("Not your business");
-    }
-    if (/no such station/.test(message)) {
-      throw new NotFoundException("Station not found");
-    }
-    const match = /ERROR: (.+)/.exec(message);
-    if (match) throw new BadRequestException(cleanPgMessage(match[1]!));
-    throw err;
-  }
-}
 
 @Injectable()
 export class StationsService {
