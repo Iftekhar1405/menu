@@ -2795,8 +2795,25 @@ The station asks "what have you got for me?" and gets back the jobs it has a pri
 Create `apps/api/src/printing/pending.spec.ts`:
 
 ```ts
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { businessChannel } from "../notifications/channel-name";
 import { ReceiptsService } from "./receipts.service";
+
+/*
+ * `loadEnv()` memoises into a module-level `cached`, so setting process.env
+ * inside a test is too late to change what the service sees. The module is
+ * mocked instead — which is also what lets the pair of topic tests below
+ * tell `usesRealtime(env)` apart from a truthiness test on the secret.
+ */
+let realtimeOn = true;
+vi.mock("../config/env", () => ({
+  loadEnv: () => ({ REALTIME_CHANNEL_SECRET: "test-secret" }),
+  usesRealtime: () => realtimeOn,
+}));
+
+beforeEach(() => {
+  realtimeOn = true;
+});
 
 /**
  * The window and the mapping, against a fake Prisma. These are decisions,
@@ -2893,13 +2910,24 @@ describe("ReceiptsService.pending", () => {
 
   it("answers with a topic even when the machine has no printer yet", async () => {
     // The page subscribes before it has been configured, and a station
-    // with no outputs must not be a station with no socket. `toHaveProperty`
-    // alone would pass on an undefined value, so the shape is asserted:
-    // either a derived channel name or an explicit null.
+    // with no outputs must not be a station with no socket.
+    realtimeOn = true;
     const svc = makeSvc([event("1", "round.accepted", 2)], [], []);
     const out = await svc.pending("u1", "b1", "s1", NOW);
     expect(out.pending).toEqual([]);
-    expect(out.topic === null || typeof out.topic === "string").toBe(true);
+    expect(out.topic).toBe(businessChannel("b1", "test-secret"));
+  });
+
+  it("hands out no topic when nothing will ever broadcast to it", async () => {
+    // THE discriminating test. `REALTIME_CHANNEL_SECRET` has a dev default
+    // in env.ts and is therefore never falsy, so an implementation keyed on
+    // the secret instead of on usesRealtime() hands out a topic here — a
+    // channel name for a socket nobody publishes to, which the station
+    // subscribes to and waits on forever.
+    realtimeOn = false;
+    const svc = makeSvc([event("1", "round.accepted", 2)]);
+    const out = await svc.pending("u1", "b1", "s1", NOW);
+    expect(out.topic).toBeNull();
   });
 });
 ```
@@ -3065,7 +3093,7 @@ pnpm --filter @menu/api exec vitest run
 pnpm --filter @menu/api lint
 ```
 
-Expected: 8 passing in the new file, whole suite green.
+Expected: 11 passing in the new file, whole suite green.
 
 ```bash
 git add apps/api/src/printing/receipts.service.ts apps/api/src/printing/pending.spec.ts \
