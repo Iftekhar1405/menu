@@ -36,6 +36,7 @@ import { WebPushSender } from "./notifications/web-push.sender";
 import { StaffController } from "./staff/staff.controller";
 import { StaffService } from "./staff/staff.service";
 import { PrintingController } from "./printing/printing.controller";
+import { ReceiptsService } from "./printing/receipts.service";
 import { StationsService } from "./printing/stations.service";
 
 @Module({
@@ -77,6 +78,7 @@ import { StationsService } from "./printing/stations.service";
     WebPushSender,
     StaffService,
     StationsService,
+    ReceiptsService,
     // Authenticated by default: a new controller is protected unless it
     // explicitly opts out with @Public.
     { provide: APP_GUARD, useClass: JwtAuthGuard },

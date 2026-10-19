@@ -10,6 +10,7 @@ import {
 import { CurrentUser } from "../common/decorators";
 import { ZodBody } from "../common/zod.pipe";
 import type { RequestUser } from "../auth/jwt.strategy";
+import { ReceiptsService } from "./receipts.service";
 import { StationsService } from "./stations.service";
 
 /**
@@ -20,7 +21,10 @@ import { StationsService } from "./stations.service";
  */
 @Controller("businesses/:bid/stations")
 export class PrintingController {
-  constructor(private readonly stations: StationsService) {}
+  constructor(
+    private readonly stations: StationsService,
+    private readonly receipts: ReceiptsService,
+  ) {}
 
   @Get()
   list(@CurrentUser() user: RequestUser, @Param("bid") bid: string) {
@@ -75,5 +79,14 @@ export class PrintingController {
     @Param("job") job: string,
   ) {
     await this.stations.detachOutput(user.id, bid, sid, job);
+  }
+
+  /**
+   * Polled every ten seconds, and again whenever the Realtime ping lands.
+   * The ping is an optimisation over polling and is allowed to be lost.
+   */
+  @Get(":sid/pending")
+  pending(@CurrentUser() user: RequestUser, @Param("bid") bid: string, @Param("sid") sid: string) {
+    return this.receipts.pending(user.id, bid, sid);
   }
 }
