@@ -3476,6 +3476,12 @@ function makeSvc(opts: { role?: "owner" | "kitchen"; insert?: () => unknown } = 
           order: { dailyNumber: 14, note: null, isRunning: false, table: { label: "7" } },
         }),
       },
+      // Present deliberately. Without it, deleting the bill role check makes
+      // ticketFor blow up on a missing mock, so the bill test fails by
+      // accident — and the day someone adds an `order` mock for another
+      // test, the most safety-critical assertion in this file silently
+      // stops discriminating.
+      order: { findFirst: vi.fn().mockResolvedValue({ dailyNumber: 14 }) },
     },
   };
   const stations = {
@@ -3490,7 +3496,20 @@ function makeSvc(opts: { role?: "owner" | "kitchen"; insert?: () => unknown } = 
     }),
     roleFor: vi.fn().mockResolvedValue(opts.role ?? "owner"),
   };
-  const billing = { generate: vi.fn() };
+  // Returns a real-looking bill for the same reason: with the role check
+  // deleted the claim should SUCCEED, so the test fails because nothing was
+  // refused rather than because a mock was missing.
+  const billing = {
+    generate: vi.fn().mockResolvedValue({
+      id: "bill1", billNumber: 1, tableLabel: "7",
+      issuedAt: "2026-10-04T16:01:00.000Z", currency: "INR", taxLabel: "GST",
+      pricesIncludeTax: true, receiptFooter: null,
+      business: { name: "X", gstin: null, logoPath: null, addressLine1: null,
+                  addressLine2: null, city: null, state: null, postalCode: null },
+      subtotal: "0.00", taxTotal: "0.00", serviceCharge: "0.00",
+      serviceChargeRate: "0", roundOff: "0.00", total: "0.00", lines: [],
+    }),
+  };
   return { svc: new ReceiptsService(prisma as never, stations as never, billing as never), create, billing };
 }
 
@@ -3527,6 +3546,14 @@ describe("ReceiptsService.claim", () => {
     // Review Focus 1. The station could only have a bill output if an owner
     // attached it, but the claim is a second door into the same prices and
     // it gets the same lock.
+    //
+    // The event must be one that really produces a bill. In production the
+    // role check runs BEFORE the jobsForEvent check — but with the default
+    // "round.accepted" fixture, deleting the role check just leaves
+    // jobsForEvent to refuse instead, with the same exception type, so the
+    // test passes whether or not the lock exists. With "completed", removing
+    // the role check lets the claim through and the test fails for the right
+    // reason: nothing refused it.
     const { svc } = makeSvc({ role: "kitchen" });
     await expect(
       svc.claim("u1", "b1", "s1", { eventId: "1", job: "bill" }),
