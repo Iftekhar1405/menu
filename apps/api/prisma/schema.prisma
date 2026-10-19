@@ -114,6 +114,13 @@ model BusinessStaff {
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([businessId, userId])
+  /// Load-bearing: (userId, status) is the predicate of
+  /// app_staff_business_ids(), which every kitchen RLS policy calls on every
+  /// request, and businessId is what it returns — so all three are in the key
+  /// and the lookup is an index-only scan. Declared here as well as in SQL
+  /// because an index Prisma cannot see is drift it deletes: that is what
+  /// 20261016180505_ did to the original.
+  @@index([userId, status, businessId], map: "business_staff_lookup")
   @@map("business_staff")
 }
 
