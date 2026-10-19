@@ -30,34 +30,25 @@ because agents keep dropping it. Follow it exactly.**
 
 ### Commit message format
 
-Conventional-commit subject, then a prose body explaining **why**, then the
-trailer. Match the existing history — read `git log` before writing one.
+**Primary rule, binding on every agent working in this repo — including the
+primary agent, from the start of its work: keep commit messages simple and
+small, and never add a `Co-Authored-By` trailer.**
+
+A conventional-commit subject line is normally the whole message. Match the
+existing history — read `git log` before writing one.
 
 ```
 <type>(<scope>): <imperative, lowercase, no trailing period>
-
-<Body: what was wrong and why this is the fix. Prose, wrapped at ~76
-columns. Explain the reasoning a reader could not recover from the diff.
-Omit the body only for a change whose subject genuinely says all of it.>
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 ```
 
 - `type` is one of `feat`, `fix`, `test`, `docs`, `chore`, `refactor`.
 - `scope` is the area touched: `db`, `api`, `web`, `shared`, `kitchen`.
 - The subject is a sentence about behaviour, not a label. Prefer
   "a new round no longer resets the whole order" over "update order logic".
-- **The `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`
-  trailer is mandatory on every commit.** It is the single most frequently
-  missed part of this protocol.
-- Write the message with a heredoc so the body keeps its line breaks:
-
-  ```bash
-  git commit -F - <<'EOF'
-  fix(db): a new round no longer resets the whole order
-  ...
-  EOF
-  ```
+- Add a body only when the subject genuinely cannot carry the reason, and
+  keep it to a sentence or two. Not a prose essay.
+- **No `Co-Authored-By` trailer, and no other trailer.** Commits made before
+  this rule carry one; leave them alone rather than rewriting history.
 
 ### Pull requests
 
