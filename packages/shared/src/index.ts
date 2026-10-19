@@ -6,3 +6,4 @@ export * from "./schemas";
 export * from "./roles";
 export * from "./rounds";
 export * from "./printing";
+export * from "./escpos/bytes";
