@@ -248,7 +248,9 @@ describe("toCp437", () => {
   });
 
   it("never emits a byte the printer would read as a command", () => {
-    const out = toCp437("abc d");
+    // Escape sequences, not literal control bytes: a raw NUL in a source
+    // file truncates half the tools that read it.
+    const out = toCp437("a\x07b\x1bc\x00d");
     for (const ch of out) expect(ch.charCodeAt(0)).toBeGreaterThanOrEqual(0x20);
   });
 
