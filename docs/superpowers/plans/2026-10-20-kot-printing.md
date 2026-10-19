@@ -24,7 +24,7 @@
 - Printing is **never on the critical path.** No endpoint that accepts a round or closes a table may fail, block or slow down because a printer was off. This is the stance `RealtimeBroadcaster.ping` already takes.
 - Order-level event kinds are bare status strings (`'completed'`, `'cancelled'`, …) with `round_id` null; round-level kinds are `'round.' || status` with `round_id` set. The spec's `order.completed` means **kind `'completed'`**.
 - Statuses are the existing `OrderStatus` enum. No new status values.
-- Commit after every task. **Never `git add -A` or `git add .`** — name the paths. Every commit carries the `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>` trailer.
+- Commit after every task. **Never `git add -A` or `git add .`** — name the paths. **Commit messages stay simple and small: a conventional-commit subject, usually nothing else, and never a `Co-Authored-By` trailer** (see CLAUDE.md).
 - **Test what would silently break, not everything that could be asserted.** One test per behaviour a bug would make wrong in production.
 
 ## Already shipped — do not rebuild
@@ -189,19 +189,7 @@ Expected: 5 passing, build clean.
 
 ```bash
 git add packages/shared/src/printing.ts packages/shared/src/printing.spec.ts packages/shared/src/index.ts
-git commit -F - <<'EOF'
-feat(shared): map an order event to the paper it produces
-
-One table, consulted by the API when it offers a station work and by the
-station when it decides what to render, so the two cannot disagree about
-what a ticket is.
-
-Unknown kinds print nothing. Events get added by features that know
-nothing about printers, and the opposite default would put paper on the
-pass that nobody designed.
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-EOF
+git commit -m "feat(shared): map an order event to the paper it produces"
 ```
 
 ---
@@ -445,23 +433,7 @@ Expected: 11 passing, build clean.
 
 ```bash
 git add packages/shared/src/escpos/bytes.ts packages/shared/src/escpos/bytes.spec.ts packages/shared/src/index.ts
-git commit -F - <<'EOF'
-feat(shared): emit ESC/POS bytes, and refuse to emit dangerous ones
-
-The command subset a ticket needs is a dozen escapes, so it is written
-here rather than pulled in - a dependency would need auditing for exactly
-the codepage problem this handles.
-
-Text mode is a single-byte codepage. Devanagari or Tamil arrives as two or
-three bytes, each printed as a separate wrong glyph, and bytes below 0x20
-are commands, so an unlucky sequence leaves the printer in a mode the next
-ticket inherits. Characters outside the codepage are therefore dropped,
-with accents folded to their base letter first so an accented dish name
-still prints. Rasterising those lines is the real fix and is a named
-follow-up.
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-EOF
+git commit -m "feat(shared): emit ESC/POS bytes, and refuse to emit dangerous ones"
 ```
 
 ---
@@ -676,21 +648,7 @@ Expected: 11 passing, build clean.
 
 ```bash
 git add packages/shared/src/escpos/layout.ts packages/shared/src/escpos/layout.spec.ts packages/shared/src/index.ts
-git commit -F - <<'EOF'
-feat(shared): lay text out against a roll's column count
-
-Width belongs to the printer, not the ticket, so the encoders take it as
-an argument and the arithmetic lives in one place rather than three.
-
-Two choices worth stating. A word longer than the roll is cut instead of
-overflowing, because overflow on a thermal printer is silent and half a
-dish name is worse than an ugly break. And when a two-column line would
-collide it is the LEFT that truncates, since the right is always the
-short load-bearing value - a price, a table, a KOT number - and a price
-run together with a dish name cannot be read at all.
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-EOF
+git commit -m "feat(shared): lay text out against a roll's column count"
 ```
 
 ---
@@ -916,24 +874,7 @@ Expected: 5 passing, build clean. The exact strings above were produced by runni
 
 ```bash
 git add packages/shared/src/escpos/tickets.ts packages/shared/src/escpos/tickets.spec.ts packages/shared/src/index.ts
-git commit -F - <<'EOF'
-feat(shared): render the customer's token slip
-
-A claim check: the business, the token, the table, the time. No dishes and
-no prices - the kitchen's copy is where the food is listed - and the same
-number on both, so the slip in a hand matches the ticket on the pass.
-
-The token prints double-width, which halves the usable columns, so it is
-centred against half the roll rather than all of it. "Round N" appears
-only from the second round on: labelling round 1 would make every ordinary
-single-round table look like part of something longer.
-
-Time formatting follows the PDF receipt - en-IN, Asia/Kolkata - because
-there is no timezone on businesses and two conventions would print a
-different time on the paper than on the screen beside it.
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-EOF
+git commit -m "feat(shared): render the customer's token slip"
 ```
 
 ---
@@ -1178,25 +1119,7 @@ Expected: 11 passing (5 from Task 4, 6 here), build clean.
 
 ```bash
 git add packages/shared/src/escpos/tickets.ts packages/shared/src/escpos/tickets.spec.ts
-git commit -F - <<'EOF'
-feat(shared): render the kitchen's ticket
-
-This round's items and nothing else. The round is the unit of cooking, so
-a ticket that reprinted round 1 would have the kitchen make the biryani
-twice - which is also why identical dishes are not merged here, though
-the bill merges them: three is what the customer ordered, and two is what
-still has to be cooked.
-
-Item lines are double-height but not double-width; doubling the width
-would halve the columns and wrap every dish name, and this is read at
-arm's length over a pass, not across a room.
-
-The note is the ORDER's. order_items has no note column - what a diner
-can write applies to the whole order - so the approved sample's per-item
-note prints once, below the items, rather than inventing a column.
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-EOF
+git commit -m "feat(shared): render the kitchen's ticket"
 ```
 
 ---
@@ -1464,25 +1387,7 @@ Expected: 17 in `tickets.spec.ts` (5 + 6 + 6), whole shared suite green, build c
 
 ```bash
 git add packages/shared/src/escpos/tickets.ts packages/shared/src/escpos/tickets.spec.ts
-git commit -F - <<'EOF'
-feat(shared): render the bill as paper
-
-The same content the PDF carries, from the same Bill the screen shows,
-re-emitted as ESC/POS rather than reimplemented - a receipt whose paper
-total disagrees with its screen total is the worst bug this feature could
-have. The API maps Bill into the ticket DTO; nothing here recomputes.
-
-Token N is printed on it, which is the only thing tying the paper to the
-numbered slip the customer is holding.
-
-The service charge line and the sentence that must accompany it appear
-together or not at all, and a zero charge prints nothing rather than a
-"0.00" line that reads like a bug. A 58mm assertion guards the whole
-layout: a line longer than the roll is not truncated by the printer, it
-is simply lost.
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-EOF
+git commit -m "feat(shared): render the bill as paper"
 ```
 
 ---
@@ -1996,33 +1901,7 @@ git add apps/api/prisma/migrations/20261021000000_print_stations/migration.sql \
         apps/api/prisma/schema.prisma \
         apps/api/src/printing/stations-schema.spec.ts \
         apps/api/src/prisma/kitchen-policies.spec.ts
-git commit -F - <<'EOF'
-feat(db): give a shop its stations, printers and receipts
-
-Three tables. A station is a machine with a tab open; an output is one
-linked printer for one job; a receipt is one piece of paper.
-
-The receipt's unique key on (station, event, job, attempt) is the claim,
-and it is the whole concurrency story: two tabs on one machine both try,
-one gets a duplicate-key error and skips, and the shop gets one ticket.
-A constraint rather than application code, for the same reason
-orders_one_open_per_table is one - it holds under a race.
-
-One output per job per station is what makes two machines and one machine
-the same configuration with no mode flag anywhere. Pointing token and
-bill at the same device_key simply means one roll does both.
-
-A trigger refuses a bill output written by anyone but the owner. A bill is
-prices, the kitchen role sees no prices anywhere else in this product, and
-paper would otherwise be the hole. It is a trigger and not a service check
-because the service is not the only thing that can write the table.
-
-No print_jobs queue: order_events is already the record of what happened,
-and a queue beside it would be a second source of truth for a guarantee
-the unique index already gives.
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-EOF
+git commit -m "feat(db): give a shop its stations, printers and receipts"
 ```
 
 ---
@@ -2441,26 +2320,7 @@ Expected: 7 passing in the new file, whole suite green, typecheck clean.
 git add apps/api/src/printing/stations.service.ts apps/api/src/printing/printing.controller.ts \
         apps/api/src/printing/stations.spec.ts apps/api/src/app.module.ts \
         packages/shared/src/schemas.ts
-git commit -F - <<'EOF'
-feat(api): let a shop machine become a station and link a printer
-
-Setup is opening the page on the machine and naming it. No pairing code
-and no new auth path - the page sits behind the session that already
-exists, and the owner's revoke is the control.
-
-Owner and kitchen both, because the person standing next to a printer is
-usually not the owner. Two exceptions: revoking a machine is the owner's,
-and so is putting a BILL printer on one - a bill is prices, and the
-kitchen role is stripped of prices everywhere else in this product.
-
-A revoked station answers 410 rather than 404 so the page can tell "this
-machine was retired", which clears its localStorage and stops, from "that
-id was never real", which is a bug worth showing. Last-seen is refreshed
-only by the endpoints a working station calls, so it means the machine
-asked for work rather than that someone looked at the settings page.
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-EOF
+git commit -m "feat(api): let a shop machine become a station and link a printer"
 ```
 
 ---
@@ -2756,26 +2616,7 @@ Expected: 8 passing in the new file, whole suite green.
 ```bash
 git add apps/api/src/printing/receipts.service.ts apps/api/src/printing/pending.spec.ts \
         apps/api/src/printing/printing.controller.ts apps/api/src/app.module.ts
-git commit -F - <<'EOF'
-feat(api): tell a station what is waiting for it
-
-The jobs this machine has a printer for and has not already taken, mapped
-through the same jobsForEvent the page uses - so the API cannot offer a
-job the page would not know how to render.
-
-Thirty minutes back, and no further. A machine switched off all day and
-opened at closing time must not emit two hundred tickets; everything older
-is listed as missed, with a Print button, and stays a human decision.
-
-Side-effect free apart from refreshing last-seen, so two tabs asking at
-once is harmless. The race between them is resolved by the unique index
-when they claim, not by trying to prevent it here.
-
-A failed receipt does not count as taken. Paper jams, printers run out,
-writes die halfway - the station has to be able to try again.
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-EOF
+git commit -m "feat(api): tell a station what is waiting for it"
 ```
 
 ---
@@ -3067,25 +2908,7 @@ Expected: 9 passing, typecheck clean.
 
 ```bash
 git add apps/api/src/printing/ticket-payload.ts apps/api/src/printing/ticket-payload.spec.ts
-git commit -F - <<'EOF'
-feat(api): turn rows into the tickets the encoder prints
-
-Pure, with no Prisma client and no Nest, which is what makes it cheap to
-cover the cases that actually go wrong: lines whose tax rates disagree, a
-round with no variant, a venue with four of its six address fields blank.
-
-Nothing is recomputed. Every number is carried across as the string
-generate_bill produced, because a receipt whose paper total disagrees
-with its screen total is the worst bug this feature could have, and the
-only way to be certain is to do no arithmetic at all.
-
-The tax rate is named only when every line shares one. Rates are
-snapshotted per round deliberately, so a change mid-meal leaves lines that
-disagree - and printing one of them would state a rate the customer was
-never charged.
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-EOF
+git commit -m "feat(api): turn rows into the tickets the encoder prints"
 ```
 
 ---
@@ -3519,30 +3342,7 @@ Expected: 8 passing in the new file, whole suite green.
 git add apps/api/src/printing/receipts.service.ts apps/api/src/printing/claim.spec.ts \
         apps/api/src/printing/printing.controller.ts apps/api/src/printing/stations.service.ts \
         packages/shared/src/schemas.ts
-git commit -F - <<'EOF'
-feat(api): make the insert the claim, and hand back the paper
-
-Two tabs on one machine both arrive at this endpoint. The unique index on
-(station, event, job, attempt) lets one through and gives the other a 409
-it treats as "someone else took it" - so the shop gets one ticket. Checking
-first and inserting second would lose the very race it is trying to win,
-which is why this is a constraint and not a service check.
-
-The ticket comes back with the receipt, so a station does one round trip
-per piece of paper. Generating the bill is a side effect and lives here
-rather than on pending, which two tabs are allowed to call at once.
-
-A bill claim is owner-only, the same lock as attaching a bill printer: the
-station could only hold that output if an owner put it there, but the
-claim is a second door to the same prices. The event-to-job mapping is
-also the authority over what may be asked for - a client cannot request a
-bill off an accepted round.
-
-printed_at is stamped only on success. A timestamp on a failure would have
-the owner's list claim a ticket printed when no paper came out.
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-EOF
+git commit -m "feat(api): make the insert the claim, and hand back the paper"
 ```
 
 ---
@@ -3962,31 +3762,7 @@ Expected: 10 passing (6 loop, 4 identity), typecheck clean.
 
 ```bash
 git add apps/web/lib/station/
-git commit -F - <<'EOF'
-feat(web): drive a station's printers without a browser in the logic
-
-The loop takes a transport and an api as arguments, so all of it is
-testable in node - web vitest has no DOM, and logic that needs navigator
-could not be covered at all. The WebUSB implementation beside it is the
-only code here that touches a device API, and has no decisions in it.
-
-Two orderings are load-bearing. The printer is checked BEFORE the claim:
-claiming first would consume the ticket and then fail to write it, and
-nothing would ever offer it again - the slip would simply never exist.
-Leaving it unclaimed is what makes "printer not connected, 2 tickets
-waiting" a true statement that fixes itself when the cable goes back in.
-And the report comes after the write, never instead of it, because a
-receipt marked printed is a promise that paper came out.
-
-A lost claim is a 409 and is not an error. The unique index stops the
-second slip; this stops the second tab showing staff a red banner about
-a ticket its neighbour printed correctly.
-
-The station id is remembered per business: one machine whose user has two
-venues would otherwise claim the wrong venue's tickets.
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-EOF
+git commit -m "feat(web): drive a station's printers without a browser in the logic"
 ```
 
 ---
@@ -4409,26 +4185,7 @@ Expected: 13 passing across `lib/station`, typecheck clean.
 
 ```bash
 git add apps/web/lib/station/api.ts apps/web/lib/station/api.spec.ts "apps/web/app/(app)/station/page.tsx"
-git commit -F - <<'EOF'
-feat(web): the screen that stays open on the shop machine
-
-Set up, link printers, then sit there printing. Every decision is in
-lib/station; this is the shell that supplies a real transport, a real api
-client and the ten-second poll.
-
-A single ref guards the pass, because a poll landing on top of a slow USB
-write would have one tab claiming the same job twice. A 409 is already
-"someone else took it" inside the adapter; a 410 is the one failure that
-stops the station, clears its localStorage and says the machine was
-retired rather than polling forever.
-
-Linking explains itself when it fails: an empty Windows chooser almost
-always means usbprint.sys holds the device, and a 403 means a bill
-printer was attempted by someone who is not the owner. Both read as
-instructions rather than as a broken screen.
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-EOF
+git commit -m "feat(web): the screen that stays open on the shop machine"
 ```
 
 ---
@@ -4685,24 +4442,7 @@ Expected: 17 passing across `lib/station`, typecheck clean.
 ```bash
 git add apps/web/lib/station/last-seen.ts apps/web/lib/station/last-seen.spec.ts \
         "apps/web/app/(app)/settings/printing/page.tsx"
-git commit -F - <<'EOF'
-feat(web): show the owner every machine and what it is printing
-
-Which machines exist, when each was last seen, which printer is on which
-job, rename, revoke. Read-only about devices: linking happens on the
-machine itself, because a browser can only see the USB plugged into the
-computer it is running on, and this page explains that rather than
-offering a button that cannot work.
-
-"Last seen" coarsens deliberately. The station refreshes it every ten
-seconds, so a gap under a minute is a working machine and reads as
-"Online" rather than as a number to interpret - and "Last seen 247
-minutes ago" is not a sentence anyone acts on. A station created and
-never opened again says "Never connected", which is the state an owner
-most needs to see.
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-EOF
+git commit -m "feat(web): show the owner every machine and what it is printing"
 ```
 
 ---
@@ -4928,27 +4668,7 @@ Expected: every suite green, both typechecks clean.
 
 ```bash
 git add apps/api/src/printing/two-stations.spec.ts apps/web/lib/nav.ts apps/web/lib/nav.spec.ts
-git commit -F - <<'EOF'
-test: prove two machines and one machine are the same configuration
-
-The two requirements the spec states by name. One accept with a counter
-and a kitchen configured offers exactly one job to each, at the same
-moment, neither knowing the other exists. The same accept with a single
-machine holding all three outputs offers it both slips, back to back off
-one roll. Nothing anywhere branches on how many devices a shop has - the
-stations and their outputs are the configuration.
-
-The concurrency case is exercised with two real connections racing one
-insert, because that is the only way to show that the thing holding the
-shop to one ticket is the index rather than a check that happens to run
-first. It runs last: it leaves a receipt behind that the offer tests
-would see.
-
-The station screens also join the navigation, which is what makes them
-reachable at all.
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-EOF
+git commit -m "test: prove two machines and one machine are the same configuration"
 ```
 
 ---
