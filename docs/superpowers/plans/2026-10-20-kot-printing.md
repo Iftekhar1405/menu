@@ -2324,8 +2324,12 @@ describe("StationsService.attachOutput", () => {
   });
 
   it("lets a kitchen user attach the kitchen printer", async () => {
-    // They are the ones standing next to it.
-    const { svc, station, output: outputs, businesses } = makeDeps();
+    // They are the ones standing next to it. The fake deliberately has no
+    // stationOutput.upsert — the linking goes through attach_station_output —
+    // so what this can honestly assert is that a kitchen caller reaches the
+    // function at all for a non-bill job, rather than being turned away by
+    // the role check that DOES reject them for "bill" above.
+    const { svc, station, output: outputs, queryRaw, businesses } = makeDeps();
     (businesses.assertAccess as ReturnType<typeof vi.fn>).mockResolvedValue({
       business: { id: "b1" },
       role: "kitchen",
@@ -2333,7 +2337,9 @@ describe("StationsService.attachOutput", () => {
     station.findFirst.mockResolvedValue({ id: "s1", businessId: "b1", revokedAt: null });
 
     await svc.attachOutput("u1", "b1", "s1", { ...output, job: "kitchen" });
-    expect(outputs.upsert).toHaveBeenCalled();
+
+    expect(queryRaw).toHaveBeenCalled();
+    expect(outputs).not.toHaveProperty("upsert");
   });
 
   it("links the printer through the SECURITY DEFINER function, not the ORM", async () => {
