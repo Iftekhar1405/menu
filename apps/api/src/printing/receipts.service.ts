@@ -1,9 +1,16 @@
-import { Injectable } from "@nestjs/common";
-import { jobsForEvent, type PrintJob } from "@menu/shared";
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { jobsForEvent, type PrintJob, type Ticket } from "@menu/shared";
 import { loadEnv, usesRealtime } from "../config/env";
+import { BillingService } from "../billing/billing.service";
 import { businessChannel } from "../notifications/channel-name";
 import { PrismaService } from "../prisma/prisma.service";
 import { StationsService } from "./stations.service";
+import { billTicketFrom, kitchenTicketFrom, tokenTicketFrom } from "./ticket-payload";
 
 /**
  * How far back a station will print without being asked.
@@ -33,6 +40,7 @@ export class ReceiptsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly stations: StationsService,
+    private readonly billing: BillingService,
   ) {}
 
   /**
@@ -118,5 +126,189 @@ export class ReceiptsService {
     }
 
     return { pending, missed, topic };
+  }
+
+  /**
+   * Take a job, and get back the paper to print.
+   *
+   * THE INSERT IS THE CLAIM. Two tabs on one machine both arrive here; the
+   * unique index on (station, event, job, attempt) lets one through and
+   * the other gets a 409 it treats as "someone else took it". Checking
+   * first and inserting second would lose the race it is trying to win.
+   *
+   * The ticket comes back with the receipt so a station does one round
+   * trip per piece of paper. Generating a bill is a side effect, which is
+   * why it happens here and not in the side-effect-free `pending`.
+   *
+   * `paperWidth` is typed `number` here because Prisma types the column a
+   * plain smallint; narrowing it to 58 | 80 is sound because
+   * `station_outputs_paper_width_check` admits no other value, and that is
+   * the whole justification — a future reader does not have to rediscover
+   * it by reading the migration.
+   */
+  async claim(
+    userId: string,
+    businessId: string,
+    stationId: string,
+    body: { eventId: string; job: PrintJob; reprint?: boolean },
+  ): Promise<{ receiptId: string; attempt: number; paperWidth: number; ticket: Ticket }> {
+    const station = await this.stations.resolve(userId, businessId, stationId, { touch: true });
+
+    const output = station.outputs.find((o) => o.job === body.job);
+    if (!output) throw new ForbiddenException("This machine has no printer for that job");
+
+    // A bill is prices. The station could only hold a bill output if an
+    // owner attached it, but the claim is a second door to the same data
+    // and gets the same lock.
+    if (body.job === "bill") {
+      const role = await this.stations.roleFor(userId, businessId);
+      if (role !== "owner") throw new ForbiddenException("Only the owner can print a bill");
+    }
+
+    const event = await this.prisma.db.orderEvent.findFirst({
+      where: { id: BigInt(body.eventId), businessId },
+    });
+    if (!event) throw new NotFoundException("Event not found");
+
+    // The mapping is the authority. A client asking for a bill off an
+    // accepted round is asking for something that does not exist.
+    if (!jobsForEvent(event.kind).includes(body.job)) {
+      throw new ForbiddenException("That event does not produce that ticket");
+    }
+
+    const attempt = body.reprint ? await this.nextAttempt(stationId, event.id, body.job) : 1;
+
+    let receipt: { id: bigint; attempt: number };
+    try {
+      // Through claim_print_receipt, not printReceipt.create: there is no
+      // kitchen INSERT policy on this table, by the schema-wide invariant
+      // asserted in kitchen-policies.spec.ts.
+      const rows = await this.prisma.db.$queryRaw<
+        { receipt: { id: bigint; attempt: number } }[]
+      >`SELECT claim_print_receipt(
+          ${businessId}::uuid, ${stationId}::uuid, ${event.id}::bigint,
+          ${body.job}::"PrintJob", ${attempt}::int
+        ) AS receipt`;
+      receipt = rows[0]!.receipt;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "";
+
+      // ORDER MATTERS. The unique violation is checked FIRST and by name:
+      // it is the whole concurrency control, and the generic ERROR: handler
+      // below would otherwise turn a lost race into a 400 that the station
+      // page treats as a real failure instead of "someone else took it".
+      if (message.includes("print_receipts_claim_key") || message.includes("23505")) {
+        throw new ConflictException("Another station tab already took this ticket");
+      }
+      if (message.includes("not your business")) {
+        throw new ForbiddenException("That station is not yours");
+      }
+      if (message.includes("no such station") || message.includes("no such event")) {
+        throw new NotFoundException("Station or event not found");
+      }
+      throw e;
+    }
+
+    const ticket = await this.ticketFor(userId, businessId, station, event, body.job);
+    return {
+      receiptId: String(receipt.id),
+      attempt: receipt.attempt,
+      paperWidth: output.paperWidth,
+      ticket,
+    };
+  }
+
+  private async nextAttempt(stationId: string, eventId: bigint, job: PrintJob) {
+    const last = await this.prisma.db.printReceipt.findFirst({
+      where: { stationId, eventId, job },
+      orderBy: { attempt: "desc" },
+      select: { attempt: true },
+    });
+    return (last?.attempt ?? 0) + 1;
+  }
+
+  private async ticketFor(
+    userId: string,
+    businessId: string,
+    station: { business: { name: string } },
+    event: { id: bigint; orderId: string; roundId: string | null },
+    job: PrintJob,
+  ): Promise<Ticket> {
+    if (job === "bill") {
+      // generate_bill returns the existing bill rather than recomputing, so
+      // a reprint is identical to the original by construction.
+      const bill = await this.billing.generate(userId, businessId, event.orderId);
+      const order = await this.prisma.db.order.findFirst({
+        where: { id: event.orderId, businessId },
+        select: { dailyNumber: true },
+      });
+      if (!order) throw new NotFoundException("Order not found");
+      return billTicketFrom(bill, order.dailyNumber);
+    }
+
+    if (!event.roundId) throw new NotFoundException("That event has no round");
+    const round = await this.prisma.db.orderRound.findFirst({
+      where: { id: event.roundId, businessId },
+      include: {
+        items: { orderBy: { createdAt: "asc" } },
+        order: {
+          select: { dailyNumber: true, note: true, isRunning: true, table: { select: { label: true } } },
+        },
+      },
+    });
+    if (!round) throw new NotFoundException("Round not found");
+
+    const src = {
+      businessName: station.business.name,
+      order: {
+        dailyNumber: round.order.dailyNumber,
+        note: round.order.note,
+        isRunning: round.order.isRunning ?? false,
+        tableLabel: round.order.table.label,
+      },
+      round: {
+        seq: round.seq,
+        kotNumber: round.kotNumber,
+        placedAt: round.placedAt,
+        items: round.items.map((i) => ({
+          quantity: i.quantity,
+          nameSnapshot: i.nameSnapshot,
+          variantSnapshot: i.variantSnapshot,
+        })),
+      },
+    };
+    return job === "token" ? tokenTicketFrom(src) : kitchenTicketFrom(src);
+  }
+
+  /**
+   * What came of it.
+   *
+   * A failure keeps its error so the station screen can show it beside a
+   * Reprint button, and `printed_at` is stamped only on success — a
+   * timestamp on a failure would have the owner's list claim a ticket
+   * printed when no paper came out.
+   */
+  async report(
+    userId: string,
+    businessId: string,
+    stationId: string,
+    receiptId: string,
+    body: { status: "printed" | "failed"; error?: string },
+  ) {
+    await this.stations.resolve(userId, businessId, stationId, { touch: true });
+
+    const receipt = await this.prisma.db.printReceipt.findFirst({
+      where: { id: BigInt(receiptId), stationId, businessId },
+    });
+    if (!receipt) throw new NotFoundException("Receipt not found");
+
+    await this.prisma.db.printReceipt.update({
+      where: { id: receipt.id },
+      data: {
+        status: body.status,
+        error: body.error ?? null,
+        printedAt: body.status === "printed" ? new Date() : null,
+      },
+    });
   }
 }

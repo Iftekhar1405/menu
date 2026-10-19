@@ -305,3 +305,18 @@ export const stationOutputSchema = z.object({
   paperWidth: z.union([z.literal(58), z.literal(80)]),
 });
 export type StationOutputInput = z.infer<typeof stationOutputSchema>;
+
+export const claimSchema = z.object({
+  /** order_events.id as a string — it is a bigint. */
+  eventId: z.string().regex(/^\d+$/),
+  job: z.enum(["token", "kitchen", "bill"]),
+  /** A reprint takes the next attempt number rather than colliding. */
+  reprint: z.boolean().optional(),
+});
+export type ClaimInput = z.infer<typeof claimSchema>;
+
+export const receiptResultSchema = z.object({
+  status: z.enum(["printed", "failed"]),
+  error: z.string().max(500).optional(),
+});
+export type ReceiptResultInput = z.infer<typeof receiptResultSchema>;

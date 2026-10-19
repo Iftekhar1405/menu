@@ -1,8 +1,12 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from "@nestjs/common";
 import {
+  claimSchema,
+  receiptResultSchema,
   stationCreateSchema,
   stationOutputSchema,
   stationRenameSchema,
+  type ClaimInput,
+  type ReceiptResultInput,
   type StationCreateInput,
   type StationOutputInput,
   type StationRenameInput,
@@ -88,5 +92,27 @@ export class PrintingController {
   @Get(":sid/pending")
   pending(@CurrentUser() user: RequestUser, @Param("bid") bid: string, @Param("sid") sid: string) {
     return this.receipts.pending(user.id, bid, sid);
+  }
+
+  @Post(":sid/receipts")
+  claim(
+    @CurrentUser() user: RequestUser,
+    @Param("bid") bid: string,
+    @Param("sid") sid: string,
+    @Body(new ZodBody(claimSchema)) body: ClaimInput,
+  ) {
+    return this.receipts.claim(user.id, bid, sid, body);
+  }
+
+  @Post(":sid/receipts/:rid/result")
+  @HttpCode(204)
+  async result(
+    @CurrentUser() user: RequestUser,
+    @Param("bid") bid: string,
+    @Param("sid") sid: string,
+    @Param("rid") rid: string,
+    @Body(new ZodBody(receiptResultSchema)) body: ReceiptResultInput,
+  ) {
+    await this.receipts.report(user.id, bid, sid, rid, body);
   }
 }

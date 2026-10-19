@@ -81,9 +81,12 @@ export class StationsService {
     // Outputs come along: every caller of resolve() needs to know which
     // jobs this machine has a printer for, and a second round trip for a
     // row we already have is waste on a path polled every ten seconds.
+    // The business name comes along too — the token slip needs it, and a
+    // ticket is the one caller for which resolving a station and resolving
+    // the business it belongs to are the same round trip.
     const station = await this.prisma.db.printStation.findFirst({
       where: { id: stationId, businessId },
-      include: { outputs: true },
+      include: { outputs: true, business: { select: { name: true } } },
     });
     if (!station) throw new NotFoundException("Station not found");
     if (station.revokedAt) throw new GoneException("This machine is no longer a station");
@@ -95,6 +98,14 @@ export class StationsService {
       });
     }
     return station;
+  }
+
+  /** The caller's role for this business, for the one decision that needs it. */
+  async roleFor(userId: string, businessId: string) {
+    const { role } = await this.businesses.assertAccess(userId, businessId, {
+      allow: [...STATION_ROLES.allow],
+    });
+    return role;
   }
 
   /**

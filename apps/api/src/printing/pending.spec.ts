@@ -46,7 +46,12 @@ function makeSvc(events: unknown[], receipts: unknown[] = [], outputs = ["token"
       outputs: outputs.map((job) => ({ job })),
     }),
   };
-  return { svc: new ReceiptsService(prisma as never, stations as never), prisma, stations };
+  const billing = { generate: vi.fn() };
+  return {
+    svc: new ReceiptsService(prisma as never, stations as never, billing as never),
+    prisma,
+    stations,
+  };
 }
 
 const event = (id: string, kind: string, minutesAgo: number) => ({
