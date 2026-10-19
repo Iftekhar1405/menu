@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { encodeTicket, type TokenTicket } from "./tickets";
+import { encodeTicket, type KitchenTicket, type TokenTicket } from "./tickets";
 
 /**
  * Bytes back to the lines a human would read off the paper.
@@ -94,5 +94,107 @@ describe("encodeTicket: token slip", () => {
   it("carries no dishes and no prices", () => {
     const text = decode(encodeTicket(token, 58)).join("\n");
     expect(text).not.toMatch(/\d+\.\d\d/);
+  });
+});
+
+const kitchen: KitchenTicket = {
+  kind: "kitchen",
+  token: 14,
+  tableLabel: "7",
+  kotNumber: 31,
+  seq: 1,
+  isRunning: false,
+  note: null,
+  at: "2026-10-04T15:12:00.000Z",
+  items: [
+    { quantity: 2, name: "Chicken Biryani", variant: "Full" },
+    { quantity: 1, name: "Mutton Haleem", variant: null },
+    { quantity: 3, name: "Butter Naan", variant: null },
+    { quantity: 1, name: "Hyderabadi Double Ka Meetha", variant: null },
+  ],
+};
+
+describe("encodeTicket: kitchen ticket", () => {
+  it("prints the approved 80mm ticket", () => {
+    expect(decode(encodeTicket(kitchen, 80))).toEqual([
+      "=".repeat(48),
+      "TOKEN 14                                 TABLE 7",
+      "8:42 pm                                  KOT #31",
+      "=".repeat(48),
+      "",
+      "2 x Chicken Biryani",
+      "    (Full)",
+      "1 x Mutton Haleem",
+      "3 x Butter Naan",
+      "1 x Hyderabadi Double Ka Meetha",
+      "",
+      "-".repeat(48),
+      "Items                                          7",
+    ]);
+  });
+
+  it("banners a later round, and says when the table is running", () => {
+    // The pass has to see at a glance that this is an addition to a table
+    // already eating, not a new table. The em dash folds to a hyphen in the
+    // printer's codepage, which is expected.
+    const second = decode(
+      encodeTicket(
+        {
+          ...kitchen,
+          seq: 2,
+          kotNumber: 38,
+          isRunning: true,
+          at: "2026-10-04T15:36:00.000Z",
+          items: [
+            { quantity: 2, name: "Irani Chai", variant: null },
+            { quantity: 1, name: "Osmania Biscuit", variant: null },
+          ],
+        },
+        80,
+      ),
+    );
+    expect(second[2]).toBe("          *** ROUND 2 - NEW ITEMS ***");
+    expect(second[3]).toBe("              ** RUNNING TABLE **");
+    expect(second[4]).toBe("9:06 pm                                  KOT #38");
+  });
+
+  it("prints only the items it was given", () => {
+    // Round 2's ticket must not reprint round 1. The round is the unit of
+    // cooking; a reprint would have the kitchen make the biryani twice.
+    const second = decode(
+      encodeTicket({ ...kitchen, seq: 2, items: [{ quantity: 2, name: "Irani Chai", variant: null }] }, 80),
+    );
+    expect(second.join("\n")).not.toContain("Biryani");
+    expect(second).toContain("Items                                          2");
+  });
+
+  it("prints the order's note once, below the items", () => {
+    const withNote = decode(encodeTicket({ ...kitchen, note: "less spicy" }, 80));
+    expect(withNote).toContain(">> less spicy");
+    expect(withNote.filter((l) => l.startsWith(">>"))).toHaveLength(1);
+  });
+
+  it("carries no prices", () => {
+    // The kitchen role never sees money anywhere else in this product, and
+    // paper is not an exception.
+    expect(decode(encodeTicket(kitchen, 80)).join("\n")).not.toMatch(/\d+\.\d\d/);
+  });
+
+  it("does not merge identical dishes", () => {
+    // The bill merges across rounds; the ticket never does. Two is what the
+    // kitchen has to cook, and a merged line would hide one of them.
+    const out = decode(
+      encodeTicket(
+        {
+          ...kitchen,
+          items: [
+            { quantity: 1, name: "Dum Biryani", variant: null },
+            { quantity: 2, name: "Dum Biryani", variant: null },
+          ],
+        },
+        80,
+      ),
+    );
+    expect(out.filter((l) => l.includes("Dum Biryani"))).toHaveLength(2);
   });
 });
