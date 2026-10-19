@@ -2242,6 +2242,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
   const station = {
     findFirst: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     findMany: vi.fn(),
   };
   const output = { deleteMany: vi.fn() };
@@ -2296,6 +2297,26 @@ describe("StationsService.resolve", () => {
     station.findFirst.mockResolvedValue({ id: "s1", businessId: "b1", revokedAt: null });
     await svc.resolve("u1", "b1", "s1");
     expect(station.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("StationsService.revoke", () => {
+  it("revokes only within the business named in the URL", async () => {
+    // An owner with two venues can pass venue A's :bid with venue B's
+    // station id. RLS permits it — both are theirs — so the pairing in the
+    // URL is the only thing left to object, and a write keyed on the id
+    // alone would stop a machine printing in the wrong shop.
+    const { svc, station } = makeDeps();
+    await svc.revoke("u1", "b1", "s1");
+
+    const where = station.updateMany.mock.calls[0]![0].where as Record<string, unknown>;
+    expect(where).toEqual({ id: "s1", businessId: "b1" });
+  });
+
+  it("404s when the pairing matches nothing", async () => {
+    const { svc, station } = makeDeps();
+    station.updateMany.mockResolvedValue({ count: 0 });
+    await expect(svc.revoke("u1", "b1", "s1")).rejects.toBeInstanceOf(NotFoundException);
   });
 });
 
@@ -2363,6 +2384,35 @@ describe("StationsService.attachOutput", () => {
     await svc.create("u1", "b1", "Counter");
     expect(String(queryRaw.mock.calls[0]![0])).toContain("create_print_station");
   });
+
+  it("passes the values it was given, not just the right function name", async () => {
+    // A tagged template's first argument is the literal text; the
+    // interpolated values follow it. Asserting only on the text would let a
+    // swapped businessId/stationId pair through — the call would still name
+    // the right function while writing against the wrong venue.
+    const { svc, station, queryRaw } = makeDeps();
+    station.findFirst.mockResolvedValue({ id: "s1", businessId: "b1", revokedAt: null });
+
+    await svc.attachOutput("u1", "b1", "s1", output);
+
+    const [, ...values] = queryRaw.mock.calls[0]!;
+    expect(values.slice(0, 3)).toEqual(["b1", "s1", "bill"]);
+    expect(values).toContain("04b8:0202:X");
+  });
+
+  it("turns a function's refusal into a status rather than a 500", async () => {
+    // The SECURITY DEFINER functions raise their own guards. Unmapped, that
+    // text reaches Nest as an unhandled error and the station page sees a
+    // 500 for a condition it could have handled — reachable whenever a
+    // station is revoked between resolve() and the call.
+    const { svc, station, queryRaw } = makeDeps();
+    station.findFirst.mockResolvedValue({ id: "s1", businessId: "b1", revokedAt: null });
+    queryRaw.mockRejectedValueOnce(new Error("ERROR: no such station"));
+
+    await expect(svc.attachOutput("u1", "b1", "s1", output)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
 });
 ```
 
@@ -2407,6 +2457,7 @@ Create `apps/api/src/printing/stations.service.ts`:
 
 ```ts
 import {
+  BadRequestException,
   ForbiddenException,
   GoneException,
   Injectable,
@@ -2415,6 +2466,7 @@ import {
 import type { StationOutputInput } from "@menu/shared";
 import { BusinessesService } from "../businesses/businesses.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { cleanPgMessage } from "../common/pg-message";
 
 /** Who may reach a station at all. Narrowed per job in attachOutput. */
 const STATION_ROLES = { allow: ["owner", "kitchen"] as const };
@@ -2479,10 +2531,42 @@ export class StationsService {
     await this.businesses.assertAccess(userId, businessId, {
       allow: [...STATION_ROLES.allow],
     });
-    const rows = await this.prisma.db.$queryRaw<
-      { station: PrintStation }[]
-    >`SELECT create_print_station(${businessId}::uuid, ${name}) AS station`;
-    return rows[0]!.station;
+    return this.fromFunction(
+      () => this.prisma.db.$queryRaw<
+        { station: PrintStation }[]
+      >`SELECT create_print_station(${businessId}::uuid, ${name}) AS station`,
+      (rows) => rows[0]!.station,
+    );
+  }
+
+  /**
+   * Runs one SECURITY DEFINER call and turns its RAISE EXCEPTION into an
+   * HTTP status, the way `place_table_round` does at
+   * orders.service.ts:88-103.
+   *
+   * Without this the functions' own guards — "not your business", "no such
+   * station" — arrive as raw Postgres text and Nest answers 500. That is
+   * reachable, not theoretical: an owner can revoke a station in the window
+   * between resolve() checking it and the function running.
+   */
+  private async fromFunction<R, T>(
+    run: () => Promise<R[]>,
+    pick: (rows: R[]) => T,
+  ): Promise<T> {
+    try {
+      return pick(await run());
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "";
+      if (message.includes("not your business")) {
+        throw new ForbiddenException("That venue is not yours");
+      }
+      if (message.includes("no such station")) {
+        throw new NotFoundException("Station not found");
+      }
+      const match = /ERROR: (.+)/.exec(message);
+      if (match) throw new BadRequestException(cleanPgMessage(match[1]!));
+      throw e;
+    }
   }
 
   async list(userId: string, businessId: string) {
@@ -2501,13 +2585,22 @@ export class StationsService {
     return this.prisma.db.printStation.update({ where: { id: stationId }, data: { name } });
   }
 
-  /** Revoked, not deleted: the receipts pointing at it are the record. */
+  /**
+   * Revoked, not deleted: the receipts pointing at it are the record.
+   *
+   * `updateMany` scoped on businessId, not `update` on the id alone. An
+   * owner with two venues who sends venue A's :bid with venue B's station id
+   * would otherwise revoke a machine in the wrong shop — RLS permits it,
+   * because both venues are theirs, so the URL's pairing is the only thing
+   * that can object.
+   */
   async revoke(userId: string, businessId: string, stationId: string) {
     await this.businesses.assertAccess(userId, businessId, { allow: ["owner"] });
-    return this.prisma.db.printStation.update({
-      where: { id: stationId },
+    const { count } = await this.prisma.db.printStation.updateMany({
+      where: { id: stationId, businessId },
       data: { revokedAt: new Date() },
     });
+    if (count === 0) throw new NotFoundException("Station not found");
   }
 
   /**
@@ -2537,13 +2630,15 @@ export class StationsService {
 
     // Same door as create(): the upsert lives inside attach_station_output,
     // which is also what makes re-linking a swapped printer work.
-    const rows = await this.prisma.db.$queryRaw<{ output: StationOutput }[]>`
-      SELECT attach_station_output(
-        ${businessId}::uuid, ${stationId}::uuid, ${body.job}::"PrintJob",
-        ${body.deviceLabel}, ${body.deviceKey}, ${body.transport}::"PrintTransport",
-        ${body.paperWidth}::smallint
-      ) AS output`;
-    return rows[0]!.output;
+    return this.fromFunction(
+      () => this.prisma.db.$queryRaw<{ output: StationOutput }[]>`
+        SELECT attach_station_output(
+          ${businessId}::uuid, ${stationId}::uuid, ${body.job}::"PrintJob",
+          ${body.deviceLabel}, ${body.deviceKey}, ${body.transport}::"PrintTransport",
+          ${body.paperWidth}::smallint
+        ) AS output`,
+      (rows) => rows[0]!.output,
+    );
   }
 
   /**
@@ -2655,7 +2750,7 @@ pnpm --filter @menu/api exec vitest run
 pnpm --filter @menu/api lint
 ```
 
-Expected: 8 passing in the new file, whole suite green, typecheck clean.
+Expected: 12 passing in the new file, whole suite green, typecheck clean.
 
 ```bash
 git add apps/api/src/printing/stations.service.ts apps/api/src/printing/printing.controller.ts \
