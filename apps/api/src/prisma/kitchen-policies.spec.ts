@@ -296,9 +296,10 @@ describe.skipIf(!process.env.DATABASE_URL)("kitchen policies", () => {
     // 15 pre-existing `_owner` policies, plus `business_staff_owner` from the
     // kitchen-policies migration — the owner's own counterpart to
     // `business_staff_self_read` — plus `order_rounds_owner` from the
-    // order_rounds migration.
+    // order_rounds migration, plus `print_stations_owner`,
+    // `station_outputs_owner` and `print_receipts_owner` from printing.
     const owned = r.rows.map((x) => x.tablename as string);
-    expect(owned).toHaveLength(17);
+    expect(owned).toHaveLength(20);
 
     const k = await admin.query(
       `SELECT DISTINCT tablename FROM pg_policies

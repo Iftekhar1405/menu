@@ -62,6 +62,23 @@ enum OtpPurpose {
   recover
 }
 
+enum PrintJob {
+  token
+  kitchen
+  bill
+}
+
+enum PrintTransport {
+  usb
+  serial
+}
+
+enum PrintReceiptStatus {
+  claimed
+  printed
+  failed
+}
+
 model User {
   id             String    @id @default(uuid()) @db.Uuid
   email          String?   @unique
@@ -243,6 +260,9 @@ model Business {
   notifications Notification[]
   cancellations OrderItemCancellation[]
   staff        BusinessStaff[]
+  printStations  PrintStation[]
+  stationOutputs StationOutput[]
+  printReceipts  PrintReceipt[]
 
   @@index([ownerId])
   @@map("businesses")
@@ -547,6 +567,7 @@ model OrderEvent {
   order    Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
   business Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
   round    OrderRound? @relation(fields: [roundId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  printReceipts PrintReceipt[]
 
   @@index([orderId, id])
   @@index([actorId, id(sort: Desc)])
@@ -797,4 +818,74 @@ model PushSubscription {
 
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+
+// ─── Printing: KOT, bill and token tickets ───────────────────────────────────
+
+/// One machine with a browser tab open on it.
+model PrintStation {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  businessId String    @map("business_id") @db.Uuid
+  name       String
+  /// Refreshed whenever the station asks for work — the only honest answer
+  /// a server has to "is that machine on?".
+  lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz(6)
+  /// Revoked, never deleted: the receipts pointing here are the record of
+  /// what was printed.
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business Business        @relation(fields: [businessId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  outputs  StationOutput[]
+  receipts PrintReceipt[]
+
+  @@index([businessId, revokedAt], map: "print_stations_business_idx")
+  @@map("print_stations")
+}
+
+/// One linked printer, for one job.
+model StationOutput {
+  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  businessId  String         @map("business_id") @db.Uuid
+  stationId   String         @map("station_id") @db.Uuid
+  job         PrintJob
+  deviceLabel String         @map("device_label")
+  /// vendorId:productId:serial. The USB handle itself cannot be stored —
+  /// a WebUSB grant lives in the browser and cannot be serialised.
+  deviceKey   String         @map("device_key")
+  transport   PrintTransport
+  paperWidth  Int            @map("paper_width") @db.SmallInt
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business Business     @relation(fields: [businessId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  station  PrintStation @relation(fields: [stationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([stationId, job], map: "station_outputs_station_id_job_key")
+  @@map("station_outputs")
+}
+
+/// One piece of paper. The unique index is the claim.
+model PrintReceipt {
+  id         BigInt             @id @default(autoincrement())
+  businessId String             @map("business_id") @db.Uuid
+  stationId  String             @map("station_id") @db.Uuid
+  eventId    BigInt             @map("event_id")
+  job        PrintJob
+  attempt    Int                @default(1)
+  status     PrintReceiptStatus @default(claimed)
+  claimedAt  DateTime           @default(now()) @map("claimed_at") @db.Timestamptz(6)
+  printedAt  DateTime?          @map("printed_at") @db.Timestamptz(6)
+  error      String?
+
+  business Business     @relation(fields: [businessId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  station  PrintStation @relation(fields: [stationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  event    OrderEvent   @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([stationId, eventId, job, attempt], map: "print_receipts_claim_key")
+  @@index([stationId, eventId], map: "print_receipts_station_event_idx")
+  @@index([businessId, claimedAt], map: "print_receipts_business_idx")
+  @@map("print_receipts")
 }
