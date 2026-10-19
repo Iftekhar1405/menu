@@ -2893,11 +2893,13 @@ describe("ReceiptsService.pending", () => {
 
   it("answers with a topic even when the machine has no printer yet", async () => {
     // The page subscribes before it has been configured, and a station
-    // with no outputs must not be a station with no socket.
+    // with no outputs must not be a station with no socket. `toHaveProperty`
+    // alone would pass on an undefined value, so the shape is asserted:
+    // either a derived channel name or an explicit null.
     const svc = makeSvc([event("1", "round.accepted", 2)], [], []);
     const out = await svc.pending("u1", "b1", "s1", NOW);
     expect(out.pending).toEqual([]);
-    expect(out).toHaveProperty("topic");
+    expect(out.topic === null || typeof out.topic === "string").toBe(true);
   });
 });
 ```
@@ -2975,8 +2977,13 @@ export class ReceiptsService {
     // The topic the page may listen on. Derived here and handed over,
     // never derived in the browser — a leaked business id must not yield a
     // subscription to that restaurant's activity.
+    // `usesRealtime`, not a truthiness test on the secret: the secret has a
+    // dev default in env.ts and is therefore never falsy, so checking it
+    // would make the null branch dead code. What actually decides whether a
+    // topic is worth having is whether anything will ever broadcast to it —
+    // the same condition RealtimeBroadcaster.ping checks before sending.
     const env = loadEnv();
-    const topic = env.REALTIME_CHANNEL_SECRET
+    const topic = usesRealtime(env)
       ? businessChannel(businessId, env.REALTIME_CHANNEL_SECRET)
       : null;
 
@@ -3025,11 +3032,11 @@ export class ReceiptsService {
 }
 ```
 
-**Check `apps/api/src/config/env.ts` for the real name of the Realtime channel secret** — `orders.controller.ts` already calls `tableChannel(...)` with it, so copy that call site rather than the name guessed above. Add the imports:
+The names above are verified against the repo: `REALTIME_CHANNEL_SECRET` (`env.ts:80`, as used at `orders.controller.ts:155`) and `usesRealtime` (`env.ts:191`). Add the imports:
 
 ```ts
 import { businessChannel } from "../notifications/channel-name";
-import { loadEnv } from "../config/env";
+import { loadEnv, usesRealtime } from "../config/env";
 ```
 
 - [ ] **Step 4: Add the route**
