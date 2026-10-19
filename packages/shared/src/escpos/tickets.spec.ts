@@ -180,6 +180,25 @@ describe("encodeTicket: kitchen ticket", () => {
     expect(decode(encodeTicket(kitchen, 80)).join("\n")).not.toMatch(/\d+\.\d\d/);
   });
 
+  it("turns double height back off after the items", () => {
+    // Item lines print double-height so they read over a pass; the note and
+    // the item count must not. Like the token slip's reset, this needs a
+    // byte assertion — decode() strips every GS ! triple whatever its
+    // parameter, so deleting the reset changes no decoded line while
+    // printing the rest of the ticket at double height on real hardware.
+    const bytes = Array.from(encodeTicket(kitchen, 80));
+    const on = bytes.findIndex(
+      (_, i) => bytes[i] === 0x1d && bytes[i + 1] === 0x21 && bytes[i + 2] === 0x01,
+    );
+    expect(on).toBeGreaterThan(-1);
+
+    // The reset lands immediately after the last item's newline, so this
+    // four-byte run exists only if the items ended and the size was reset.
+    const seq = [0x0a, 0x1d, 0x21, 0x00];
+    const at = bytes.findIndex((_, i) => seq.every((b, k) => bytes[i + k] === b));
+    expect(at).toBeGreaterThan(on);
+  });
+
   it("does not merge identical dishes", () => {
     // The bill merges across rounds; the ticket never does. Two is what the
     // kitchen has to cook, and a merged line would hide one of them.
