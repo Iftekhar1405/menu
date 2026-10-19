@@ -193,6 +193,83 @@ describe("print_stations schema", () => {
     }
   });
 
+  it("creates a station through the function, as the role that will call it", async () => {
+    // create_print_station is the ONLY way a kitchen user can make a
+    // station — there is no INSERT policy to fall back on — so it is tested
+    // as menu_app with real tenant context, not as the superuser.
+    const app = new Client({ connectionString: process.env.APP_DATABASE_URL! });
+    await app.connect();
+    try {
+      await app.query("BEGIN");
+      await app.query("SELECT set_config('app.current_user_id', $1, true)", [kitchenUser]);
+      const r = await app.query(`SELECT (create_print_station($1, 'Pass')).id AS id`, [biz]);
+      expect(r.rows[0].id).toBeTruthy();
+      await app.query("ROLLBACK");
+    } finally {
+      await app.end();
+    }
+  });
+
+  it("re-links a swapped printer instead of adding a second row", async () => {
+    // The ON CONFLICT path. Two printers on one job cannot exist, so
+    // attaching twice must update, not insert — and this is the only test
+    // that would notice if the upsert became a plain insert.
+    const app = new Client({ connectionString: process.env.APP_DATABASE_URL! });
+    await app.connect();
+    try {
+      await app.query("BEGIN");
+      await app.query("SELECT set_config('app.current_user_id', $1, true)", [kitchenUser]);
+      const call = (key: string) =>
+        app.query(
+          `SELECT (attach_station_output($1, $2, 'kitchen', 'P', $3, 'usb', 80::smallint)).device_key AS k`,
+          [biz, station, key],
+        );
+      await call("first");
+      const second = await call("second");
+      expect(second.rows[0].k).toBe("second");
+
+      const n = await app.query(
+        `SELECT count(*)::int AS n FROM station_outputs WHERE station_id = $1 AND job = 'kitchen'`,
+        [station],
+      );
+      expect(n.rows[0].n).toBe(1);
+      await app.query("ROLLBACK");
+    } finally {
+      await app.end();
+    }
+  });
+
+  it("refuses to attach a station belonging to another business", async () => {
+    // The cross-tenant case: a station id from one venue with another
+    // venue's business id. SECURITY DEFINER means RLS is not catching this,
+    // so the function's own lookup has to.
+    //
+    // `otherBiz` is owned by the same `owner` as `biz`, and the session is
+    // set to that owner before calling: without it, app_may_use_business
+    // itself refuses first ("not your business"), and the assertion below
+    // never reaches the check this test is actually for — the function's
+    // own station/business_id lookup, scoped per the comment above.
+    const other = await admin.query(
+      `INSERT INTO businesses (id, owner_id, name, type, public_code, updated_at)
+       VALUES (gen_random_uuid(), $1, 'Other', 'restaurant', $2, now()) RETURNING id`,
+      [owner, Math.random().toString(36).slice(2, 10).toUpperCase().padEnd(8, "Y")],
+    );
+    const otherBiz = other.rows[0].id as string;
+    try {
+      await admin.query("BEGIN");
+      await admin.query("SELECT set_config('app.current_user_id', $1, true)", [owner]);
+      await expect(
+        admin.query(
+          `SELECT attach_station_output($1, $2, 'kitchen', 'P', 'x', 'usb', 80::smallint)`,
+          [otherBiz, station],
+        ),
+      ).rejects.toThrow(/no such station/i);
+      await admin.query("ROLLBACK");
+    } finally {
+      await admin.query("DELETE FROM businesses WHERE id = $1", [otherBiz]);
+    }
+  });
+
   it("refuses a bill output written by someone who is not the owner", async () => {
     // A bill is prices, and the kitchen role sees no prices anywhere in
     // this product. The guard is a trigger, not a service check, because
