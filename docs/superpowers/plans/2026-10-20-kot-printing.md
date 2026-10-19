@@ -729,15 +729,25 @@ describe("encodeTicket: token slip", () => {
     ]);
   });
 
-  it("prints the token double-width and double-height", () => {
-    // The whole point of the slip is a number readable across a counter.
-    // GS ! 0x11 on, GS ! 0x00 off, with the digits between them.
+  it("prints the token double-size and turns the size back off", () => {
+    // The point of the slip is a number readable across a counter — and the
+    // point of the reset is that the table, the time and the footer are not.
+    //
+    // The reset needs its own assertion because no text assertion can see
+    // it: decode() strips every GS ! triple whatever its parameter, so a
+    // ticket missing the reset decodes to exactly the same lines while
+    // printing everything after the token at double size.
     const bytes = Array.from(encodeTicket(token, 58));
-    const on = [0x1d, 0x21, 0x11];
-    const at = bytes.findIndex((_, i) => on.every((b, k) => bytes[i + k] === b));
+    const at = bytes.findIndex(
+      (_, i) => bytes[i] === 0x1d && bytes[i + 1] === 0x21 && bytes[i + 2] === 0x11,
+    );
     expect(at).toBeGreaterThan(-1);
+
     const after = bytes.slice(at + 3);
-    expect(String.fromCharCode(...after.slice(0, after.indexOf(0x0a)))).toContain("14");
+    const eol = after.indexOf(0x0a);
+    expect(String.fromCharCode(...after.slice(0, eol))).toContain("14");
+    // Immediately after the token's own line, and nowhere later.
+    expect(after.slice(eol + 1, eol + 4)).toEqual([0x1d, 0x21, 0x00]);
   });
 
   it("names the round only from the second one on", () => {
