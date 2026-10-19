@@ -2540,12 +2540,12 @@ export class StationsService {
     await this.businesses.assertAccess(userId, businessId, {
       allow: [...STATION_ROLES.allow],
     });
-    return this.fromFunction(
+    const rows = await fromFunction(
       () => this.prisma.db.$queryRaw<
         { station: PrintStation }[]
       >`SELECT create_print_station(${businessId}::uuid, ${name}) AS station`,
-      (rows) => rows[0]!.station,
     );
+    return rows[0]!.station;
   }
 
   /**
@@ -2558,24 +2558,26 @@ export class StationsService {
    * reachable, not theoretical: an owner can revoke a station in the window
    * between resolve() checking it and the function running.
    */
-  private async fromFunction<R, T>(
-    run: () => Promise<R[]>,
-    pick: (rows: R[]) => T,
-  ): Promise<T> {
-    try {
-      return pick(await run());
-    } catch (e) {
-      const message = e instanceof Error ? e.message : "";
-      if (message.includes("not your business")) {
-        throw new ForbiddenException("That venue is not yours");
-      }
-      if (message.includes("no such station")) {
-        throw new NotFoundException("Station not found");
-      }
-      const match = /ERROR: (.+)/.exec(message);
-      if (match) throw new BadRequestException(cleanPgMessage(match[1]!));
-      throw e;
+  // (module-level, above the class — it needs no `this`)
+}
+
+async function fromFunction<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "";
+    if (/not your business/.test(message)) {
+      throw new ForbiddenException("Not your business");
     }
+    if (/no such station/.test(message)) {
+      throw new NotFoundException("Station not found");
+    }
+    // Anything else that looks like a RAISE EXCEPTION becomes a 400 with the
+    // message cleaned up for a person, same as every other SQL-raised error
+    // in this API. Unrecognised errors are rethrown, never swallowed.
+    const match = /ERROR: (.+)/.exec(message);
+    if (match) throw new BadRequestException(cleanPgMessage(match[1]!));
+    throw err;
   }
 
   async list(userId: string, businessId: string) {
@@ -2639,15 +2641,15 @@ export class StationsService {
 
     // Same door as create(): the upsert lives inside attach_station_output,
     // which is also what makes re-linking a swapped printer work.
-    return this.fromFunction(
+    const rows = await fromFunction(
       () => this.prisma.db.$queryRaw<{ output: StationOutput }[]>`
         SELECT attach_station_output(
           ${businessId}::uuid, ${stationId}::uuid, ${body.job}::"PrintJob",
           ${body.deviceLabel}, ${body.deviceKey}, ${body.transport}::"PrintTransport",
           ${body.paperWidth}::smallint
         ) AS output`,
-      (rows) => rows[0]!.output,
     );
+    return rows[0]!.output;
   }
 
   /**
