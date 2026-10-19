@@ -1487,7 +1487,7 @@ import { Client } from "pg";
 const ADMIN_URL = process.env.DIRECT_URL!;
 
 let admin: Client;
-let owner: string, kitchenUser: string, biz: string, station: string, eventId: string;
+let owner: string, kitchenUser: string, outsider: string, biz: string, station: string, eventId: string;
 
 beforeAll(async () => {
   admin = new Client({ connectionString: ADMIN_URL });
@@ -1503,6 +1503,8 @@ beforeAll(async () => {
   };
   owner = await user("Printing Owner", "owner");
   kitchenUser = await user("Printing Kitchen", "kitchen");
+  // Belongs to no business at all — the caller the functions must refuse.
+  outsider = await user("Printing Outsider", "owner");
 
   const b = await admin.query(
     `INSERT INTO businesses (id, owner_id, name, type, public_code, updated_at)
@@ -1543,7 +1545,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await admin.query("DELETE FROM businesses WHERE id = $1", [biz]);
-  await admin.query("DELETE FROM users WHERE id = ANY($1)", [[owner, kitchenUser]]);
+  await admin.query("DELETE FROM users WHERE id = ANY($1)", [[owner, kitchenUser, outsider]]);
   await admin.end();
 });
 
@@ -1616,6 +1618,56 @@ describe("print_stations schema", () => {
       [biz, station, eventId],
     );
     expect(r.rows[0].attempt).toBe(2);
+  });
+
+  it("adds no kitchen INSERT or DELETE policy", async () => {
+    // The invariant kitchen-policies.spec.ts asserts for the whole schema,
+    // re-checked here against this migration's own tables — the kitchen's
+    // writes go through SECURITY DEFINER functions, never a policy.
+    const r = await admin.query(
+      `SELECT policyname, cmd FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename IN ('print_stations', 'station_outputs', 'print_receipts')
+          AND cmd IN ('INSERT', 'DELETE')
+          AND policyname LIKE '%\\_kitchen\\_%'`,
+    );
+    expect(r.rows).toEqual([]);
+  });
+
+  it("lets a kitchen user claim a ticket through the function, not a policy", async () => {
+    // The door the invariant leaves open. Runs as menu_app with the kitchen
+    // user's tenant context — the same principal a real request carries —
+    // because as a superuser this would pass with the function deleted.
+    const app = new Client({ connectionString: process.env.APP_DATABASE_URL! });
+    await app.connect();
+    try {
+      await app.query("BEGIN");
+      await app.query("SELECT set_config('app.current_user_id', $1, true)", [kitchenUser]);
+      const r = await app.query(
+        `SELECT (claim_print_receipt($1, $2, $3, 'kitchen', 1)).id AS id`,
+        [biz, station, eventId],
+      );
+      expect(r.rows[0].id).toBeTruthy();
+      await app.query("ROLLBACK");
+    } finally {
+      await app.end();
+    }
+  });
+
+  it("refuses a claim for a business the caller has nothing to do with", async () => {
+    // SECURITY DEFINER means RLS is not checking this — the function is.
+    const app = new Client({ connectionString: process.env.APP_DATABASE_URL! });
+    await app.connect();
+    try {
+      await app.query("BEGIN");
+      await app.query("SELECT set_config('app.current_user_id', $1, true)", [outsider]);
+      await expect(
+        app.query(`SELECT claim_print_receipt($1, $2, $3, 'kitchen', 1)`, [biz, station, eventId]),
+      ).rejects.toThrow(/not your business/i);
+      await app.query("ROLLBACK");
+    } finally {
+      await app.end();
+    }
   });
 
   it("refuses a bill output written by someone who is not the owner", async () => {
@@ -1790,27 +1842,143 @@ CREATE POLICY print_receipts_owner ON print_receipts
 -- which the trigger above refuses.
 CREATE POLICY print_stations_kitchen_read ON print_stations FOR SELECT
   USING (business_id IN (SELECT app_staff_business_ids()));
-CREATE POLICY print_stations_kitchen_write ON print_stations FOR INSERT
-  WITH CHECK (business_id IN (SELECT app_staff_business_ids()));
+
 CREATE POLICY print_stations_kitchen_touch ON print_stations FOR UPDATE
   USING      (business_id IN (SELECT app_staff_business_ids()))
   WITH CHECK (business_id IN (SELECT app_staff_business_ids()));
 
 CREATE POLICY station_outputs_kitchen_read ON station_outputs FOR SELECT
   USING (business_id IN (SELECT app_staff_business_ids()));
-CREATE POLICY station_outputs_kitchen_write ON station_outputs FOR INSERT
-  WITH CHECK (business_id IN (SELECT app_staff_business_ids()));
+
 CREATE POLICY station_outputs_kitchen_update ON station_outputs FOR UPDATE
   USING      (business_id IN (SELECT app_staff_business_ids()))
   WITH CHECK (business_id IN (SELECT app_staff_business_ids()));
 
 CREATE POLICY print_receipts_kitchen_read ON print_receipts FOR SELECT
   USING (business_id IN (SELECT app_staff_business_ids()));
-CREATE POLICY print_receipts_kitchen_write ON print_receipts FOR INSERT
-  WITH CHECK (business_id IN (SELECT app_staff_business_ids()));
+
 CREATE POLICY print_receipts_kitchen_update ON print_receipts FOR UPDATE
   USING      (business_id IN (SELECT app_staff_business_ids()))
   WITH CHECK (business_id IN (SELECT app_staff_business_ids()));
+
+-- ─── The kitchen's three writes, through a door instead of a policy ────────
+--
+-- This codebase holds an invariant, asserted by kitchen-policies.spec.ts
+-- ("creates no kitchen INSERT or DELETE policy"): the kitchen role never
+-- gets a direct INSERT anywhere. `order_events` already has the same need
+-- and the same answer — `log_order_status_event` is SECURITY DEFINER
+-- precisely because order_events has no kitchen INSERT policy.
+--
+-- Printing follows that precedent rather than widening the boundary. Each
+-- function re-checks the caller itself, because SECURITY DEFINER means RLS
+-- is not going to.
+
+CREATE OR REPLACE FUNCTION app_may_use_business(p_business_id uuid) RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (SELECT 1 FROM businesses
+                  WHERE id = p_business_id AND owner_id = app_current_user_id())
+      OR p_business_id IN (SELECT app_staff_business_ids());
+$$;
+
+CREATE OR REPLACE FUNCTION create_print_station(p_business_id uuid, p_name text)
+RETURNS print_stations
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_row print_stations;
+BEGIN
+  IF NOT app_may_use_business(p_business_id) THEN
+    RAISE EXCEPTION 'not your business' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  INSERT INTO print_stations (business_id, name, updated_at)
+  VALUES (p_business_id, p_name, now())
+  RETURNING * INTO v_row;
+  RETURN v_row;
+END;
+$$;
+
+-- Upsert, because re-linking is the normal repair when a printer is swapped
+-- and the unique (station, job) index means a second row cannot exist.
+CREATE OR REPLACE FUNCTION attach_station_output(
+  p_business_id uuid, p_station_id uuid, p_job "PrintJob",
+  p_device_label text, p_device_key text, p_transport "PrintTransport",
+  p_paper_width smallint)
+RETURNS station_outputs
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_row station_outputs;
+BEGIN
+  IF NOT app_may_use_business(p_business_id) THEN
+    RAISE EXCEPTION 'not your business' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM print_stations
+                  WHERE id = p_station_id AND business_id = p_business_id
+                    AND revoked_at IS NULL) THEN
+    RAISE EXCEPTION 'no such station' USING ERRCODE = 'no_data_found';
+  END IF;
+
+  INSERT INTO station_outputs (business_id, station_id, job, device_label,
+                               device_key, transport, paper_width, updated_at)
+  VALUES (p_business_id, p_station_id, p_job, p_device_label,
+          p_device_key, p_transport, p_paper_width, now())
+  ON CONFLICT (station_id, job) DO UPDATE
+    SET device_label = EXCLUDED.device_label,
+        device_key   = EXCLUDED.device_key,
+        transport    = EXCLUDED.transport,
+        paper_width  = EXCLUDED.paper_width,
+        updated_at   = now()
+  RETURNING * INTO v_row;
+  RETURN v_row;
+END;
+$$;
+
+-- THE CLAIM. The unique violation is allowed to propagate: the caller turns
+-- it into a 409, and that error IS the concurrency control.
+CREATE OR REPLACE FUNCTION claim_print_receipt(
+  p_business_id uuid, p_station_id uuid, p_event_id bigint,
+  p_job "PrintJob", p_attempt int)
+RETURNS print_receipts
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_row print_receipts;
+BEGIN
+  IF NOT app_may_use_business(p_business_id) THEN
+    RAISE EXCEPTION 'not your business' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM print_stations
+                  WHERE id = p_station_id AND business_id = p_business_id
+                    AND revoked_at IS NULL) THEN
+    RAISE EXCEPTION 'no such station' USING ERRCODE = 'no_data_found';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM order_events
+                  WHERE id = p_event_id AND business_id = p_business_id) THEN
+    RAISE EXCEPTION 'no such event' USING ERRCODE = 'no_data_found';
+  END IF;
+
+  INSERT INTO print_receipts (business_id, station_id, event_id, job, attempt)
+  VALUES (p_business_id, p_station_id, p_event_id, p_job, p_attempt)
+  RETURNING * INTO v_row;
+  RETURN v_row;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION app_may_use_business(uuid) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION create_print_station(uuid, text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION attach_station_output(uuid, uuid, "PrintJob", text, text, "PrintTransport", smallint) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION claim_print_receipt(uuid, uuid, bigint, "PrintJob", int) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_may_use_business(uuid) TO menu_app;
+GRANT EXECUTE ON FUNCTION create_print_station(uuid, text) TO menu_app;
+GRANT EXECUTE ON FUNCTION attach_station_output(uuid, uuid, "PrintJob", text, text, "PrintTransport", smallint) TO menu_app;
+GRANT EXECUTE ON FUNCTION claim_print_receipt(uuid, uuid, bigint, "PrintJob", int) TO menu_app;
 
 GRANT SELECT, INSERT, UPDATE ON print_stations  TO menu_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON station_outputs TO menu_app;
@@ -1826,7 +1994,7 @@ pnpm --filter @menu/api exec prisma migrate deploy
 pnpm --filter @menu/api exec vitest run src/printing/stations-schema.spec.ts
 ```
 
-Expected: 6 passing.
+Expected: 9 passing.
 
 - [ ] **Step 5: Bring the Prisma schema into line**
 
@@ -2273,10 +2441,14 @@ export class StationsService {
     });
   }
 
+  /**
+   * Owner-only, and not for tidiness: the schema has no kitchen DELETE
+   * policy, by the same invariant that keeps the kitchen off INSERT. A
+   * kitchen user who linked the wrong printer re-links it — that is an
+   * upsert through attach_station_output, not a delete.
+   */
   async detachOutput(userId: string, businessId: string, stationId: string, job: string) {
-    await this.businesses.assertAccess(userId, businessId, {
-      allow: [...STATION_ROLES.allow],
-    });
+    await this.businesses.assertAccess(userId, businessId, { allow: ["owner"] });
     await this.prisma.db.stationOutput.deleteMany({ where: { stationId, businessId, job: job as never } });
   }
 }
