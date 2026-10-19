@@ -1,21 +1,26 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { businessChannel } from "../notifications/channel-name";
 import { ReceiptsService } from "./receipts.service";
 
-/**
- * `pending()` calls `loadEnv()` to decide the Realtime topic, and `loadEnv`
- * fails loudly (by design — see config/env.ts) rather than quietly running
- * with a missing secret. Same pattern as qr.service.spec.ts: set the
- * required variables before any test calls into the service, since loadEnv
- * caches the first process.env it sees for the lifetime of this file.
+/*
+ * `loadEnv()` memoises into a module-level `cached`, so setting process.env
+ * inside a test is too late to change what the service sees. The module is
+ * mocked instead — which is also what lets the pair of topic tests below
+ * tell `usesRealtime(env)` apart from a truthiness test on the secret.
+ *
+ * Mocking "../config/env" replaces the whole module for this file, so the
+ * factory below must cover every export receipts.service.ts imports from it
+ * (currently just `loadEnv` and `usesRealtime`) — anything else pulled in
+ * via that path at load time would come back `undefined`.
  */
-beforeAll(() => {
-  Object.assign(process.env, {
-    DATABASE_URL: process.env.DATABASE_URL ?? "postgresql://localhost:5432/test",
-    JWT_ACCESS_SECRET: "test-secret-value",
-    JWT_REFRESH_SECRET: "test-secret-value",
-    REVALIDATE_SECRET: "test-secret-value",
-    TABLE_SESSION_SECRET: "test-secret-value",
-  });
+let realtimeOn = true;
+vi.mock("../config/env", () => ({
+  loadEnv: () => ({ REALTIME_CHANNEL_SECRET: "test-secret" }),
+  usesRealtime: () => realtimeOn,
+}));
+
+beforeEach(() => {
+  realtimeOn = true;
 });
 
 /**
@@ -146,13 +151,24 @@ describe("ReceiptsService.pending", () => {
 
   it("answers with a topic even when the machine has no printer yet", async () => {
     // The page subscribes before it has been configured, and a station
-    // with no outputs must not be a station with no socket. `toHaveProperty`
-    // alone would pass on an undefined value, so the shape is asserted:
-    // either a derived channel name or an explicit null.
+    // with no outputs must not be a station with no socket.
+    realtimeOn = true;
     const { svc } = makeSvc([event("1", "round.accepted", 2)], [], []);
     const out = await svc.pending("u1", "b1", "s1", NOW);
     expect(out.pending).toEqual([]);
-    expect(out.topic === null || typeof out.topic === "string").toBe(true);
+    expect(out.topic).toBe(businessChannel("b1", "test-secret"));
+  });
+
+  it("hands out no topic when nothing will ever broadcast to it", async () => {
+    // THE discriminating test. `REALTIME_CHANNEL_SECRET` has a dev default
+    // in env.ts and is therefore never falsy, so an implementation keyed on
+    // the secret instead of on usesRealtime() hands out a topic here — a
+    // channel name for a socket nobody publishes to, which the station
+    // subscribes to and waits on forever.
+    realtimeOn = false;
+    const { svc } = makeSvc([event("1", "round.accepted", 2)]);
+    const out = await svc.pending("u1", "b1", "s1", NOW);
+    expect(out.topic).toBeNull();
   });
 
   it("refreshes the station's last-seen timestamp on every poll", async () => {
