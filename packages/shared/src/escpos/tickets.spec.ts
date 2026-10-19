@@ -308,11 +308,46 @@ describe("encodeTicket: bill slip", () => {
     expect(rounded).toContain("Round off");
   });
 
-  it("still fits a 58mm roll", () => {
-    // 32 columns is half the room, and a bill is the longest ticket. No
-    // line may exceed the roll, or the overflow is silently lost.
-    for (const line of decode(encodeTicket(bill, 58))) {
-      expect(line.length).toBeLessThanOrEqual(32);
+  it("fits every roll it can be printed on, service charge or not", () => {
+    // A bill is the longest ticket and a line past the edge is not
+    // truncated by the printer, it is silently lost.
+    //
+    // Both fixtures, because the base one has the service charge switched
+    // off and "Service charge is voluntary. Ask us to remove it." is 49
+    // characters — longer than even an 80mm roll. Checking only the
+    // default bill would leave the one sentence that MUST wrap unexercised
+    // at either width.
+    const withService: BillTicket = {
+      ...bill,
+      serviceCharge: "64.50",
+      serviceChargeRate: "5",
+      total: "1354.50",
+    };
+
+    for (const t of [bill, withService]) {
+      for (const width of [58, 80] as const) {
+        for (const line of decode(encodeTicket(t, width))) {
+          expect(line.length).toBeLessThanOrEqual(width === 80 ? 48 : 32);
+        }
+      }
     }
+  });
+
+  it("turns bold back off after the total", () => {
+    // The third reset in this file to need a byte assertion, for the same
+    // reason as the other two: decode() strips every ESC E whatever its
+    // parameter, so a missing reset prints the disclaimer, the voluntary
+    // notice and the footer in bold while every text assertion still
+    // passes.
+    const bytes = Array.from(encodeTicket(bill, 80));
+    const on = bytes.findIndex(
+      (_, i) => bytes[i] === 0x1b && bytes[i + 1] === 0x45 && bytes[i + 2] === 0x01,
+    );
+    expect(on).toBeGreaterThan(-1);
+
+    // Immediately after the TOTAL line's newline.
+    const seq = [0x0a, 0x1b, 0x45, 0x00];
+    const at = bytes.findIndex((_, i) => seq.every((b, k) => bytes[i + k] === b));
+    expect(at).toBeGreaterThan(on);
   });
 });
