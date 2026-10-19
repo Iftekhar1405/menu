@@ -2390,14 +2390,23 @@ describe("StationsService.attachOutput", () => {
     // interpolated values follow it. Asserting only on the text would let a
     // swapped businessId/stationId pair through — the call would still name
     // the right function while writing against the wrong venue.
+    // Ids distinct from the fixtures' defaults: asserting "b1"/"s1" against
+    // a fake that uses those everywhere would not detect a swap.
     const { svc, station, queryRaw } = makeDeps();
-    station.findFirst.mockResolvedValue({ id: "s1", businessId: "b1", revokedAt: null });
+    station.findFirst.mockResolvedValue({ id: "s7", businessId: "b9", revokedAt: null });
 
-    await svc.attachOutput("u1", "b1", "s1", output);
+    await svc.attachOutput("u1", "b9", "s7", output);
 
     const [, ...values] = queryRaw.mock.calls[0]!;
-    expect(values.slice(0, 3)).toEqual(["b1", "s1", "bill"]);
-    expect(values).toContain("04b8:0202:X");
+    expect(values).toEqual([
+      "b9",
+      "s7",
+      output.job,
+      output.deviceLabel,
+      output.deviceKey,
+      output.transport,
+      output.paperWidth,
+    ]);
   });
 
   it("turns a function's refusal into a status rather than a 500", async () => {
