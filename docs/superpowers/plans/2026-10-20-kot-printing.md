@@ -2173,12 +2173,16 @@ import { StationsService } from "./stations.service";
 function makeDeps(overrides: Record<string, unknown> = {}) {
   const station = {
     findFirst: vi.fn(),
-    create: vi.fn(),
     update: vi.fn(),
     findMany: vi.fn(),
   };
-  const output = { upsert: vi.fn(), deleteMany: vi.fn() };
-  const prisma = { db: { printStation: station, stationOutput: output } };
+  const output = { deleteMany: vi.fn() };
+  // create() and attachOutput() go through SECURITY DEFINER functions, so
+  // what they exercise is $queryRaw, not a model writer. A mock that still
+  // offered printStation.create would let a regression back to the ORM path
+  // pass silently — and that path is refused by RLS for a kitchen caller.
+  const queryRaw = vi.fn().mockResolvedValue([{ station: { id: "s1" }, output: { job: "bill" } }]);
+  const prisma = { db: { printStation: station, stationOutput: output, $queryRaw: queryRaw } };
   const businesses = {
     assertAccess: vi.fn().mockResolvedValue({ business: { id: "b1" }, role: "owner" }),
   };
@@ -2187,6 +2191,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
     svc: new StationsService(prisma as never, businesses as never),
     station,
     output,
+    queryRaw,
     businesses,
   };
 }
@@ -2263,15 +2268,26 @@ describe("StationsService.attachOutput", () => {
     expect(outputs.upsert).toHaveBeenCalled();
   });
 
-  it("replaces the printer already on that job rather than adding a second", async () => {
-    // Re-linking is the normal repair when a printer is swapped. Two rows
-    // for one job cannot exist, so this has to be an upsert.
-    const { svc, station, output: outputs } = makeDeps();
+  it("links the printer through the SECURITY DEFINER function, not the ORM", async () => {
+    // The table has no kitchen INSERT policy and never will, so the ORM path
+    // would be refused by RLS for the people who stand next to the printer.
+    // The upsert that makes re-linking a swapped printer work lives inside
+    // attach_station_output.
+    const { svc, station, output: outputs, queryRaw } = makeDeps();
     station.findFirst.mockResolvedValue({ id: "s1", businessId: "b1", revokedAt: null });
 
     await svc.attachOutput("u1", "b1", "s1", output);
-    const arg = outputs.upsert.mock.calls[0]![0] as { where: unknown };
-    expect(arg.where).toEqual({ stationId_job: { stationId: "s1", job: "bill" } });
+
+    expect(queryRaw).toHaveBeenCalled();
+    const sql = String(queryRaw.mock.calls[0]![0]);
+    expect(sql).toContain("attach_station_output");
+    expect(outputs).not.toHaveProperty("upsert");
+  });
+
+  it("creates a station through the function too", async () => {
+    const { svc, queryRaw } = makeDeps();
+    await svc.create("u1", "b1", "Counter");
+    expect(String(queryRaw.mock.calls[0]![0])).toContain("create_print_station");
   });
 });
 ```
@@ -2377,11 +2393,22 @@ export class StationsService {
     return station;
   }
 
+  /**
+   * Through `create_print_station`, not `printStation.create`.
+   *
+   * There is no kitchen INSERT policy on this table and there deliberately
+   * never will be — see the invariant in kitchen-policies.spec.ts. The
+   * SECURITY DEFINER function is the only door, and it re-checks the caller
+   * itself because RLS is not going to.
+   */
   async create(userId: string, businessId: string, name: string) {
     await this.businesses.assertAccess(userId, businessId, {
       allow: [...STATION_ROLES.allow],
     });
-    return this.prisma.db.printStation.create({ data: { businessId, name } });
+    const rows = await this.prisma.db.$queryRaw<
+      { station: PrintStation }[]
+    >`SELECT create_print_station(${businessId}::uuid, ${name}) AS station`;
+    return rows[0]!.station;
   }
 
   async list(userId: string, businessId: string) {
@@ -2434,11 +2461,15 @@ export class StationsService {
     }
     await this.resolve(userId, businessId, stationId);
 
-    return this.prisma.db.stationOutput.upsert({
-      where: { stationId_job: { stationId, job: body.job } },
-      create: { businessId, stationId, ...body },
-      update: { ...body },
-    });
+    // Same door as create(): the upsert lives inside attach_station_output,
+    // which is also what makes re-linking a swapped printer work.
+    const rows = await this.prisma.db.$queryRaw<{ output: StationOutput }[]>`
+      SELECT attach_station_output(
+        ${businessId}::uuid, ${stationId}::uuid, ${body.job}::"PrintJob",
+        ${body.deviceLabel}, ${body.deviceKey}, ${body.transport}::"PrintTransport",
+        ${body.paperWidth}::smallint
+      ) AS output`;
+    return rows[0]!.output;
   }
 
   /**
@@ -2550,7 +2581,7 @@ pnpm --filter @menu/api exec vitest run
 pnpm --filter @menu/api lint
 ```
 
-Expected: 7 passing in the new file, whole suite green, typecheck clean.
+Expected: 8 passing in the new file, whole suite green, typecheck clean.
 
 ```bash
 git add apps/api/src/printing/stations.service.ts apps/api/src/printing/printing.controller.ts \
@@ -3179,11 +3210,18 @@ import { describe, expect, it, vi } from "vitest";
 import { ConflictException, ForbiddenException } from "@nestjs/common";
 import { ReceiptsService } from "./receipts.service";
 
-/** What Prisma throws when a unique index rejects an insert. */
+/**
+ * What `$queryRaw` surfaces when the claim's unique index rejects the insert.
+ *
+ * Not a Prisma P2002: a raw query failure arrives as the Postgres error text,
+ * so the service matches on the constraint name. A fake that threw P2002
+ * would test a code path production never reaches.
+ */
 class UniqueViolation extends Error {
-  code = "P2002";
   constructor() {
-    super("Unique constraint failed");
+    super(
+      'ERROR: duplicate key value violates unique constraint "print_receipts_claim_key"',
+    );
   }
 }
 
@@ -3423,14 +3461,32 @@ import { billTicketFrom, kitchenTicketFrom, tokenTicketFrom } from "./ticket-pay
 
     const attempt = body.reprint ? await this.nextAttempt(stationId, event.id, body.job) : 1;
 
-    let receipt;
+    let receipt: { id: bigint; attempt: number };
     try {
-      receipt = await this.prisma.db.printReceipt.create({
-        data: { businessId, stationId, eventId: event.id, job: body.job, attempt },
-      });
+      // Through claim_print_receipt, not printReceipt.create: there is no
+      // kitchen INSERT policy on this table, by the schema-wide invariant.
+      const rows = await this.prisma.db.$queryRaw<
+        { receipt: { id: bigint; attempt: number } }[]
+      >`SELECT claim_print_receipt(
+          ${businessId}::uuid, ${stationId}::uuid, ${event.id}::bigint,
+          ${body.job}::"PrintJob", ${attempt}::int
+        ) AS receipt`;
+      receipt = rows[0]!.receipt;
     } catch (e) {
-      if ((e as { code?: string }).code === "P2002") {
+      const message = e instanceof Error ? e.message : "";
+
+      // ORDER MATTERS. The unique violation is checked FIRST and by name:
+      // it is the whole concurrency control, and the generic ERROR: handler
+      // below would otherwise turn a lost race into a 400 that the station
+      // page treats as a real failure instead of "someone else took it".
+      if (message.includes("print_receipts_claim_key") || message.includes("23505")) {
         throw new ConflictException("Another station tab already took this ticket");
+      }
+      if (message.includes("not your business")) {
+        throw new ForbiddenException("That station is not yours");
+      }
+      if (message.includes("no such station") || message.includes("no such event")) {
+        throw new NotFoundException("Station or event not found");
       }
       throw e;
     }
