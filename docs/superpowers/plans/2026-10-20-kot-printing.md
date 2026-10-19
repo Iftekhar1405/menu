@@ -993,6 +993,25 @@ describe("encodeTicket: kitchen ticket", () => {
     expect(decode(encodeTicket(kitchen, 80)).join("\n")).not.toMatch(/\d+\.\d\d/);
   });
 
+  it("turns double height back off after the items", () => {
+    // Item lines print double-height so they read over a pass; the note and
+    // the item count must not. Like the token slip's reset, this needs a
+    // byte assertion — decode() strips every GS ! triple whatever its
+    // parameter, so deleting the reset changes no decoded line while
+    // printing the rest of the ticket at double height on real hardware.
+    const bytes = Array.from(encodeTicket(kitchen, 80));
+    const on = bytes.findIndex(
+      (_, i) => bytes[i] === 0x1d && bytes[i + 1] === 0x21 && bytes[i + 2] === 0x01,
+    );
+    expect(on).toBeGreaterThan(-1);
+
+    // The reset lands immediately after the last item's newline, so this
+    // four-byte run exists only if the items ended and the size was reset.
+    const seq = [0x0a, 0x1d, 0x21, 0x00];
+    const at = bytes.findIndex((_, i) => seq.every((b, k) => bytes[i + k] === b));
+    expect(at).toBeGreaterThan(on);
+  });
+
   it("does not merge identical dishes", () => {
     // The bill merges across rounds; the ticket never does. Two is what the
     // kitchen has to cook, and a merged line would hide one of them.
@@ -1123,7 +1142,7 @@ pnpm --filter @menu/shared exec vitest run src/escpos/tickets.spec.ts
 pnpm --filter @menu/shared build
 ```
 
-Expected: 11 passing (5 from Task 4, 6 here), build clean.
+Expected: 12 passing (5 from Task 4, 7 here), build clean.
 
 - [ ] **Step 5: Commit**
 
@@ -1391,7 +1410,7 @@ pnpm --filter @menu/shared exec vitest run
 pnpm --filter @menu/shared build
 ```
 
-Expected: 17 in `tickets.spec.ts` (5 + 6 + 6), whole shared suite green, build clean. If the 58mm width assertion fails, the fix is in `twoCol`/`wrap`, never in the assertion — a line longer than the roll is lost paper.
+Expected: 18 in `tickets.spec.ts` (5 + 7 + 6), whole shared suite green, build clean. If the 58mm width assertion fails, the fix is in `twoCol`/`wrap`, never in the assertion — a line longer than the roll is lost paper.
 
 - [ ] **Step 5: Commit**
 
