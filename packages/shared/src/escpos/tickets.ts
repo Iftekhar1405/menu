@@ -47,7 +47,47 @@ export interface KitchenTicket {
   items: { quantity: number; name: string; variant: string | null }[];
 }
 
-export type Ticket = TokenTicket | KitchenTicket;
+export interface BillLineTicket {
+  name: string;
+  variant: string | null;
+  quantity: number;
+  unitPrice: string;
+  lineTotal: string;
+}
+
+/**
+ * The receipt, as paper.
+ *
+ * The same content the PDF carries, from the same Bill the screen shows —
+ * mapped into this shape by the API (see ticket-payload.ts) rather than
+ * reimplemented, because a receipt whose paper total disagrees with its
+ * screen total is the worst bug this feature could have.
+ *
+ * `taxLine` arrives pre-composed ("GST 5% (incl.)"). Whether a single rate
+ * can be named at all depends on the lines' snapshot rates, which is a
+ * question about the order, not about printing.
+ */
+export interface BillTicket {
+  kind: "bill";
+  businessName: string;
+  addressLines: string[];
+  gstin: string | null;
+  billNumber: number;
+  tableLabel: string;
+  token: number;
+  issuedAt: string;
+  taxLine: string | null;
+  subtotal: string;
+  taxTotal: string;
+  serviceCharge: string;
+  serviceChargeRate: string;
+  roundOff: string;
+  total: string;
+  receiptFooter: string | null;
+  lines: BillLineTicket[];
+}
+
+export type Ticket = TokenTicket | KitchenTicket | BillTicket;
 
 /**
  * The same convention as the PDF receipt (bill.pdf.ts:87, receipt.pdf.ts:94):
@@ -88,6 +128,8 @@ export function encodeTicket(t: Ticket, width: PaperWidth): Uint8Array {
       return tokenSlip(t, cols);
     case "kitchen":
       return kitchenTicket(t, cols);
+    case "bill":
+      return billSlip(t, cols);
   }
 }
 
@@ -139,6 +181,65 @@ function kitchenTicket(t: KitchenTicket, cols: number): Uint8Array {
   p.line();
   p.line(rule(cols, "-"));
   p.line(twoCol("Items", String(t.items.reduce((s, i) => s + i.quantity, 0)), cols));
+
+  return p.cut().bytes();
+}
+
+function billSlip(b: BillTicket, cols: number): Uint8Array {
+  const p = new EscPos().init();
+
+  p.line(centre(b.businessName, cols));
+  for (const a of b.addressLines) {
+    for (const l of wrap(a, cols)) p.line(centre(l.trim(), cols));
+  }
+  if (b.gstin) p.line(centre(`GSTIN ${b.gstin}`, cols));
+  p.line();
+
+  p.line(twoCol(`Bill #${b.billNumber}`, `Table ${b.tableLabel}`, cols));
+  // The token is what ties this paper to the slip in the customer's hand.
+  p.line(twoCol(`Token ${b.token}`, formatTicketTime(b.issuedAt), cols));
+  p.line(rule(cols));
+
+  for (const l of b.lines) {
+    p.line(twoCol(l.name, l.lineTotal, cols));
+    // The per-unit line is indented and unpadded: it is detail, and the
+    // eye should go to the column of totals on the right.
+    p.line(`   ${l.quantity} x ${l.unitPrice}` + (l.variant ? ` - ${l.variant}` : ""));
+  }
+
+  p.line(rule(cols, "-"));
+  p.line(twoCol("Subtotal", b.subtotal, cols));
+  if (b.taxLine) p.line(twoCol(b.taxLine, b.taxTotal, cols));
+
+  const hasService = Number(b.serviceCharge) > 0;
+  // Off by default; a "Service charge 0.00" line reads like a bug.
+  if (hasService) {
+    p.line(twoCol(`Service charge ${b.serviceChargeRate}%`, b.serviceCharge, cols));
+  }
+  if (Number(b.roundOff) !== 0) p.line(twoCol("Round off", b.roundOff, cols));
+
+  p.line(rule(cols));
+  p.bold(true).line(twoCol("TOTAL", b.total, cols)).bold(false);
+  p.line(rule(cols));
+  p.line();
+
+  // Wrapped, not just centred: this sentence is 41 characters and a 58mm
+  // roll is 32. centre() leaves an over-long line alone, and the printer
+  // drops the overflow silently.
+  for (const l of wrap("This is a receipt, not a GST tax invoice.", cols)) {
+    p.line(centre(l, cols));
+  }
+
+  if (hasService) {
+    p.line();
+    for (const l of wrap("Service charge is voluntary. Ask us to remove it.", cols)) {
+      p.line(centre(l, cols));
+    }
+  }
+  if (b.receiptFooter) {
+    p.line();
+    for (const l of wrap(b.receiptFooter, cols)) p.line(centre(l, cols));
+  }
 
   return p.cut().bytes();
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { encodeTicket, type KitchenTicket, type TokenTicket } from "./tickets";
+import { encodeTicket, type BillTicket, type KitchenTicket, type TokenTicket } from "./tickets";
 
 /**
  * Bytes back to the lines a human would read off the paper.
@@ -215,5 +215,104 @@ describe("encodeTicket: kitchen ticket", () => {
       ),
     );
     expect(out.filter((l) => l.includes("Dum Biryani"))).toHaveLength(2);
+  });
+});
+
+const bill: BillTicket = {
+  kind: "bill",
+  businessName: "Taste of Hyderabad",
+  addressLines: ["12-3-45 Banjara Hills, Hyderabad 500034"],
+  gstin: "36AABCT1234K1Z5",
+  billNumber: 208,
+  tableLabel: "7",
+  token: 14,
+  issuedAt: "2026-10-04T16:01:00.000Z",
+  taxLine: "GST 5% (incl.)",
+  subtotal: "1223.81",
+  taxTotal: "61.19",
+  serviceCharge: "0.00",
+  serviceChargeRate: "0",
+  roundOff: "0.00",
+  total: "1290.00",
+  receiptFooter: "Thank you — see you again!",
+  lines: [
+    { name: "Chicken Biryani", variant: "Full", quantity: 2, unitPrice: "320.00", lineTotal: "640.00" },
+    { name: "Mutton Haleem", variant: null, quantity: 1, unitPrice: "280.00", lineTotal: "280.00" },
+    { name: "Butter Naan", variant: null, quantity: 3, unitPrice: "45.00", lineTotal: "135.00" },
+    { name: "Hyderabadi Double Ka Meetha", variant: null, quantity: 1, unitPrice: "150.00", lineTotal: "150.00" },
+    { name: "Irani Chai", variant: null, quantity: 2, unitPrice: "30.00", lineTotal: "60.00" },
+    { name: "Osmania Biscuit", variant: null, quantity: 1, unitPrice: "25.00", lineTotal: "25.00" },
+  ],
+};
+
+describe("encodeTicket: bill slip", () => {
+  it("prints the approved 80mm bill", () => {
+    expect(decode(encodeTicket(bill, 80))).toEqual([
+      " ".repeat(15) + "Taste of Hyderabad",
+      "    12-3-45 Banjara Hills, Hyderabad 500034",
+      "             GSTIN 36AABCT1234K1Z5",
+      "",
+      "Bill #208                                Table 7",
+      "Token 14                         04 Oct, 9:31 pm",
+      "=".repeat(48),
+      "Chicken Biryani                           640.00",
+      "   2 x 320.00 - Full",
+      "Mutton Haleem                             280.00",
+      "   1 x 280.00",
+      "Butter Naan                               135.00",
+      "   3 x 45.00",
+      "Hyderabadi Double Ka Meetha               150.00",
+      "   1 x 150.00",
+      "Irani Chai                                 60.00",
+      "   2 x 30.00",
+      "Osmania Biscuit                            25.00",
+      "   1 x 25.00",
+      "-".repeat(48),
+      "Subtotal                                 1223.81",
+      "GST 5% (incl.)                             61.19",
+      "=".repeat(48),
+      "TOTAL                                    1290.00",
+      "=".repeat(48),
+      "",
+      "   This is a receipt, not a GST tax invoice.",
+      "",
+      "           Thank you - see you again!",
+    ]);
+  });
+
+  it("ties the paper to the slip in the customer's hand", () => {
+    // Without the token there is nothing connecting this bill to the
+    // numbered slip the customer is holding.
+    expect(decode(encodeTicket(bill, 80)).join("\n")).toContain("Token 14");
+  });
+
+  it("prints the service charge with the sentence that must accompany it", () => {
+    // Legally load-bearing, and already on the screen and the PDF. Paper
+    // cannot be the one place it is missing.
+    const out = decode(
+      encodeTicket({ ...bill, serviceCharge: "64.50", serviceChargeRate: "5", total: "1354.50" }, 80),
+    ).join("\n");
+    expect(out).toContain("Service charge 5%");
+    expect(out).toContain("64.50");
+    expect(out).toMatch(/voluntary/i);
+  });
+
+  it("omits the service charge entirely when it is off", () => {
+    // Off by default, and a "Service charge 0.00" line reads like a bug.
+    expect(decode(encodeTicket(bill, 80)).join("\n")).not.toMatch(/Service charge/i);
+  });
+
+  it("prints a round-off only when there is one", () => {
+    expect(decode(encodeTicket(bill, 80)).join("\n")).not.toMatch(/Round off/i);
+    const rounded = decode(encodeTicket({ ...bill, roundOff: "-0.19" }, 80)).join("\n");
+    expect(rounded).toContain("Round off");
+  });
+
+  it("still fits a 58mm roll", () => {
+    // 32 columns is half the room, and a bill is the longest ticket. No
+    // line may exceed the roll, or the overflow is silently lost.
+    for (const line of decode(encodeTicket(bill, 58))) {
+      expect(line.length).toBeLessThanOrEqual(32);
+    }
   });
 });
