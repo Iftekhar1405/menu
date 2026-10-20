@@ -4060,6 +4060,27 @@ describe("station identity", () => {
     expect(stationIdFor("b1")).toBeNull();
   });
 
+  it("survives a localStorage whose methods throw", () => {
+    // THE test for the try/catch. Private mode and some embedded webviews
+    // give you a localStorage object whose METHODS throw on call — access
+    // succeeds, so the optional chaining below does nothing. Without this,
+    // deleting every try/catch in identity.ts leaves the whole file's
+    // suite green on the strength of `?.` alone.
+    const boom = () => {
+      throw new Error("SecurityError: access denied");
+    };
+    (globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: boom,
+      setItem: boom,
+      removeItem: boom,
+    };
+
+    expect(() => stationIdFor("b1")).not.toThrow();
+    expect(stationIdFor("b1")).toBeNull();
+    expect(() => rememberStation("b1", "s1")).not.toThrow();
+    expect(() => forgetStation("b1")).not.toThrow();
+  });
+
   it("survives a browser with no localStorage at all", () => {
     // Private mode and some embedded webviews throw on access. A station
     // that crashes on load cannot even show why.
@@ -4307,7 +4328,7 @@ pnpm --filter @menu/web exec vitest run lib/station
 pnpm --filter @menu/web lint
 ```
 
-Expected: 10 passing (6 loop, 4 identity), typecheck clean.
+Expected: 11 passing (6 loop, 5 identity), typecheck clean.
 
 ```bash
 git add apps/web/lib/station/
