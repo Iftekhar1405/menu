@@ -572,6 +572,10 @@ model OrderEvent {
   @@index([orderId, id])
   @@index([actorId, id(sort: Desc)])
   @@index([roundId, id], map: "order_events_round_idx")
+  /// ReceiptsService.pending() filters by business_id and a 16-hour `at`
+  /// floor on every ten-second station poll (I2); without this leading the
+  /// scan, that query reads the whole table's slice for the business.
+  @@index([businessId, at], map: "order_events_pending_idx")
   @@map("order_events")
 }
 

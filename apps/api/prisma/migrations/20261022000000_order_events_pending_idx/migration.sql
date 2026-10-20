@@ -1,0 +1,13 @@
+-- ReceiptsService.pending() runs `orderEvent.findMany({ where: { businessId,
+-- at: { gte: since } } })` every ten seconds, per station, with no `take` (I2
+-- added one, separately, in application code). None of order_events' three
+-- existing indexes — (order_id, id), (actor_id, id desc), (round_id, id) —
+-- leads with business_id or at, so that query was a full scan of one
+-- business's slice of an append-only, multi-tenant table on every poll.
+--
+-- business_id leads so the scan stays tenant-local; at follows so the
+-- `WHERE at >= $since` range is satisfied by the same index, not a second
+-- lookup. Declared on OrderEvent in schema.prisma in this same commit —
+-- see 20261020000000_restore_business_staff_lookup's lesson about an index
+-- Prisma cannot see.
+CREATE INDEX "order_events_pending_idx" ON "order_events" ("business_id", "at");
