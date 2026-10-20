@@ -4407,6 +4407,8 @@ git commit -m "feat(web): drive a station's printers without a browser in the lo
 - Create: `apps/web/app/(app)/station/page.tsx`
 - Create: `apps/web/lib/station/api.ts`
 - Create: `apps/web/lib/station/api.spec.ts`
+- Create: `apps/web/lib/station/transport.spec.ts`
+- Modify: `apps/web/lib/station/transport.ts` (add `serialTransport`, `serialKeyOf`)
 
 **Interfaces:**
 - Consumes: `drain`, `StationApi`, `usbTransport`, `stationIdFor`, `rememberStation`, `forgetStation` (Task 12); `api`, `ApiError` from `@/lib/api-client`; `useSession` from `@/components/session`; `openChannel`, `realtimeConfig` from `@/lib/notifications/realtime` — the same helper the notifications provider uses (`components/notifications/provider.tsx:213`), so there is one Realtime client in this app and not two.
@@ -4453,6 +4455,42 @@ describe("stationApi.claim", () => {
 ```
 
 **Before writing this, open `apps/web/lib/api-client.ts`** and check `ApiError`'s constructor signature and the exact shape of `api.post`. The test above assumes `new ApiError(status, message)` and `api.post(path, body?)`; if either differs, match the file, not this plan.
+
+Create `apps/web/lib/station/transport.spec.ts` as well. The transports
+themselves cannot be tested here — there is no `navigator` in a node
+environment, and faking one would test the fake — but the two key
+derivations are pure functions over plain objects, and they are exactly
+what the link UI and `granted()` must agree on. A linked printer whose key
+no longer matches reads "Not connected" forever, silently.
+
+```ts
+import { describe, expect, it } from "vitest";
+import { deviceKeyOf, serialKeyOf } from "./transport";
+
+describe("device keys", () => {
+  it("derives a USB key the link screen and granted() both produce", () => {
+    expect(deviceKeyOf({ vendorId: 1208, productId: 514, serialNumber: "X1" })).toBe(
+      "1208:514:X1",
+    );
+  });
+
+  it("keeps a USB key stable when the printer reports no serial number", () => {
+    // Common on cheap thermal printers. Both sides must collapse the
+    // missing field the same way or the key never matches again.
+    expect(deviceKeyOf({ vendorId: 1208, productId: 514 })).toBe("1208:514:");
+  });
+
+  it("namespaces serial keys so they cannot collide with USB ones", () => {
+    // Without the prefix, a serial port and a USB device sharing ids would
+    // produce the same key and transportFor would route to the wrong API.
+    expect(serialKeyOf({ usbVendorId: 1208, usbProductId: 514 })).toBe("serial:1208:514");
+  });
+
+  it("keeps a serial key stable when getInfo reports no USB ids", () => {
+    expect(serialKeyOf({})).toBe("serial::");
+  });
+});
+```
 
 - [ ] **Step 2: Run it and watch it fail**
 
@@ -4844,7 +4882,7 @@ pnpm --filter @menu/web exec vitest run lib/station
 pnpm --filter @menu/web lint
 ```
 
-Expected: 13 passing across `lib/station`, typecheck clean.
+Expected: 18 passing across `lib/station`, typecheck clean.
 
 ```bash
 git add apps/web/lib/station/api.ts apps/web/lib/station/api.spec.ts "apps/web/app/(app)/station/page.tsx"
