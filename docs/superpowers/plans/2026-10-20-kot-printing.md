@@ -5161,7 +5161,7 @@ The e2e cannot drive real USB — Playwright has no WebUSB — so the browser ha
 
 **Interfaces:**
 - Consumes: everything from Tasks 1–14.
-- Produces: `/settings/printing` in the owner and admin `ALLOWED` lists. The existing exports are `navFor` and `canSee` — neither changes shape.
+- Produces: a link to `/settings/printing` on the Settings index. **No `nav.ts` change at all** — see below.
 - **`/station` is already done.** Task 13 found it was in no role's `ALLOWED`, which would have redirected the page to `/orders` on load, and added it to all three with a test. It is deliberately in **no** sidebar: the screen is opened once per machine by bookmark, and a nav entry renders on mobile too, inviting staff to turn a phone into a print station. Do not add one.
 
 - [ ] **Step 1: Write the failing navigation test**
@@ -5171,8 +5171,11 @@ Append to `apps/web/lib/nav.spec.ts`:
 ```ts
 describe("the printing settings screen", () => {
   it("is the owner's, and not the kitchen's", () => {
-    // Cosmetic only — the API is the boundary — but a kitchen login should
-    // not be shown a screen whose every row it would be refused.
+    // This passes today with no nav.ts change — `canSee` matches by prefix
+    // and "/settings" is already in the owner and admin lists. It is here
+    // as a REGRESSION GUARD, not as a test of new work: it fails the day
+    // someone drops "/settings" from an owner's list or grants it to the
+    // kitchen, either of which would silently change who sees this page.
     expect(canSee("owner", "/settings/printing")).toBe(true);
     expect(canSee("platform_admin", "/settings/printing")).toBe(true);
     expect(canSee("kitchen", "/settings/printing")).toBe(false);
@@ -5200,7 +5203,15 @@ Expected: FAIL — `/station` is in neither list.
 
 - [ ] **Step 3: Add the routes to the navigation**
 
-In `apps/web/lib/nav.ts`, add `"/settings/printing"` to the owner and admin `ALLOWED` lists. That is the whole change: `/station` is already present in all three from Task 13, and `/settings/printing` is not its own nav entry — it hangs off Settings, like the staff screen does.
+**Do not touch `apps/web/lib/nav.ts`.** The plan previously said to add `"/settings/printing"` to the owner and admin `ALLOWED` lists; that is unnecessary and would be dead weight. `canSee` matches by prefix —
+
+```ts
+ALLOWED[role].some((p) => pathname === p || pathname.startsWith(`${p}/`))
+```
+
+— and `"/settings"` is already in the owner and admin lists, so `/settings/printing` resolves today with no edit. Kitchen has no `/settings` entry, so it is already refused. `/station` was added to all three lists by Task 13.
+
+What IS missing is a way to reach the page: `apps/web/app/(app)/settings/page.tsx:253` links to `/settings/staff` and nothing links to printing, so the screen exists and no owner can find it. Add a Printing entry beside the Staff one, matching whatever card or row component that file already uses — read it rather than inventing a shape.
 
 - [ ] **Step 4: Write the two tests the spec asks for by name**
 
