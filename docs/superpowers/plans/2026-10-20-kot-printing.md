@@ -5123,28 +5123,31 @@ The e2e cannot drive real USB — Playwright has no WebUSB — so the browser ha
 
 **Interfaces:**
 - Consumes: everything from Tasks 1–14.
-- Produces: `/station` and `/settings/printing` in `ALLOWED`; `/station` in `KITCHEN_NAV` and `OWNER_NAV`. The existing exports are `navFor` and `canSee` — neither changes shape.
+- Produces: `/settings/printing` in the owner and admin `ALLOWED` lists. The existing exports are `navFor` and `canSee` — neither changes shape.
+- **`/station` is already done.** Task 13 found it was in no role's `ALLOWED`, which would have redirected the page to `/orders` on load, and added it to all three with a test. It is deliberately in **no** sidebar: the screen is opened once per machine by bookmark, and a nav entry renders on mobile too, inviting staff to turn a phone into a print station. Do not add one.
 
 - [ ] **Step 1: Write the failing navigation test**
 
 Append to `apps/web/lib/nav.spec.ts`:
 
 ```ts
-describe("the station screen", () => {
-  it("is reachable by the people who stand next to the printer", () => {
-    // A kitchen login is usually who opens the machine in the morning.
-    expect(navFor("kitchen").map((n) => n.href)).toContain("/station");
-    expect(navFor("owner").map((n) => n.href)).toContain("/station");
-  });
-
-  it("lets both roles load it, and printing settings only the owner", () => {
-    expect(canSee("kitchen", "/station")).toBe(true);
-    expect(canSee("owner", "/settings/printing")).toBe(true);
+describe("the printing settings screen", () => {
+  it("is the owner's, and not the kitchen's", () => {
     // Cosmetic only — the API is the boundary — but a kitchen login should
     // not be shown a screen whose every row it would be refused.
+    expect(canSee("owner", "/settings/printing")).toBe(true);
+    expect(canSee("platform_admin", "/settings/printing")).toBe(true);
     expect(canSee("kitchen", "/settings/printing")).toBe(false);
   });
+
+  it("hangs off Settings rather than taking its own nav entry", () => {
+    expect(navFor("owner").map((n) => n.href)).not.toContain("/settings/printing");
+  });
 });
+
+// Note: the /station screen's own nav test already exists, written by
+// Task 13 — it asserts every role can reach the page and that it appears
+// in nobody's sidebar. Do not duplicate it.
 ```
 
 `canSee` is the existing export that answers "may this role load this path", read off `ALLOWED` (`nav.ts:62`). Import it alongside `navFor` in the spec — do not add a second function.
@@ -5159,7 +5162,7 @@ Expected: FAIL — `/station` is in neither list.
 
 - [ ] **Step 3: Add the routes to the navigation**
 
-In `apps/web/lib/nav.ts`, add `{ href: "/station", label: "Printing" }` to `KITCHEN_NAV` and `OWNER_NAV`, and add `"/station"` to all three `ALLOWED` lists plus `"/settings/printing"` to the owner and admin lists. `/settings/printing` is not its own nav entry — it hangs off Settings, like the staff screen does.
+In `apps/web/lib/nav.ts`, add `"/settings/printing"` to the owner and admin `ALLOWED` lists. That is the whole change: `/station` is already present in all three from Task 13, and `/settings/printing` is not its own nav entry — it hangs off Settings, like the staff screen does.
 
 - [ ] **Step 4: Write the two tests the spec asks for by name**
 
