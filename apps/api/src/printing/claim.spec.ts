@@ -19,7 +19,11 @@ class UniqueViolation extends Error {
 
 function makeSvc(opts: { role?: "owner" | "kitchen"; insert?: () => unknown } = {}) {
   const create = vi.fn(opts.insert ?? (async () => ({ id: BigInt(9), attempt: 1 })));
-  const queryRaw = vi.fn(async (..._args: unknown[]) => [{ receipt: await create() }]);
+  // The row claim_print_receipt's caller sees, direct from `FROM
+  // claim_print_receipt(...)` — not wrapped in a `receipt` column. See
+  // insertClaim's comment: the wrapped form is a composite Prisma's query
+  // engine cannot deserialize against a real database.
+  const queryRaw = vi.fn(async (..._args: unknown[]) => [await create()]);
   const prisma = {
     db: {
       printReceipt: { create, findFirst: vi.fn().mockResolvedValue(null), update: vi.fn() },
@@ -196,6 +200,95 @@ describe("ReceiptsService.claim", () => {
     expect(call[3]).toBe(BigInt(1234));
     expect(call[4]).toBe("token");
     expect(call[5]).toBe(1);
+  });
+
+  it("reclaims a receipt whose previous attempt failed, instead of a false 409 (C2)", async () => {
+    // drain() always claims at attempt 1. Without this, a receipt that
+    // failed at attempt 1 collides with every retry forever: the 409 reads
+    // as "another tab took it", which is false, and the ticket never prints
+    // again until the job ages out of the 30-minute window.
+    //
+    // Every request runs inside one transaction (TenantInterceptor), and a
+    // failed statement aborts it for any query after — see resolveAttempt's
+    // comment. So the attempt is resolved, and the insert made, exactly
+    // once: this is not "fail, then look, then retry", it is "look, then
+    // succeed".
+    const { svc, prisma, queryRaw } = makeSvc({ insert: () => ({ id: BigInt(9), attempt: 2 }) });
+    (prisma.db.printReceipt.findFirst as unknown as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ status: "failed", claimedAt: new Date("2026-10-04T15:00:00.000Z") })
+      .mockResolvedValueOnce({ attempt: 1 });
+
+    const out = await svc.claim("u1", "b1", "s1", { eventId: "1", job: "token" });
+    expect(out.attempt).toBe(2);
+    expect(queryRaw).toHaveBeenCalledOnce();
+    expect(queryRaw.mock.calls[0]![5]).toBe(2); // the resolved attempt, passed to the one insert
+  });
+
+  it("reclaims a claim abandoned past the stale window, instead of a false 409 (I1)", async () => {
+    // A receipt stuck at `claimed` — tab closed mid-write, network dropped —
+    // did not win a race against this claim. It was abandoned, and
+    // resolveAttempt must treat it exactly like a failed one.
+    const { svc, prisma } = makeSvc({ insert: () => ({ id: BigInt(9), attempt: 2 }) });
+    (prisma.db.printReceipt.findFirst as unknown as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ status: "claimed", claimedAt: new Date("2026-10-04T15:00:00.000Z") })
+      .mockResolvedValueOnce({ attempt: 1 });
+
+    const out = await svc.claim(
+      "u1",
+      "b1",
+      "s1",
+      { eventId: "1", job: "token" },
+      new Date("2026-10-04T15:10:00.000Z"), // ten minutes after the stale claim
+    );
+    expect(out.attempt).toBe(2);
+  });
+
+  it("still uses attempt 1, and still 409s on collision, when the existing row is a live claim", async () => {
+    // resolveAttempt must discriminate, not steer away from every existing
+    // row: a claim zero seconds old is almost certainly a tab mid-write,
+    // and losing that race has to stay attempt 1 and a 409 — not a silent
+    // jump to attempt 2 that leaves two receipts for one ticket.
+    const { svc, prisma, queryRaw } = makeSvc({
+      insert: () => {
+        throw new UniqueViolation();
+      },
+    });
+    (prisma.db.printReceipt.findFirst as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      status: "claimed",
+      claimedAt: new Date("2026-10-04T15:00:00.000Z"),
+    });
+
+    await expect(
+      svc.claim(
+        "u1",
+        "b1",
+        "s1",
+        { eventId: "1", job: "token" },
+        new Date("2026-10-04T15:00:00.000Z"),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(queryRaw.mock.calls[0]![5]).toBe(1);
+  });
+
+  it("still 409s, with no query after the failed insert, when two tabs resolve the same attempt at once", async () => {
+    // resolveAttempt lowers the odds of a collision but cannot eliminate
+    // every race: two tabs can both see attempt 1 as abandoned and both
+    // resolve to attempt 2 before either inserts. The insert is still the
+    // only thing that decides, and the loser must get a 409 straight from
+    // the failed statement — not a second query, which the aborted
+    // transaction would refuse (see resolveAttempt's comment).
+    const { svc, prisma } = makeSvc({
+      insert: () => {
+        throw new UniqueViolation();
+      },
+    });
+    (prisma.db.printReceipt.findFirst as unknown as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ status: "failed", claimedAt: new Date("2026-10-04T15:00:00.000Z") })
+      .mockResolvedValueOnce({ attempt: 1 });
+
+    await expect(svc.claim("u1", "b1", "s1", { eventId: "1", job: "token" })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
   });
 });
 

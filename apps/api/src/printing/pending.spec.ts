@@ -31,7 +31,12 @@ beforeEach(() => {
  */
 const NOW = new Date("2026-10-04T15:30:00.000Z");
 
-function makeSvc(events: unknown[], receipts: unknown[] = [], outputs = ["token", "kitchen"]) {
+function makeSvc(
+  events: unknown[],
+  receipts: unknown[] = [],
+  outputs = ["token", "kitchen"],
+  role: "owner" | "kitchen" = "owner",
+) {
   const prisma = {
     db: {
       orderEvent: { findMany: vi.fn().mockResolvedValue(events) },
@@ -45,6 +50,7 @@ function makeSvc(events: unknown[], receipts: unknown[] = [], outputs = ["token"
       revokedAt: null,
       outputs: outputs.map((job) => ({ job })),
     }),
+    roleFor: vi.fn().mockResolvedValue(role),
   };
   const billing = { generate: vi.fn() };
   return {
@@ -184,5 +190,169 @@ describe("ReceiptsService.pending", () => {
     const { svc, stations } = makeSvc([event("1", "round.accepted", 2)]);
     await svc.pending("u1", "b1", "s1", NOW);
     expect(stations.resolve).toHaveBeenCalledWith("u1", "b1", "s1", { touch: true });
+  });
+
+  it("does not offer a bill job to a kitchen principal, even though the station holds a bill printer", async () => {
+    // C1. The counter station holds token + bill; a kitchen-role staffer is
+    // logged in on that tab. claim() already refuses a bill claim from
+    // kitchen with a 403 — but pending() offering it at all is what let an
+    // uncaught claim() throw wedge every job behind it in a station's pass
+    // (see loop.spec.ts). pending() must agree with claim() about who may
+    // have a bill, not just leave claim() to find out.
+    const closed = {
+      id: BigInt("1"),
+      kind: "completed",
+      at: new Date(NOW.getTime() - 2 * 60_000),
+      orderId: "o1",
+      roundId: null,
+      order: { dailyNumber: 14, table: { label: "7" } },
+    };
+    const { svc, stations } = makeSvc([closed], [], ["token", "bill"], "kitchen");
+    const { pending } = await svc.pending("u1", "b1", "s1", NOW);
+    expect(pending.map((p) => p.job)).not.toContain("bill");
+    expect(stations.roleFor).toHaveBeenCalledWith("u1", "b1");
+  });
+
+  it("still offers a bill job to the owner on the same station", async () => {
+    // The other half of the above: the filter must discriminate on role, not
+    // simply drop bill for everyone once a role check exists at all.
+    const closed = {
+      id: BigInt("1"),
+      kind: "completed",
+      at: new Date(NOW.getTime() - 2 * 60_000),
+      orderId: "o1",
+      roundId: null,
+      order: { dailyNumber: 14, table: { label: "7" } },
+    };
+    const { svc } = makeSvc([closed], [], ["token", "bill"], "owner");
+    const { pending } = await svc.pending("u1", "b1", "s1", NOW);
+    expect(pending.map((p) => p.job)).toContain("bill");
+  });
+
+  it("never checks role when the station holds no bill output", async () => {
+    // Every pending() poll that only prints token/kitchen must not pay for a
+    // role lookup it has no reason to need.
+    const { svc, stations } = makeSvc([event("1", "round.accepted", 2)], [], ["token", "kitchen"]);
+    await svc.pending("u1", "b1", "s1", NOW);
+    expect(stations.roleFor).not.toHaveBeenCalled();
+  });
+
+  it("re-offers a claim abandoned long enough ago, instead of leaving it stuck forever", async () => {
+    // I1. A tab that closed mid-write, or a network drop, leaves a receipt
+    // at `claimed` forever — excluded from `done` only by status, which
+    // `pending`'s old query never revisited. Five minutes and one second
+    // old is past STALE_CLAIM_MINUTES, so the job must come back.
+    const { svc } = makeSvc(
+      [event("1", "round.accepted", 2)],
+      [
+        {
+          eventId: BigInt("1"),
+          job: "token",
+          status: "claimed",
+          claimedAt: new Date(NOW.getTime() - 5 * 60_000 - 1000),
+          attempt: 1,
+          error: null,
+        },
+      ],
+    );
+    const { pending } = await svc.pending("u1", "b1", "s1", NOW);
+    expect(pending.map((p) => p.job)).toEqual(["token", "kitchen"]);
+  });
+
+  it("does not re-offer a claim that is still well within the stale window", async () => {
+    // The other edge of I1: a claim one second old is almost certainly a tab
+    // about to finish writing, not an abandoned one, and must still read as
+    // taken.
+    const { svc } = makeSvc(
+      [event("1", "round.accepted", 2)],
+      [
+        {
+          eventId: BigInt("1"),
+          job: "token",
+          status: "claimed",
+          claimedAt: new Date(NOW.getTime() - 1000),
+          attempt: 1,
+          error: null,
+        },
+      ],
+    );
+    const { pending } = await svc.pending("u1", "b1", "s1", NOW);
+    expect(pending.map((p) => p.job)).toEqual(["kitchen"]);
+  });
+
+  it("lists a job whose latest attempt failed, with its error, in `failed`", async () => {
+    // C2's visibility half: the error must survive to the screen, not just
+    // the fact that a receipt exists.
+    const { svc } = makeSvc(
+      [event("1", "round.accepted", 2)],
+      [
+        {
+          eventId: BigInt("1"),
+          job: "token",
+          status: "failed",
+          claimedAt: new Date(NOW.getTime() - 60_000),
+          attempt: 1,
+          error: "device unavailable",
+        },
+      ],
+    );
+    const { failed } = await svc.pending("u1", "b1", "s1", NOW);
+    expect(failed).toHaveLength(1);
+    expect(failed[0]).toMatchObject({ job: "token", error: "device unavailable", attempt: 1 });
+  });
+
+  it("bounds the order_events query with a take limit, newest first", async () => {
+    // I2: order_events is append-only and multi-tenant, and this query runs
+    // every ten seconds per station with no bound at all. Newest-first,
+    // because a cap on an ascending query would drop the events still
+    // inside the 30-minute pending window first — exactly backwards.
+    const { svc, prisma } = makeSvc([event("1", "round.accepted", 2)]);
+    await svc.pending("u1", "b1", "s1", NOW);
+    const call = (prisma.db.orderEvent.findMany as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0] as { take?: number; orderBy?: { at: string } };
+    expect(call.take).toBeGreaterThan(0);
+    expect(call.orderBy).toEqual({ at: "desc" });
+  });
+
+  it("restores chronological order after the newest-first query", async () => {
+    // The mock hands back exactly what it is given — here, deliberately in
+    // the newest-first order the real `at: desc` query returns. Without
+    // pending()'s own reverse, the station's list would show its newest
+    // ticket first for no reason a later reader could explain.
+    const older = event("1", "round.accepted", 10);
+    const newer = event("2", "round.accepted", 2);
+    const { svc } = makeSvc([newer, older]); // deliberately newest-first
+    const { pending } = await svc.pending("u1", "b1", "s1", NOW);
+    expect(pending.map((p) => p.eventId)).toEqual(["1", "1", "2", "2"]);
+  });
+
+  it("drops a failed attempt from `failed` once a later attempt on the same job printed", async () => {
+    // Only the latest attempt decides the job's state. An attempt-1 failure
+    // superseded by an attempt-2 success must not haunt the Failed list
+    // forever.
+    const { svc } = makeSvc(
+      [event("1", "round.accepted", 2)],
+      [
+        {
+          eventId: BigInt("1"),
+          job: "token",
+          status: "printed",
+          claimedAt: new Date(NOW.getTime() - 30_000),
+          attempt: 2,
+          error: null,
+        },
+        {
+          eventId: BigInt("1"),
+          job: "token",
+          status: "failed",
+          claimedAt: new Date(NOW.getTime() - 90_000),
+          attempt: 1,
+          error: "device unavailable",
+        },
+      ],
+    );
+    const { failed, pending } = await svc.pending("u1", "b1", "s1", NOW);
+    expect(failed).toEqual([]);
+    expect(pending.map((p) => p.job)).toEqual(["kitchen"]);
   });
 });

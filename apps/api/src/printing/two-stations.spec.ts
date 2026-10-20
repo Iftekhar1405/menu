@@ -53,12 +53,15 @@ async function station(name: string, jobs: { job: string; width: number }[]) {
  * What a station would be offered, through the real service — see the file
  * comment for why this is not a second copy of its query.
  */
-async function offered(stationId: string): Promise<string[]> {
+async function offered(
+  stationId: string,
+  role: "owner" | "kitchen" = "owner",
+): Promise<string[]> {
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.current_user_id', ${owner}::text, true)`;
     const stations = new StationsService(
       { db: tx } as never,
-      { assertAccess: async () => ({ business: { id: biz }, role: "owner" as const }) } as never,
+      { assertAccess: async () => ({ business: { id: biz }, role }) } as never,
     );
     const receipts = new ReceiptsService({ db: tx } as never, stations, {} as never);
     const { pending } = await receipts.pending(owner, biz, stationId);
@@ -165,5 +168,153 @@ describe("two tabs on one machine", () => {
       [counter, eventId],
     );
     expect(n.rows[0].n).toBe(1);
+  });
+});
+
+/**
+ * The final-review fixes (C1's other half, C2, I1), against the real
+ * `claim_print_receipt` function and real RLS, not a mocked Prisma client.
+ * The unit suites (pending.spec.ts, claim.spec.ts) prove the service calls
+ * the right functions with the right arguments; they cannot prove the SQL
+ * function itself tolerates a retried insert, or that StationsService's real
+ * `roleFor` actually reaches `pending()`'s query.
+ */
+describe("final review fixes, against a real database", () => {
+  let completedEventId: string;
+  // A round.accepted event that actually has a round behind it, unlike the
+  // suite-wide `eventId` (deliberately round-less — see "one accept, two
+  // machines" for why). ticketFor() needs a real round to succeed, and a
+  // claim that never reaches ticketFor never proves the retry survives the
+  // one-transaction-per-request rollback a throw there would otherwise
+  // cause (see roundEventId's own test).
+  let roundEventId: string;
+
+  beforeAll(async () => {
+    // A dedicated event of a kind that actually produces a bill
+    // (jobsForEvent("completed") === ["bill"]); the suite-wide `eventId` is
+    // a round.accepted and never offers bill to anyone, which would make a
+    // role-filter test here pass vacuously.
+    const ce = await admin.query(
+      `INSERT INTO order_events (order_id, business_id, kind)
+       SELECT order_id, $1, 'completed' FROM order_events WHERE id = $2 RETURNING id`,
+      [biz, eventId],
+    );
+    completedEventId = ce.rows[0].id;
+
+    const r = await admin.query(
+      `INSERT INTO order_rounds (id, business_id, order_id, seq, business_day, kot_number, status, placed_at)
+       SELECT gen_random_uuid(), $1, order_id, 2, CURRENT_DATE, 999, 'accepted', now()
+         FROM order_events WHERE id = $2 RETURNING id`,
+      [biz, eventId],
+    );
+    const roundId = r.rows[0].id;
+    const re = await admin.query(
+      `INSERT INTO order_events (order_id, business_id, kind, round_id)
+       SELECT order_id, $1, 'round.accepted', $2 FROM order_events WHERE id = $3 RETURNING id`,
+      [biz, roundId, eventId],
+    );
+    roundEventId = re.rows[0].id;
+  });
+
+  afterAll(async () => {
+    await admin.query("DELETE FROM order_events WHERE id = $1", [completedEventId]);
+    await admin.query("DELETE FROM order_events WHERE id = $1", [roundEventId]);
+  });
+
+  async function claimReal(
+    stationId: string,
+    eventIdStr: string,
+    job: "token" | "kitchen" | "bill",
+    now?: Date,
+  ) {
+    return prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_user_id', ${owner}::text, true)`;
+      const stations = new StationsService(
+        { db: tx } as never,
+        { assertAccess: async () => ({ business: { id: biz }, role: "owner" as const }) } as never,
+      );
+      const receipts = new ReceiptsService({ db: tx } as never, stations, {} as never);
+      return receipts.claim(owner, biz, stationId, { eventId: eventIdStr, job }, now);
+    });
+  }
+
+  it("hides the bill job from a kitchen principal on a station that holds a bill printer", async () => {
+    // C1's other half. claim() already refuses a kitchen principal's bill
+    // claim with a 403 (claim.spec.ts); pending() must now agree before the
+    // claim is ever attempted, against real RLS — not a stub that always
+    // answers "owner". `completedEventId` (set up above) is what actually
+    // makes "bill" a candidate at all; the suite-wide `eventId` never would,
+    // which would make this pass vacuously regardless of the fix.
+    expect(await offered(counter, "kitchen")).not.toContain("bill");
+    expect(await offered(counter, "owner")).toContain("bill");
+  });
+
+  it("reclaims a receipt whose previous attempt failed, as attempt 2 (C2)", async () => {
+    // roundEventId, not the suite-wide eventId: the whole request runs in
+    // one transaction (TenantInterceptor), so a throw from ticketFor() would
+    // roll back the insert along with it, and this needs the claim to
+    // actually commit to prove the retry survives for real.
+    await admin.query(
+      `INSERT INTO print_receipts (business_id, station_id, event_id, job, attempt, status, claimed_at, error)
+       VALUES ($1, $2, $3, 'kitchen', 1, 'failed', now(), 'device unavailable')`,
+      [biz, kitchenStation, roundEventId],
+    );
+    try {
+      const out = await claimReal(kitchenStation, roundEventId, "kitchen");
+      expect(out.attempt).toBe(2);
+      const row = await admin.query(
+        `SELECT status FROM print_receipts
+          WHERE station_id = $1 AND event_id = $2 AND job = 'kitchen' AND attempt = 2`,
+        [kitchenStation, roundEventId],
+      );
+      expect(row.rows).toHaveLength(1);
+    } finally {
+      await admin.query(
+        `DELETE FROM print_receipts WHERE station_id = $1 AND event_id = $2 AND job = 'kitchen'`,
+        [kitchenStation, roundEventId],
+      );
+    }
+  });
+
+  it("reclaims a claim abandoned past the stale window, as attempt 2 (I1)", async () => {
+    const staleClaim = new Date(Date.now() - 10 * 60_000); // ten minutes ago
+    await admin.query(
+      `INSERT INTO print_receipts (business_id, station_id, event_id, job, attempt, status, claimed_at)
+       VALUES ($1, $2, $3, 'kitchen', 1, 'claimed', $4)`,
+      [biz, oneMachine, roundEventId, staleClaim],
+    );
+    try {
+      const out = await claimReal(oneMachine, roundEventId, "kitchen");
+      expect(out.attempt).toBe(2);
+      const row = await admin.query(
+        `SELECT status FROM print_receipts
+          WHERE station_id = $1 AND event_id = $2 AND job = 'kitchen' AND attempt = 2`,
+        [oneMachine, roundEventId],
+      );
+      expect(row.rows).toHaveLength(1);
+    } finally {
+      await admin.query(
+        `DELETE FROM print_receipts WHERE station_id = $1 AND event_id = $2 AND job = 'kitchen'`,
+        [oneMachine, roundEventId],
+      );
+    }
+  });
+
+  it("still 409s a fresh, live claim rather than reclaiming it (not abandoned)", async () => {
+    await admin.query(
+      `INSERT INTO print_receipts (business_id, station_id, event_id, job, attempt, status, claimed_at)
+       VALUES ($1, $2, $3, 'kitchen', 1, 'claimed', now())`,
+      [biz, oneMachine, eventId],
+    );
+    try {
+      await expect(claimReal(oneMachine, eventId, "kitchen")).rejects.toThrow(
+        /already took this ticket/,
+      );
+    } finally {
+      await admin.query(
+        `DELETE FROM print_receipts WHERE station_id = $1 AND event_id = $2 AND job = 'kitchen'`,
+        [oneMachine, eventId],
+      );
+    }
   });
 });
