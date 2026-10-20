@@ -20,7 +20,12 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
   // what they exercise is $queryRaw, not a model writer. A mock that still
   // offered printStation.create would let a regression back to the ORM path
   // pass silently — and that path is refused by RLS for a kitchen caller.
-  const queryRaw = vi.fn().mockResolvedValue([{ station: { id: "s1" }, output: { job: "bill" } }]);
+  // The flat row create()/attachOutput() actually read off `rows[0]!` —
+  // not `{ station: {...} }` / `{ output: {...} }`, which was this mock
+  // encoding the exact wrong assumption the production bug made. See
+  // two-stations.spec.ts's real-database suite for why a mock could not
+  // have caught that on its own.
+  const queryRaw = vi.fn().mockResolvedValue([{ id: "s1", job: "bill" }]);
   const prisma = { db: { printStation: station, stationOutput: output, $queryRaw: queryRaw } };
   const businesses = {
     assertAccess: vi.fn().mockResolvedValue({ business: { id: "b1" }, role: "owner" }),

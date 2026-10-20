@@ -84,12 +84,22 @@ export class StationsService {
     await this.businesses.assertAccess(userId, businessId, {
       allow: [...STATION_ROLES.allow],
     });
+    // Columns selected and aliased explicitly, not
+    // `SELECT create_print_station(...) AS station`: the latter returns the
+    // function's whole `print_stations` composite as one column, which
+    // Prisma's query engine cannot deserialize — the same bug fixed in
+    // ReceiptsService.claim (see insertClaim's comment there). Calling the
+    // function in the FROM clause exposes its row as scalar columns; they
+    // are aliased to camelCase here because, unlike claim()'s `id`/`attempt`,
+    // this whole row is handed back to the caller as a `PrintStation`.
     const rows = await fromFunction(() =>
-      this.prisma.db.$queryRaw<
-        { station: PrintStation }[]
-      >`SELECT create_print_station(${businessId}::uuid, ${name}) AS station`,
+      this.prisma.db.$queryRaw<PrintStation[]>`
+        SELECT id, business_id AS "businessId", name,
+               last_seen_at AS "lastSeenAt", revoked_at AS "revokedAt",
+               created_at AS "createdAt", updated_at AS "updatedAt"
+        FROM create_print_station(${businessId}::uuid, ${name})`,
     );
-    return rows[0]!.station;
+    return rows[0]!;
   }
 
   async list(userId: string, businessId: string) {
@@ -152,16 +162,21 @@ export class StationsService {
     await this.resolve(userId, businessId, stationId);
 
     // Same door as create(): the upsert lives inside attach_station_output,
-    // which is also what makes re-linking a swapped printer work.
+    // which is also what makes re-linking a swapped printer work. Columns
+    // selected and aliased explicitly for the same reason as create()
+    // above — `AS output` would hand back an undeserializable composite.
     const rows = await fromFunction(() =>
-      this.prisma.db.$queryRaw<{ output: StationOutput }[]>`
-      SELECT attach_station_output(
-        ${businessId}::uuid, ${stationId}::uuid, ${body.job}::"PrintJob",
-        ${body.deviceLabel}, ${body.deviceKey}, ${body.transport}::"PrintTransport",
-        ${body.paperWidth}::smallint
-      ) AS output`,
+      this.prisma.db.$queryRaw<StationOutput[]>`
+        SELECT id, business_id AS "businessId", station_id AS "stationId", job,
+               device_label AS "deviceLabel", device_key AS "deviceKey", transport,
+               paper_width AS "paperWidth", created_at AS "createdAt", updated_at AS "updatedAt"
+        FROM attach_station_output(
+          ${businessId}::uuid, ${stationId}::uuid, ${body.job}::"PrintJob",
+          ${body.deviceLabel}, ${body.deviceKey}, ${body.transport}::"PrintTransport",
+          ${body.paperWidth}::smallint
+        )`,
     );
-    return rows[0]!.output;
+    return rows[0]!;
   }
 
   /**

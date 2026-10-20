@@ -318,3 +318,58 @@ describe("final review fixes, against a real database", () => {
     }
   });
 });
+
+/**
+ * create() and attachOutput(), through Prisma against a real database —
+ * the same class of bug as claim()'s above (`SELECT fn(...) AS alias`
+ * returns an undeserializable composite), found by the same method: no
+ * existing test called either through Prisma. `stations.spec.ts` mocks
+ * `$queryRaw` with the exact wrong shape the bug produced
+ * (`[{ station: {...} }]`), and `stations-schema.spec.ts` calls both
+ * functions through a raw `pg` Client, which decomposes the composite with
+ * `(fn(...)).id AS id` and never goes near Prisma's deserializer.
+ */
+describe("StationsService.create and attachOutput, against a real database", () => {
+  async function asOwner<T>(fn: (stations: StationsService) => Promise<T>): Promise<T> {
+    return prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_user_id', ${owner}::text, true)`;
+      const stations = new StationsService(
+        { db: tx } as never,
+        { assertAccess: async () => ({ business: { id: biz }, role: "owner" as const }) } as never,
+      );
+      return fn(stations);
+    });
+  }
+
+  it("creates a station through the function and gets back a real object, not a composite Prisma cannot read", async () => {
+    const created = await asOwner((stations) => stations.create(owner, biz, "Prisma Check"));
+    try {
+      expect(created.id).toBeTruthy();
+      expect(created.name).toBe("Prisma Check");
+      expect(created.businessId).toBe(biz);
+    } finally {
+      await admin.query("DELETE FROM print_stations WHERE id = $1", [created.id]);
+    }
+  });
+
+  it("attaches an output through the function and gets back a real object, not a composite Prisma cannot read", async () => {
+    const stationId = await station("Prisma Attach Check", []);
+    try {
+      const attached = await asOwner((stations) =>
+        stations.attachOutput(owner, biz, stationId, {
+          job: "token",
+          deviceLabel: "EPSON TM-T82",
+          deviceKey: "v:p:prisma",
+          transport: "usb",
+          paperWidth: 58,
+        }),
+      );
+      expect(attached.id).toBeTruthy();
+      expect(attached.job).toBe("token");
+      expect(attached.deviceKey).toBe("v:p:prisma");
+      expect(attached.paperWidth).toBe(58);
+    } finally {
+      await admin.query("DELETE FROM print_stations WHERE id = $1", [stationId]);
+    }
+  });
+});
