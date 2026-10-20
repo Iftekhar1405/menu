@@ -3911,7 +3911,7 @@ This is also the task where the failure modes from the spec's "when it goes wron
 
 **Interfaces:**
 - Consumes: `encodeTicket`, `PrintJob`, `Ticket`, `PaperWidth` (Tasks 1–6).
-- Produces: `interface PrinterTransport { granted(): Promise<string[]>; write(deviceKey: string, bytes: Uint8Array): Promise<void> }`; `interface StationApi`; `interface StationOutputRef { job: PrintJob; deviceKey: string }`; `drain(api, transport, outputs): Promise<DrainResult>`; `interface DrainResult { printed: number; skipped: number; failed: number; disconnected: PrintJob[] }`; `stationIdFor(businessId: string): string | null`, `rememberStation(businessId, id)`, `forgetStation(businessId)`.
+- Produces: `interface PrinterTransport { granted(): Promise<string[]>; write(deviceKey: string, bytes: Uint8Array): Promise<void> }`; `usbTransport()` and `serialTransport()`, plus `deviceKeyOf`/`serialKeyOf`; `interface StationApi`; `interface StationOutputRef { job: PrintJob; deviceKey: string }`; `drain(api, transport, outputs): Promise<DrainResult>`; `interface DrainResult { printed: number; skipped: number; failed: number; disconnected: PrintJob[] }`; `stationIdFor(businessId: string): string | null`, `rememberStation(businessId, id)`, `forgetStation(businessId)`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -4144,6 +4144,68 @@ export function deviceKeyOf(d: { vendorId: number; productId: number; serialNumb
  * usbprint.sys and cannot be taken over without a one-time WinUSB swap —
  * the chooser simply comes up empty, which the link screen explains.
  */
+/**
+ * Web Serial, for printers in virtual-COM mode.
+ *
+ * Not an alternative anyone picks for fun. On Windows a thermal printer
+ * installed as an ordinary Windows printer is claimed by usbprint.sys, and
+ * WebUSB cannot take it over without a one-time WinUSB swap with Zadig on
+ * that machine. A printer in virtual-COM mode sidesteps that entirely, and
+ * this is the only path those shops have — without it the chooser comes up
+ * empty and the answer is "ask your staff to run a driver tool".
+ *
+ * `getInfo()` gives the USB ids behind the port but no serial number, so a
+ * device key here is vendor:product with an empty third field — the same
+ * shape usbTransport produces for a printer that reports no serial.
+ */
+export function serialTransport(): PrinterTransport {
+  const nav = globalThis.navigator as unknown as {
+    serial?: { getPorts(): Promise<SerialPortLike[]> };
+  };
+
+  return {
+    async granted() {
+      if (!nav?.serial) return [];
+      return (await nav.serial.getPorts()).map(serialKeyOf);
+    },
+    async write(deviceKey, bytes) {
+      if (!nav?.serial) throw new Error("This browser has no Web Serial. Use Chrome or Edge.");
+      const port = (await nav.serial.getPorts()).find((p) => serialKeyOf(p) === deviceKey);
+      if (!port) throw new Error("Printer not connected");
+
+      // 9600 is what every virtual-COM thermal printer this targets ships
+      // with; a mismatch prints mojibake rather than failing, which is why
+      // the station screen offers a test print.
+      await port.open({ baudRate: 9600 });
+      try {
+        const writer = port.writable.getWriter();
+        try {
+          await writer.write(bytes);
+        } finally {
+          writer.releaseLock();
+        }
+      } finally {
+        // Closed even on failure, for the same reason usbTransport closes:
+        // a half-written ticket must not leave the port held until the tab
+        // is closed.
+        await port.close();
+      }
+    },
+  };
+}
+
+export type SerialPortLike = {
+  getInfo(): { usbVendorId?: number; usbProductId?: number };
+  open(options: { baudRate: number }): Promise<void>;
+  close(): Promise<void>;
+  writable: { getWriter(): { write(data: BufferSource): Promise<void>; releaseLock(): void } };
+};
+
+export function serialKeyOf(p: SerialPortLike): string {
+  const info = p.getInfo();
+  return `${info.usbVendorId ?? 0}:${info.usbProductId ?? 0}:`;
+}
+
 export function usbTransport(): PrinterTransport {
   const nav = globalThis.navigator as unknown as { usb?: { getDevices(): Promise<UsbDevice[]> } };
 
@@ -4529,15 +4591,22 @@ export default function StationPage() {
     if (!businessId || !station || running.current || revoked) return;
     running.current = true;
     try {
-      const transport = usbTransport();
-      setConnected(await transport.granted());
+      // Both transports, because a station can hold one of each: a USB
+      // token roll at the counter and a virtual-COM kitchen printer that
+      // WebUSB cannot touch on Windows. `granted()` on a browser without
+      // the API returns [], so asking both costs nothing.
+      const usb = usbTransport();
+      const serial = serialTransport();
+      setConnected([...(await usb.granted()), ...(await serial.granted())]);
 
       const refs: StationOutputRef[] = station.outputs.map((o) => ({
         job: o.job,
         deviceKey: o.deviceKey,
       }));
       const client = stationApi(businessId, station.id);
-      setLast(await drain(client, transport, refs));
+      setLast(
+        await drain(client, transportFor(station.outputs), refs),
+      );
       const fresh = await client.pending();
       setMissed(fresh.missed);
       setTopic(fresh.topic);
@@ -4580,6 +4649,30 @@ export default function StationPage() {
     const channel = openChannel({ ...config, topic, onPing: () => void tick() });
     return () => channel.close();
   }, [topic, tick]);
+
+  /**
+   * One transport object that routes each write to the right API.
+   *
+   * `drain()` takes a single transport by design — it should not know that
+   * USB and serial exist. This resolves per device_key from the station's
+   * own outputs, so a machine with one of each works without `drain()`
+   * learning anything.
+   */
+  function transportFor(outputs: Output[]): PrinterTransport {
+    const usb = usbTransport();
+    const serial = serialTransport();
+    const byKey = new Map(outputs.map((o) => [o.deviceKey, o.transport]));
+    return {
+      async granted() {
+        return [...(await usb.granted()), ...(await serial.granted())];
+      },
+      write(deviceKey, bytes) {
+        return byKey.get(deviceKey) === "serial"
+          ? serial.write(deviceKey, bytes)
+          : usb.write(deviceKey, bytes);
+      },
+    };
+  }
 
   async function setup() {
     if (!businessId) return;
