@@ -257,6 +257,21 @@ export default function SettingsPage() {
         </Link>
       </section>
 
+      {/* ── Printing ─────────────────────────────────────────────────────── */}
+      <section className="mt-10 rounded-2xl border border-line bg-surface p-5">
+        <h2 className="font-display text-[15px] font-semibold text-ink">Printing</h2>
+        <p className="mt-1 text-[13.5px] leading-relaxed text-muted">
+          Set up the machines and printers that turn an accepted order into a
+          token slip, a kitchen ticket, and a bill.
+        </p>
+        <Link
+          href="/settings/printing"
+          className="spring mt-3 inline-flex h-9 items-center rounded-xl border border-line bg-surface px-3.5 text-[13px] font-medium text-ink hover:bg-raised active:scale-[0.985]"
+        >
+          Manage printing
+        </Link>
+      </section>
+
       {/* ── Danger zone ──────────────────────────────────────────────────── */}
       <section className="mt-12 rounded-2xl border border-[rgba(179,38,30,0.25)] bg-[rgba(179,38,30,0.04)] p-5">
         <h2 className="mb-1 font-display text-[15px] font-semibold text-[#B3261E]">

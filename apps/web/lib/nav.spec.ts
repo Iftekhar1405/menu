@@ -41,3 +41,24 @@ describe("navigation by role", () => {
     }
   });
 });
+
+describe("the printing settings screen", () => {
+  it("is the owner's, and not the kitchen's", () => {
+    // This passes today with no nav.ts change — `canSee` matches by prefix
+    // and "/settings" is already in the owner and admin lists. It is here
+    // as a REGRESSION GUARD, not as a test of new work: it fails the day
+    // someone drops "/settings" from an owner's list or grants it to the
+    // kitchen, either of which would silently change who sees this page.
+    expect(canSee("owner", "/settings/printing")).toBe(true);
+    expect(canSee("platform_admin", "/settings/printing")).toBe(true);
+    expect(canSee("kitchen", "/settings/printing")).toBe(false);
+  });
+
+  it("hangs off Settings rather than taking its own nav entry", () => {
+    expect(navFor("owner").map((n) => n.href)).not.toContain("/settings/printing");
+  });
+});
+
+// Note: the /station screen's own nav test already exists, written by
+// Task 13 — it asserts every role can reach the page and that it appears
+// in nobody's sidebar. Do not duplicate it.
