@@ -72,3 +72,69 @@ export function usbTransport(): PrinterTransport {
     },
   };
 }
+
+type SerialPortInfo = { usbVendorId?: number; usbProductId?: number };
+
+type SerialPort = {
+  getInfo(): SerialPortInfo;
+  open(options: { baudRate: number }): Promise<void>;
+  writable: WritableStream<Uint8Array> | null;
+  close(): Promise<void>;
+};
+
+/**
+ * `vendorId:productId`, the only two fields Web Serial will tell a page
+ * about a port it does not currently hold open — there is no serial number
+ * here the way there is for WebUSB. Two identical USB-serial adapters on
+ * the same machine collide on this key; that is a real limit of the
+ * platform API, not a bug in this function.
+ */
+export function serialKeyOf(info: SerialPortInfo): string {
+  return `serial:${info.usbVendorId ?? ""}:${info.usbProductId ?? ""}`;
+}
+
+/**
+ * Web Serial.
+ *
+ * The one mitigation the spec names for a printer Windows has claimed as an
+ * ordinary system printer: `usbprint.sys` owns the device the moment it is
+ * installed that way, and WebUSB cannot take it over without a one-time
+ * Zadig/WinUSB driver swap on that machine. A virtual COM port sidesteps
+ * that entirely — Windows already hands serial ports to whichever
+ * application opens them.
+ *
+ * Chrome and Edge only, same as `usbTransport`. The baud rate is required by
+ * the API; a virtual COM port backed by a USB printer ignores it, so 9600 is
+ * a safe, conventional default rather than a measured value.
+ */
+export function serialTransport(): PrinterTransport {
+  const nav = globalThis.navigator as unknown as { serial?: { getPorts(): Promise<SerialPort[]> } };
+
+  return {
+    async granted() {
+      if (!nav?.serial) return [];
+      return (await nav.serial.getPorts()).map((p) => serialKeyOf(p.getInfo()));
+    },
+    async write(deviceKey, bytes) {
+      if (!nav?.serial) throw new Error("This browser has no Web Serial. Use Chrome or Edge.");
+      const port = (await nav.serial.getPorts()).find((p) => serialKeyOf(p.getInfo()) === deviceKey);
+      if (!port) throw new Error("Printer not connected");
+
+      await port.open({ baudRate: 9600 });
+      try {
+        if (!port.writable) throw new Error("Printer has no output stream");
+        const writer = port.writable.getWriter();
+        try {
+          await writer.write(bytes);
+        } finally {
+          writer.releaseLock();
+        }
+      } finally {
+        // Released even on failure, same reasoning as the USB write above: a
+        // half-written ticket must not leave the port held open until the
+        // tab is closed.
+        await port.close();
+      }
+    },
+  };
+}

@@ -46,12 +46,18 @@ export function navFor(role: Role): NavItem[] {
   }
 }
 
+/**
+ * `/station` is reachable by every role but appears in no one's sidebar: it
+ * is the screen that stays open on a shop machine all day, reached by a
+ * bookmark on that machine rather than by navigating in from a staff
+ * member's own session. `navFor` deliberately does not offer it.
+ */
 const ALLOWED: Record<Role, string[]> = {
-  kitchen: ["/orders", "/dishes", "/change-pin"],
+  kitchen: ["/orders", "/dishes", "/change-pin", "/station"],
   owner: ["/dashboard", "/orders", "/menu", "/tables", "/billing",
-          "/appearance", "/qr", "/merch", "/settings", "/change-pin"],
+          "/appearance", "/qr", "/merch", "/settings", "/change-pin", "/station"],
   platform_admin: ["/dashboard", "/orders", "/menu", "/tables", "/billing",
-                   "/appearance", "/qr", "/merch", "/settings", "/admin", "/change-pin"],
+                   "/appearance", "/qr", "/merch", "/settings", "/admin", "/change-pin", "/station"],
 };
 
 /**

@@ -30,4 +30,14 @@ describe("navigation by role", () => {
   it("keeps owners off the kitchen-only dish screen", () => {
     expect(canSee("owner", "/dishes")).toBe(false);
   });
+
+  it("lets every role reach the station screen without listing it in anyone's nav", () => {
+    // The machine that stays open at the counter all day is reached by its
+    // own bookmark, not by navigating in from a staff member's session —
+    // so it must pass canSee without ever showing up in navFor.
+    for (const role of ["owner", "kitchen", "platform_admin"] as const) {
+      expect(canSee(role, "/station")).toBe(true);
+      expect(navFor(role).map((i) => i.href)).not.toContain("/station");
+    }
+  });
 });
