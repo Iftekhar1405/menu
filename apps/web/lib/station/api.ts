@@ -1,6 +1,6 @@
 import { api, ApiError } from "@/lib/api-client";
 import type { PrintJob } from "@menu/shared";
-import type { Claimed, PendingJob, StationApi } from "./loop";
+import type { Claimed, PendingResponse, StationApi } from "./loop";
 
 /**
  * The loop's api, over HTTP.
@@ -15,10 +15,7 @@ export function stationApi(businessId: string, stationId: string): StationApi {
   const base = `/businesses/${businessId}/stations/${stationId}`;
 
   return {
-    pending: () =>
-      api.get<{ pending: PendingJob[]; missed: PendingJob[]; topic: string | null }>(
-        `${base}/pending`,
-      ),
+    pending: () => api.get<PendingResponse>(`${base}/pending`),
 
     async claim(eventId: string, job: PrintJob, reprint: boolean) {
       try {

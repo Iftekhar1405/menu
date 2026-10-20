@@ -1,14 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PRINT_JOBS, encodeTicket, type AccessRole, type PrintJob } from "@menu/shared";
+import { PRINT_JOBS, type AccessRole, type PrintJob } from "@menu/shared";
 import { ApiError, api } from "@/lib/api-client";
 import { useSession } from "@/components/session";
 import { Banner, Button, Empty, Field, Input } from "@/components/ui";
 import { stationApi } from "@/lib/station/api";
 import {
   drain,
+  reprintJob,
   type DrainResult,
+  type FailedJob,
   type PendingJob,
   type PrinterTransport,
   type StationOutputRef,
@@ -53,6 +55,7 @@ export default function StationPage() {
   const [connected, setConnected] = useState<string[]>([]);
   const [last, setLast] = useState<DrainResult | null>(null);
   const [missed, setMissed] = useState<PendingJob[]>([]);
+  const [failed, setFailed] = useState<FailedJob[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [revoked, setRevoked] = useState(false);
   /** The HMAC topic the API handed us. Never derived here. */
@@ -86,6 +89,41 @@ export default function StationPage() {
       },
     };
   }, []);
+
+  /**
+   * The manual Print/Reprint button both the Missed and Failed lists use.
+   *
+   * The actual logic is `reprintJob` in lib/station/loop.ts, tested there —
+   * this page has no test harness of its own. `client.claim` can throw for
+   * reasons that are not "someone else took it" — a bill job this principal
+   * may not claim, a station revoked since the page loaded. It used to sit
+   * outside any try/catch at all (M1): an unhandled rejection, with nothing
+   * shown on the page.
+   */
+  const reprint = useCallback(
+    async (m: PendingJob, onResolved: () => void) => {
+      if (!businessId || !station) return;
+      const client = stationApi(businessId, station.id);
+      const refs: StationOutputRef[] = station.outputs.map((o) => ({
+        job: o.job,
+        deviceKey: o.deviceKey,
+      }));
+      const out = await reprintJob(client, transportFor(station.outputs), refs, m);
+      switch (out.outcome) {
+        case "taken":
+        case "printed":
+          onResolved();
+          return;
+        case "no-output":
+          return;
+        case "failed":
+        case "error":
+          setError(out.error);
+          return;
+      }
+    },
+    [businessId, station, transportFor],
+  );
 
   const load = useCallback(async () => {
     if (!businessId) return;
@@ -126,11 +164,20 @@ export default function StationPage() {
         deviceKey: o.deviceKey,
       }));
       const client = stationApi(businessId, station.id);
-      setLast(await drain(client, transportFor(station.outputs), refs));
-      const fresh = await client.pending();
-      setMissed(fresh.missed);
-      setTopic(fresh.topic);
-      setError(null);
+      // One pending() call per pass (I2): drain() already made it to decide
+      // what to print, and missed/failed/topic are carried straight back
+      // from that same response rather than asking again for the same
+      // 16-hour, per-station query ten seconds later.
+      const result = await drain(client, transportFor(station.outputs), refs);
+      setLast(result);
+      setMissed(result.missed);
+      setFailed(result.failedReceipts);
+      setTopic(result.topic);
+      // C1: a claim this pass could not make — a bill job this principal
+      // may not claim, a revoked station — no longer throws out of drain()
+      // and abandons the rest of the pass, but it must not go unmentioned
+      // either.
+      setError(result.claimErrors > 0 ? (result.claimError ?? "A ticket could not be claimed") : null);
     } catch (e) {
       if (e instanceof ApiError && e.status === 410) {
         // This machine is no longer a station. Stop, and say so.
@@ -362,31 +409,43 @@ export default function StationPage() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={async () => {
-                    const client = stationApi(businessId, station.id);
-                    const claimed = await client.claim(m.eventId, m.job, true);
-                    if (claimed === "taken") {
-                      setMissed((rest) => rest.filter((x) => x !== m));
-                      return;
-                    }
-                    const out = station.outputs.find((o) => o.job === m.job);
-                    if (!out) return;
-                    try {
-                      await transportFor(station.outputs).write(
-                        out.deviceKey,
-                        encodeTicket(claimed.ticket, claimed.paperWidth),
-                      );
-                      await client.report(claimed.receiptId, "printed");
-                    } catch (e) {
-                      await client.report(claimed.receiptId, "failed", (e as Error).message);
-                      setError(e instanceof Error ? e.message : "Printing failed");
-                      return;
-                    }
-                    setMissed((rest) => rest.filter((x) => x !== m));
-                  }}
+                  onClick={() => void reprint(m, () => setMissed((rest) => rest.filter((x) => x !== m)))}
                 >
                   Print
                 </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {failed.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-[14px] font-semibold">Failed</h2>
+          <p className="text-[13px] text-faint">
+            The printer refused these, or the write never finished. They retry on their
+            own next pass; Reprint forces it now.
+          </p>
+          <ul className="space-y-1.5">
+            {failed.map((f) => (
+              <li
+                key={`${f.eventId}:${f.job}`}
+                className="space-y-0.5 text-[13px]"
+                data-testid={`failed-${f.eventId}-${f.job}`}
+              >
+                <div className="flex items-center justify-between">
+                  <span>
+                    Table {f.tableLabel} · token {f.token} · {JOB_LABEL[f.job]}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void reprint(f, () => setFailed((rest) => rest.filter((x) => x !== f)))}
+                  >
+                    Reprint
+                  </Button>
+                </div>
+                {f.error && <p className="text-faint">{f.error}</p>}
               </li>
             ))}
           </ul>
