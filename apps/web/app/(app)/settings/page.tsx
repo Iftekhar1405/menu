@@ -181,7 +181,7 @@ export default function SettingsPage() {
           label="Custom menu address"
           optional
           error={fieldErrors.vanitySlug}
-          hint={`menu.irad.solutions/${form.vanitySlug || current.publicCode.toLowerCase()} — your printed code keeps working either way.`}
+          hint={`supermenu.irad.solutions/${form.vanitySlug || current.publicCode.toLowerCase()} — your printed code keeps working either way.`}
         >
           <Input
             value={form.vanitySlug}

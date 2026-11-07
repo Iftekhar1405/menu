@@ -134,7 +134,7 @@ test("owner signs up, builds a menu, and a diner can read it", async ({ page }) 
   await expect(diner.getByText("₹60", { exact: false }).first()).toBeVisible();
   await expect(diner.getByText("₹95", { exact: false }).first()).toBeVisible();
   await expect(
-    diner.getByText("menu.irad.solutions", { exact: true }).first(),
+    diner.getByText("supermenu.irad.solutions", { exact: true }).first(),
   ).toBeVisible();
   await diner.screenshot({ path: `${SHOTS}/07-public-menu.png`, fullPage: true });
 

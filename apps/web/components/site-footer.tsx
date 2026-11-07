@@ -23,7 +23,7 @@ export function SiteFooter({ tone = "menu" }: { tone?: "menu" | "app" }) {
       >
         <Mark size={12} />
         <span>
-          Menu by <span className="font-medium">menu.irad.solutions</span>
+          Menu by <span className="font-medium">supermenu.irad.solutions</span>
         </span>
       </a>
       <p className={`mt-1.5 text-[10.5px] ${muted} opacity-55`}>

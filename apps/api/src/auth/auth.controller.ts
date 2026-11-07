@@ -31,7 +31,16 @@ import { AuthService } from "./auth.service";
 import type { RequestUser } from "./jwt.strategy";
 import type { IssuedTokens } from "./token.service";
 
-const REFRESH_COOKIE = "menu_rt";
+const REFRESH_COOKIE = "supermenu_rt";
+/**
+ * The name from before the rename. Still read so nobody is signed out by the
+ * rename itself; the first refresh trades it for REFRESH_COOKIE and clears it.
+ */
+const LEGACY_REFRESH_COOKIE = "menu_rt";
+
+function presentedRefreshToken(req: Request): string | undefined {
+  return req.cookies?.[REFRESH_COOKIE] ?? req.cookies?.[LEGACY_REFRESH_COOKIE];
+}
 
 @Controller("auth")
 export class AuthController {
@@ -57,6 +66,18 @@ export class AuthController {
       expires: tokens.refreshExpiresAt,
       path: "/auth",
     });
+  }
+
+  private clearRefreshCookies(res: Response): void {
+    // The flags must match the ones the cookie was set with, or the browser
+    // treats it as a different cookie and leaves the original in place.
+    for (const name of [REFRESH_COOKIE, LEGACY_REFRESH_COOKIE]) {
+      res.clearCookie(name, {
+        httpOnly: true,
+        ...refreshCookieFlags(this.env),
+        path: "/auth",
+      });
+    }
   }
 
   @Public()
@@ -86,10 +107,17 @@ export class AuthController {
   @HttpCode(200)
   @Post("refresh")
   async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const presented = req.cookies?.[REFRESH_COOKIE];
+    const presented = presentedRefreshToken(req);
     if (!presented) throw new UnauthorizedException("No session to refresh");
 
     const tokens = await this.auth.refresh(presented);
+    if (req.cookies?.[LEGACY_REFRESH_COOKIE]) {
+      res.clearCookie(LEGACY_REFRESH_COOKIE, {
+        httpOnly: true,
+        ...refreshCookieFlags(this.env),
+        path: "/auth",
+      });
+    }
     this.setRefreshCookie(res, tokens);
     return { accessToken: tokens.accessToken };
   }
@@ -98,14 +126,8 @@ export class AuthController {
   @HttpCode(204)
   @Post("logout")
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    await this.auth.logout(req.cookies?.[REFRESH_COOKIE]);
-    // The flags must match the ones the cookie was set with, or the browser
-    // treats it as a different cookie and leaves the original in place.
-    res.clearCookie(REFRESH_COOKIE, {
-      httpOnly: true,
-      ...refreshCookieFlags(this.env),
-      path: "/auth",
-    });
+    await this.auth.logout(presentedRefreshToken(req));
+    this.clearRefreshCookies(res);
   }
 
   @Public()

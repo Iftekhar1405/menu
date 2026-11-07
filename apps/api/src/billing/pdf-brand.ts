@@ -1,3 +1,5 @@
+import { SITE_HOST } from "@menu/shared";
+
 /**
  * Brand pieces shared by the receipt and the bill.
  *
@@ -46,7 +48,7 @@ export function drawCredit(
   fontSize = 6,
 ): void {
   const markSize = fontSize * 0.85;
-  const label = "menu.irad.solutions";
+  const label = SITE_HOST;
 
   doc.font("Helvetica").fontSize(fontSize);
   const labelWidth = doc.widthOfString(label);

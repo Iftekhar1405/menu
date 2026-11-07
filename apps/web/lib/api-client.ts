@@ -2,7 +2,7 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 /**
  * Auth endpoints are proxied through Next.js so the refresh cookie stays on
- * the same origin as the web app (menu.irad.solutions). iOS Safari and locked
+ * the same origin as the web app (supermenu.irad.solutions). iOS Safari and locked
  * Android Chrome block cookies from third-party domains regardless of
  * SameSite=None, which made every page load after a tab close look like a
  * session expiry. Routing /auth/* through /api/auth/* keeps the cookie
@@ -91,7 +91,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
   // Auth routes go through the same-origin Next.js proxy so the refresh
-  // cookie stays on menu.irad.solutions. All other API calls go direct.
+  // cookie stays on the web app's origin. All other API calls go direct.
   const url = path.startsWith("/auth")
     ? `${AUTH_PROXY}${path.slice("/auth".length)}`
     : `${API}${path}`;

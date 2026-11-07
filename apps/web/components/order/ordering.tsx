@@ -14,6 +14,7 @@ import { SiteFooter } from "../site-footer";
 import { BillAndRating } from "./bill-and-rating";
 import { buildTimeline, type OrderEvent, type OrderStatus } from "@/lib/order-timeline";
 import { OrderTimeline } from "./timeline";
+import { readMigrating } from "@/lib/legacy-storage";
 
 interface CurrentOrder {
   id: string;
@@ -66,20 +67,21 @@ export function Ordering({
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"menu" | "order">("menu");
   const [hasClosedBill, setHasClosedBill] = useState(false);
-  const cartKey = `menu-cart-${table.id}`;
+  const cartKey = `supermenu-cart-${table.id}`;
+  const legacyCartKey = `menu-cart-${table.id}`;
   const restored = useRef(false);
 
   /* The cart survives a locked phone or a dropped connection. Nothing here has
      reached the kitchen yet, so losing it would just be rude. */
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(cartKey);
+      const saved = readMigrating(localStorage, cartKey, legacyCartKey);
       if (saved) setCart(JSON.parse(saved) as CartLine[]);
     } catch {
       // Private mode or blocked storage: an empty cart is a fine fallback.
     }
     restored.current = true;
-  }, [cartKey]);
+  }, [cartKey, legacyCartKey]);
 
   useEffect(() => {
     if (!restored.current) return;

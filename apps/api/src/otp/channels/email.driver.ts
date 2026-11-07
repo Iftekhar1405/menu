@@ -6,6 +6,7 @@ import {
   UserContact,
   otpMessageCopy,
 } from "./notification.channel";
+import { SITE_HOST } from "@menu/shared";
 
 /**
  * Resend. Inert until RESEND_API_KEY is set, at which point the module wires
@@ -27,7 +28,7 @@ export class EmailDriver implements NotificationChannel {
 
     const subject =
       purpose === "verify"
-        ? `${code} — verify your menu.irad.solutions account`
+        ? `${code} — verify your ${SITE_HOST} account`
         : `${code} — reset your PIN`;
 
     const res = await fetch("https://api.resend.com/emails", {
@@ -63,7 +64,7 @@ function renderOtpEmail(name: string, code: string, purpose: OtpPurposeName): st
     <p style="margin:0 0 24px;font-size:15px;line-height:1.5">Use this code to ${reason}.</p>
     <p style="margin:0 0 24px;font-size:34px;letter-spacing:8px;font-weight:600;font-variant-numeric:tabular-nums">${code}</p>
     <p style="margin:0 0 8px;font-size:13px;line-height:1.5;color:#6B6B70">It expires in 10 minutes. If you did not ask for it, you can ignore this email.</p>
-    <p style="margin:32px 0 0;font-size:12px;color:#9A9AA0">menu.irad.solutions</p>
+    <p style="margin:32px 0 0;font-size:12px;color:#9A9AA0">${SITE_HOST}</p>
   </div>
 </body></html>`;
 }

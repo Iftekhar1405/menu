@@ -8,7 +8,7 @@
  * look like a session expiry.
  *
  * Routing /api/auth/* through a Next.js handler keeps cookies on
- * menu.irad.solutions, which is the origin the browser already trusts. The
+ * the web app's own host, which is the origin the browser already trusts. The
  * route forwards the request to the real API and mirrors back whatever cookies
  * the API sets — including the new refresh token on login/refresh and the
  * clear on logout.
@@ -59,27 +59,27 @@ async function proxy(req: NextRequest, path: string): Promise<NextResponse> {
   });
 
   // Mirror every Set-Cookie the API emits. Re-write the cookie attributes so
-  // it lands on this origin (menu.irad.solutions) rather than the API's
+  // it lands on this origin (the web app's) rather than the API's
   // domain, and strip Domain= if present so the browser does not reject it.
-  upstream.headers.forEach((value, key) => {
-    if (key.toLowerCase() === "set-cookie") {
-      const rewritten = value
-        // Drop Domain= — the browser will assign the cookie to the current
-        // origin, which is what we want.
-        .replace(/;\s*domain=[^;]*/gi, "")
-        // Rewrite path=/auth → path=/api/auth so the browser sends the cookie
-        // back when it hits /api/auth/refresh. Without this the path mismatch
-        // means the cookie is invisible and every refresh looks like no session.
-        .replace(/;\s*path=\/auth\b/gi, "; Path=/api/auth")
-        // Force SameSite=Lax — same-origin cookies do not need None, and Lax
-        // is the right default here (protects against CSRF while working on
-        // every browser including Safari ITP).
-        .replace(/;\s*samesite=[^;]*/gi, "; SameSite=Lax")
-        // Secure is fine to keep — we are on HTTPS in prod.
-        .trim();
-      res.headers.append("set-cookie", rewritten);
-    }
-  });
+  // getSetCookie, not forEach: a refresh can emit two (clear the pre-rename
+  // cookie, set the new one), and each must reach the browser on its own.
+  for (const value of upstream.headers.getSetCookie()) {
+    const rewritten = value
+      // Drop Domain= — the browser will assign the cookie to the current
+      // origin, which is what we want.
+      .replace(/;\s*domain=[^;]*/gi, "")
+      // Rewrite path=/auth → path=/api/auth so the browser sends the cookie
+      // back when it hits /api/auth/refresh. Without this the path mismatch
+      // means the cookie is invisible and every refresh looks like no session.
+      .replace(/;\s*path=\/auth\b/gi, "; Path=/api/auth")
+      // Force SameSite=Lax — same-origin cookies do not need None, and Lax
+      // is the right default here (protects against CSRF while working on
+      // every browser including Safari ITP).
+      .replace(/;\s*samesite=[^;]*/gi, "; SameSite=Lax")
+      // Secure is fine to keep — we are on HTTPS in prod.
+      .trim();
+    res.headers.append("set-cookie", rewritten);
+  }
 
   return res;
 }

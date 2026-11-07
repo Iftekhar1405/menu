@@ -89,3 +89,16 @@ describe("shouldOfferAlerts", () => {
     expect(() => recordPromptAnswered(hostile)).not.toThrow();
   });
 });
+
+describe("an answer recorded before the rename to supermenu", () => {
+  it("still counts, so nobody is asked a second time", () => {
+    store.set("menu.alerts.prompted", "2026-01-01T00:00:00.000Z");
+    expect(shouldOfferAlerts({ supported: true, permission: "default", store })).toBe(false);
+  });
+
+  it("is cleared by the re-enable control too", () => {
+    store.set("menu.alerts.prompted", "2026-01-01T00:00:00.000Z");
+    clearPromptRecord(store);
+    expect(shouldOfferAlerts({ supported: true, permission: "default", store })).toBe(true);
+  });
+});

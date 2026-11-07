@@ -7,8 +7,8 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "menu.irad.solutions",
-    short_name: "menu.irad",
+    name: "supermenu.irad.solutions",
+    short_name: "supermenu",
     description:
       "Build a menu, print a QR code, and let people order from the table.",
     start_url: "/",
