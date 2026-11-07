@@ -9,8 +9,8 @@ import { requestOrigin } from "./request-origin";
  */
 describe("requestOrigin", () => {
   it("uses the host the request arrived on", () => {
-    const req = new Request("https://menu.irad.solutions/t/abc123");
-    expect(requestOrigin(req)).toBe("https://menu.irad.solutions");
+    const req = new Request("https://supermenu.irad.solutions/t/abc123");
+    expect(requestOrigin(req)).toBe("https://supermenu.irad.solutions");
   });
 
   it("prefers the proxy's forwarded host over the internal one", () => {
@@ -18,18 +18,18 @@ describe("requestOrigin", () => {
     // says the custom domain, and that is where the cookie is being written.
     const req = new Request("https://menu-web.vercel.app/t/abc123", {
       headers: {
-        "x-forwarded-host": "menu.irad.solutions",
+        "x-forwarded-host": "supermenu.irad.solutions",
         "x-forwarded-proto": "https",
       },
     });
-    expect(requestOrigin(req)).toBe("https://menu.irad.solutions");
+    expect(requestOrigin(req)).toBe("https://supermenu.irad.solutions");
   });
 
   it("takes the first hop when proxies chain the forwarded header", () => {
     const req = new Request("https://internal/t/abc123", {
-      headers: { "x-forwarded-host": "menu.irad.solutions, internal.local" },
+      headers: { "x-forwarded-host": "supermenu.irad.solutions, internal.local" },
     });
-    expect(requestOrigin(req)).toBe("https://menu.irad.solutions");
+    expect(requestOrigin(req)).toBe("https://supermenu.irad.solutions");
   });
 
   it("still works on plain http in local development", () => {
@@ -44,8 +44,8 @@ describe("requestOrigin", () => {
     const previous = process.env.PUBLIC_MENU_BASE_URL;
     process.env.PUBLIC_MENU_BASE_URL = "http://localhost:3000";
     try {
-      const req = new Request("https://menu.irad.solutions/t/abc123");
-      expect(requestOrigin(req)).toBe("https://menu.irad.solutions");
+      const req = new Request("https://supermenu.irad.solutions/t/abc123");
+      expect(requestOrigin(req)).toBe("https://supermenu.irad.solutions");
     } finally {
       if (previous === undefined) delete process.env.PUBLIC_MENU_BASE_URL;
       else process.env.PUBLIC_MENU_BASE_URL = previous;

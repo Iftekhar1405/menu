@@ -101,7 +101,7 @@ const envSchema = z.object({
   WHATSAPP_ACCESS_TOKEN: z.string().default(""),
   WHATSAPP_OTP_TEMPLATE: z.string().default("otp_verification"),
   RESEND_API_KEY: z.string().default(""),
-  RESEND_FROM: z.string().default("Menu <noreply@menu.irad.solutions>"),
+  RESEND_FROM: z.string().default("Supermenu <noreply@supermenu.irad.solutions>"),
 
   SEED_ADMIN_EMAIL: z.string().default("admin@irad.solutions"),
   SEED_ADMIN_PIN: z.string().regex(/^\d{6}$/).default("204815"),

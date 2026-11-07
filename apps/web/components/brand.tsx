@@ -68,7 +68,7 @@ export function Wordmark({
         className="font-display font-semibold tracking-tight text-ink"
         style={{ fontSize: size * 0.72 }}
       >
-        menu
+        supermenu
         <span className="text-faint">{full ? ".irad.solutions" : ".irad"}</span>
       </span>
     </span>

@@ -9,3 +9,4 @@ export * from "./printing";
 export * from "./escpos/bytes";
 export * from "./escpos/layout";
 export * from "./escpos/tickets";
+export * from "./brand";

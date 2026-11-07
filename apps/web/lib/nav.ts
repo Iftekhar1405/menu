@@ -26,6 +26,7 @@ const OWNER_NAV: NavItem[] = [
 const KITCHEN_NAV: NavItem[] = [
   { href: "/orders", label: "Orders" },
   { href: "/dishes", label: "Dishes" },
+  { href: "/account", label: "Account" },
 ];
 
 const ADMIN_NAV: NavItem[] = [{ href: "/admin", label: "Card orders" }];
@@ -54,11 +55,11 @@ export function navFor(role: Role): NavItem[] {
  * member's own session. `navFor` deliberately does not offer it.
  */
 const ALLOWED: Record<Role, string[]> = {
-  kitchen: ["/orders", "/dishes", "/change-pin", "/station"],
+  kitchen: ["/orders", "/dishes", "/account", "/change-pin", "/station"],
   owner: ["/dashboard", "/orders", "/menu", "/tables", "/billing",
-          "/appearance", "/qr", "/merch", "/settings", "/tutorial", "/change-pin", "/station"],
+          "/appearance", "/qr", "/merch", "/settings", "/tutorial", "/account", "/change-pin", "/station"],
   platform_admin: ["/dashboard", "/orders", "/menu", "/tables", "/billing",
-                   "/appearance", "/qr", "/merch", "/settings", "/tutorial", "/admin", "/change-pin", "/station"],
+                   "/appearance", "/qr", "/merch", "/settings", "/tutorial", "/admin", "/account", "/change-pin", "/station"],
 };
 
 /**

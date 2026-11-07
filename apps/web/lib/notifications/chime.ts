@@ -1,3 +1,4 @@
+import { readMigrating } from "@/lib/legacy-storage";
 /**
  * The sound a new order makes.
  *
@@ -156,11 +157,12 @@ function createAudioEngine(): AudioEngine | null {
 
 // ── Persistence ─────────────────────────────────────────────────────────────
 
-const MUTE_KEY = "menu.alerts.muted";
+const MUTE_KEY = "supermenu.alerts.muted";
+const LEGACY_MUTE_KEY = "menu.alerts.muted";
 
 export function readMuted(): boolean {
   try {
-    return window.localStorage.getItem(MUTE_KEY) === "1";
+    return readMigrating(window.localStorage, MUTE_KEY, LEGACY_MUTE_KEY) === "1";
   } catch {
     return false;
   }

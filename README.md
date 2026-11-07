@@ -1,4 +1,4 @@
-# menu.irad.solutions
+# supermenu.irad.solutions
 
 A multi-tenant digital menu platform for restaurants, cafes, and movie theatres.
 An owner signs up with a 6-digit PIN, builds a menu, picks a design, and

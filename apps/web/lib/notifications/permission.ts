@@ -1,3 +1,5 @@
+import { readMigrating } from "@/lib/legacy-storage";
+
 /**
  * Whether to offer alerts, asked exactly once.
  *
@@ -17,7 +19,9 @@ export interface PromptStore {
   remove(key: string): void;
 }
 
-const KEY = "menu.alerts.prompted";
+const KEY = "supermenu.alerts.prompted";
+/** The name before the rename; still honoured so nobody is asked twice. */
+const LEGACY_KEY = "menu.alerts.prompted";
 
 export interface PromptContext {
   /** Notification and ServiceWorker both exist in this browser. */
@@ -50,6 +54,7 @@ export function recordPromptAnswered(store: PromptStore): void {
 export function clearPromptRecord(store: PromptStore): void {
   try {
     store.remove(KEY);
+    store.remove(LEGACY_KEY);
   } catch {
     // See read().
   }
@@ -62,7 +67,11 @@ export function clearPromptRecord(store: PromptStore): void {
  */
 function read(store: PromptStore): string | null {
   try {
-    return store.get(KEY);
+    return readMigrating(
+      { getItem: store.get, setItem: store.set, removeItem: store.remove },
+      KEY,
+      LEGACY_KEY,
+    );
   } catch {
     return null;
   }

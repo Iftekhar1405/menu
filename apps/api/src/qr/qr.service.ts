@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import type { QrSheetInput } from "@menu/shared";
-import { planSheet } from "@menu/shared";
+import { SITE_URL, planSheet } from "@menu/shared";
 import { Resvg } from "@resvg/resvg-js";
 import PDFDocument from "pdfkit";
 import SVGtoPDF from "svg-to-pdfkit";
@@ -17,7 +17,11 @@ import { renderSheetPdf } from "./sheet.pdf";
 /** A6 at 300 DPI: 105mm wide is 1240px. */
 const PRINT_WIDTH_PX = 1240;
 
-const PUBLIC_SITE = "https://menu.irad.solutions";
+/**
+ * New prints carry the supermenu host. Cards already printed with the old
+ * menu.irad.solutions host keep working: the web app answers on both.
+ */
+const PUBLIC_SITE = SITE_URL;
 
 @Injectable()
 export class QrService {

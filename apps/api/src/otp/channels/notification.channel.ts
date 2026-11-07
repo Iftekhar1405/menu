@@ -1,3 +1,5 @@
+import { SITE_HOST } from "@menu/shared";
+
 export type OtpPurposeName = "verify" | "recover";
 
 /** The minimum a channel needs to know about who it is messaging. */
@@ -41,5 +43,5 @@ export class NoChannelsAvailableError extends Error {
 export function otpMessageCopy(code: string, purpose: OtpPurposeName): string {
   const reason =
     purpose === "verify" ? "verify your account" : "reset your 6-digit PIN";
-  return `${code} is your menu.irad.solutions code to ${reason}. It expires in 10 minutes. Do not share it with anyone.`;
+  return `${code} is your ${SITE_HOST} code to ${reason}. It expires in 10 minutes. Do not share it with anyone.`;
 }

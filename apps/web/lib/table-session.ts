@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 
-export const TABLE_COOKIE = "menu_table";
+export const TABLE_COOKIE = "supermenu_table";
+/** The name before the rename. Read, never written, so a diner mid-meal keeps their table. */
+export const LEGACY_TABLE_COOKIE = "menu_table";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -28,7 +30,7 @@ export function tableCookieOptions() {
 
 export async function getTableToken(): Promise<string | null> {
   const jar = await cookies();
-  return jar.get(TABLE_COOKIE)?.value ?? null;
+  return jar.get(TABLE_COOKIE)?.value ?? jar.get(LEGACY_TABLE_COOKIE)?.value ?? null;
 }
 
 /**

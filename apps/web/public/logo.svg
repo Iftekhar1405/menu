@@ -1,11 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 208 40" width="208" height="40"
-     role="img" aria-label="menu.irad.solutions">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 262 40" width="262" height="40"
+     role="img" aria-label="supermenu.irad.solutions">
   <!--
     The lockup: mark plus wordmark, for anywhere outside the app itself —
     print, social cards, invoices. Inside the app the wordmark is live text in
     Bricolage Grotesque, which sets better and stays selectable.
 
-    The weight split is the whole idea. "menu" is what the product is and
+    The weight split is the whole idea. "supermenu" is what the product is and
     carries full contrast; ".irad.solutions" is the address it lives at and
     steps back, so the name reads at a glance and the domain is still there
     when someone looks for it.
@@ -23,6 +23,6 @@
   <text x="44" y="26"
         font-family="'Bricolage Grotesque', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif"
         font-size="19" letter-spacing="-0.5">
-    <tspan fill="#111113" font-weight="600">menu</tspan><tspan fill="#8B9099" font-weight="500">.irad.solutions</tspan>
+    <tspan fill="#111113" font-weight="600">supermenu</tspan><tspan fill="#8B9099" font-weight="500">.irad.solutions</tspan>
   </text>
 </svg>

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { requestOrigin } from "@/lib/request-origin";
-import { TABLE_COOKIE, tableCookieOptions } from "@/lib/table-session";
+import { LEGACY_TABLE_COOKIE, TABLE_COOKIE, tableCookieOptions } from "@/lib/table-session";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -46,6 +46,7 @@ export async function GET(
 
   const response = NextResponse.redirect(new URL("/order", origin));
   response.cookies.set(TABLE_COOKIE, data.sessionToken, tableCookieOptions());
+  response.cookies.delete(LEGACY_TABLE_COOKIE);
   return response;
 }
 
@@ -53,5 +54,6 @@ export async function POST() {
   // Only here so a stray form post does not 405 into a confusing error.
   const jar = await cookies();
   jar.delete(TABLE_COOKIE);
+  jar.delete(LEGACY_TABLE_COOKIE);
   return NextResponse.json({ ok: true });
 }

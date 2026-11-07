@@ -1,4 +1,5 @@
 import { escapeXml, qrPath, round, truncate } from "./qr-path";
+import { SITE_HOST } from "@menu/shared";
 
 /**
  * The QR card an owner downloads and prints.
@@ -29,7 +30,7 @@ export interface CardOptions {
 
 const W = 105;
 const H = 148;
-const WATERMARK = "menu.irad.solutions";
+const WATERMARK = SITE_HOST;
 const WM_SIZE = 3.1;
 const WM_TRACK = 0.2;
 const WM_MARK = 3.6;

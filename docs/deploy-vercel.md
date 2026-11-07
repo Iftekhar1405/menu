@@ -368,12 +368,32 @@ address: `vercel.app` is on the Public Suffix List, so `something.vercel.app`
 and `api.menu.irad.solutions` are different *sites*, and a Lax cookie is not
 sent between them.
 
-Once the web app answers on `menu.irad.solutions`, that stops being true. Both
+Once the web app answers on `supermenu.irad.solutions`, that stops being true. Both
 hosts then share the registrable domain `irad.solutions`, which makes them
 same-site — different origins, so CORS is still required, but Lax cookies flow.
 **Set `COOKIE_SAMESITE=lax` at that point.** It is the stricter setting and
 costs nothing once it works, whereas `none` keeps the cookie eligible on
 genuinely cross-site requests for no remaining benefit.
+
+### The rename from menu to supermenu
+
+The web app's host is now `supermenu.irad.solutions`. Printed QR codes point
+at `menu.irad.solutions` forever, so:
+
+1. Attach **both** hosts to the web project **before** deploying the rename.
+   New QR codes print the supermenu host, and `next.config.mjs` 308-redirects
+   every page on the old host to the same path on the new one — with the new
+   host missing, both break.
+2. List both origins in the API's `CORS_ORIGINS`.
+3. The refresh cookie is now `supermenu_rt` and the table cookie
+   `supermenu_table`; the old `menu_*` names are still read, so nobody is
+   signed out or unseated by the deploy. Cookies are per host, though, so a
+   session started on the old host does not follow the redirect — staff sign
+   in once on the new one.
+4. `RESEND_FROM` defaults to `noreply@supermenu.irad.solutions`. Verify that
+   domain in Resend before relying on the default.
+
+The API host (`api.menu.irad.solutions`) is unchanged.
 
 ---
 

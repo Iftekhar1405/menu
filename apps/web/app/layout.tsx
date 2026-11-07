@@ -4,12 +4,12 @@ import { ThemeProvider } from "@/components/theme-provider";
 
 export const metadata: Metadata = {
   title: {
-    default: "menu.irad.solutions",
-    template: "%s · menu.irad.solutions",
+    default: "supermenu.irad.solutions",
+    template: "%s · supermenu.irad.solutions",
   },
   description:
     "Build a menu, print a QR code, and let people order from the table.",
-  applicationName: "menu.irad.solutions",
+  applicationName: "supermenu.irad.solutions",
   icons: {
     icon: [
       { url: "/icon.svg", type: "image/svg+xml" },
