@@ -4,10 +4,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ComponentType } from "react";
 import { SessionProvider, useSession } from "@/components/session";
-import { logout } from "@/lib/api-client";
 import { Button, cx, Sheet, SheetGrabber } from "@/components/ui";
 import { Wordmark } from "@/components/brand";
-import { ConfirmProvider, useConfirm } from "@/components/confirm";
+import { ConfirmProvider } from "@/components/confirm";
+import { useSignOut } from "@/components/sign-out";
 import { NotificationsProvider } from "@/components/notifications/provider";
 import { NotificationBell } from "@/components/notifications/bell";
 import { NotificationToasts } from "@/components/notifications/toasts";
@@ -21,7 +21,7 @@ const ICONS: Record<string, ComponentType> = {
   "/dashboard": OverviewIcon, "/orders": OrdersIcon, "/menu": MenuIcon,
   "/dishes": MenuIcon, "/tables": TablesIcon, "/billing": BillingIcon,
   "/appearance": AppearanceIcon, "/qr": QrIcon, "/merch": CardsIcon,
-  "/settings": SettingsIcon, "/admin": CardsIcon,
+  "/settings": SettingsIcon, "/admin": CardsIcon, "/account": AccountIcon,
 };
 
 /** How many of those get their own tab. The rest go behind More. */
@@ -41,7 +41,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   const { current, businesses, setCurrentId, loading, error, retry, me } = useSession();
   const pathname = usePathname();
   const router = useRouter();
-  const confirm = useConfirm();
+  const signOut = useSignOut();
   const [moreOpen, setMoreOpen] = useState(false);
 
   const role = (me?.role ?? "owner") as Role;
@@ -75,18 +75,6 @@ function Shell({ children }: { children: React.ReactNode }) {
     }
     if (!me.mustChangePin && !canSee(role, pathname)) router.replace("/orders");
   }, [loading, me, role, pathname, router]);
-
-  async function signOut() {
-    const ok = await confirm({
-      title: "Sign out?",
-      body: "You'll need your 6-digit PIN to get back in.",
-      confirmLabel: "Sign out",
-      tone: "normal",
-    });
-    if (!ok) return;
-    await logout();
-    router.replace("/login");
-  }
 
   if (loading) {
     return (
@@ -440,6 +428,15 @@ function SettingsIcon() {
     <>
       <circle cx="12" cy="12" r="3" />
       <path d="M12 2.8v2.4M12 18.8v2.4M21.2 12h-2.4M5.2 12H2.8M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7M18.5 18.5l-1.7-1.7M7.2 7.2 5.5 5.5" />
+    </>,
+  );
+}
+
+function AccountIcon() {
+  return icon(
+    <>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4.5 20.5a7.5 7.5 0 0 1 15 0" />
     </>,
   );
 }

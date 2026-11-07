@@ -3,7 +3,17 @@ import { canSee, navFor } from "./nav";
 
 describe("navigation by role", () => {
   it("gives the kitchen only what a service needs", () => {
-    expect(navFor("kitchen").map((i) => i.href)).toEqual(["/orders", "/dishes"]);
+    expect(navFor("kitchen").map((i) => i.href)).toEqual(["/orders", "/dishes", "/account"]);
+  });
+
+  it("gives every role a way to its own account, where sign out lives", () => {
+    // Kitchen nav is too short to fill the mobile tab bar, so the More sheet
+    // that carries Sign out for owners never appears. The Account tab is
+    // their only way out on a phone.
+    expect(navFor("kitchen").map((i) => i.href)).toContain("/account");
+    for (const role of ["owner", "kitchen", "platform_admin"] as const) {
+      expect(canSee(role, "/account")).toBe(true);
+    }
   });
 
   it("keeps the owner's nine sections", () => {
@@ -22,7 +32,7 @@ describe("navigation by role", () => {
     }
   });
 
-  it("lets the kitchen reach its own two screens", () => {
+  it("lets the kitchen reach its own screens", () => {
     expect(canSee("kitchen", "/orders")).toBe(true);
     expect(canSee("kitchen", "/dishes")).toBe(true);
   });
