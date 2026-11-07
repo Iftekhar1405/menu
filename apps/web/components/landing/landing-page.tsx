@@ -7,8 +7,9 @@ import { BRAND_NAME, COMPANY_URL } from "@/lib/site";
 import { HeroStage } from "./hero-stage";
 import { LandingMotion, MOTION_BOOTSTRAP } from "./motion";
 import { LandingNav } from "./nav";
-import { DesignTrio, OrdersBoardMini, TableStand, TicketRail } from "./product-pieces";
-import { DetailIcon, DishMarquee, PendantLamp, ReceiptRibbon, STEP_SCENES, WaiterSlips } from "./scenes";
+import { OrdersBoardMini, TableStand, TicketRail } from "./product-pieces";
+import { Candle, DetailIcon, DishMarquee, Festoon, FlickerBulb, PendantLamp, ReceiptRibbon, STEP_SCENES, WaiterSlips } from "./scenes";
+import { DesignCarousel } from "./design-carousel";
 import { SessionRedirect } from "./session-redirect";
 import { landingJsonLd } from "./seo";
 import "./landing.css";
@@ -137,7 +138,7 @@ export async function LandingPage({ locale }: { locale: Locale }) {
               </p>
             </div>
             <div className="relative h-[200px] sm:h-[280px] lg:h-[340px]">
-              <div className="lp-lamp left-1/2 top-1/2 h-[420px] w-[620px] -translate-x-1/2 -translate-y-1/2 opacity-70" aria-hidden="true" />
+              <FlickerBulb />
               <WaiterSlips />
             </div>
           </div>
@@ -193,6 +194,8 @@ export async function LandingPage({ locale }: { locale: Locale }) {
           </div>
         </section>
 
+        <Festoon />
+
         {/* ── Features ─────────────────────────────────────────────────── */}
         <section id="features" aria-labelledby="features-title" className="lp-section relative overflow-hidden">
           <div className="lp-wrap">
@@ -200,12 +203,18 @@ export async function LandingPage({ locale }: { locale: Locale }) {
               {t("features.title")}
             </h2>
 
-            <div className="mt-20 grid items-center gap-14 lg:mt-24 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
-              <div>
+            <div className="mt-20 lg:mt-24">
+              <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr] lg:items-end lg:gap-16">
                 <h3 className="lp-h3">{t("features.design.title")}</h3>
-                <p className="lp-body mt-4">{t("features.design.body")}</p>
+                <p className="lp-body">{t("features.design.body")}</p>
               </div>
-              <DesignTrio layouts={layouts} />
+              <div className="mt-14">
+                <DesignCarousel
+                  layouts={layouts}
+                  previousLabel={t("features.design.previous")}
+                  nextLabel={t("features.design.next")}
+                />
+              </div>
             </div>
 
             <div className="mt-28 grid items-center gap-14 lg:mt-36 lg:grid-cols-[1.3fr_0.7fr] lg:gap-16">
@@ -223,6 +232,9 @@ export async function LandingPage({ locale }: { locale: Locale }) {
 
             <div className="mt-28 grid items-center gap-14 lg:mt-36 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
               <div>
+                <span className="mb-4 inline-flex rounded-full border border-[var(--lp-line)] px-3 py-1 text-[12.5px] font-medium text-[var(--lp-muted)]">
+                  {t("features.print.badge")}
+                </span>
                 <h3 className="lp-h3">{t("features.print.title")}</h3>
                 <p className="lp-body mt-4">{t("features.print.body")}</p>
               </div>
@@ -236,9 +248,9 @@ export async function LandingPage({ locale }: { locale: Locale }) {
 
             <div className="mt-28 lg:mt-40">
               <h3 className="lp-h3 max-w-[22ch]">{t("features.detailsTitle")}</h3>
-              <ul className="mt-10 grid gap-px overflow-hidden rounded-[22px] border border-[var(--lp-line)] bg-[var(--lp-line)] sm:grid-cols-2 lg:grid-cols-3">
+              <ul className="lp-spotlight mt-10 grid gap-px overflow-hidden rounded-[22px] border border-[var(--lp-line)] sm:grid-cols-2 lg:grid-cols-3">
                 {details.map((d, i) => (
-                  <li key={d.title} className="bg-[var(--lp-base)] p-7 sm:p-8">
+                  <li key={d.title} className="p-7 sm:p-8">
                     <DetailIcon index={i} />
                     <p className="mt-6 text-[17px] font-semibold leading-snug text-[var(--lp-text)]">{d.title}</p>
                     <p className="mt-2 text-[15.5px] leading-relaxed text-[var(--lp-muted)]">{d.body}</p>
@@ -248,6 +260,8 @@ export async function LandingPage({ locale }: { locale: Locale }) {
             </div>
           </div>
         </section>
+
+        <Festoon />
 
         {/* ── Printed cards ────────────────────────────────────────────── */}
         <section aria-labelledby="cards-title" className="lp-section lp-band relative overflow-hidden">
@@ -260,8 +274,11 @@ export async function LandingPage({ locale }: { locale: Locale }) {
             </div>
             <div className="relative py-6">
               <div className="lp-lamp left-1/2 top-[-10%] h-[120%] w-[120%] -translate-x-1/2" aria-hidden="true" />
-              <div className="relative rotate-[-3deg]">
-                <TableStand />
+              <div className="relative flex items-end justify-center gap-6 [perspective:1200px]">
+                <div data-turn className="relative">
+                  <TableStand />
+                </div>
+                <Candle className="relative mb-6 hidden sm:flex" />
               </div>
             </div>
           </div>
@@ -278,7 +295,7 @@ export async function LandingPage({ locale }: { locale: Locale }) {
             </div>
             <div className="relative mt-12 lg:mt-16">
               <div className="lp-lamp left-1/2 top-[-15%] h-[130%] w-[110%] -translate-x-1/2 opacity-80" aria-hidden="true" />
-              <div className="relative">
+              <div className="lp-cinema">
                 <TourVideo playLabel={t("tour.play")} transcriptLabel={t("tour.transcript")} />
               </div>
             </div>

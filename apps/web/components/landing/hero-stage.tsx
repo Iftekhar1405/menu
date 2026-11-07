@@ -5,68 +5,51 @@ import { gsap } from "gsap";
 import { MenuView } from "@/components/templates";
 import { PhoneFrame } from "@/components/phone-frame";
 import { sampleMenu } from "@/lib/sample-menu";
-import { KitchenTicket, type Ticket } from "./kitchen-ticket";
 import { TableStand } from "./product-pieces";
 
 /*
- * Orders from the sample menu on the phone, so the ticket is visibly the
- * order that phone just placed. The third is table 4 coming back for more:
- * round two, new items only — the detail owners ask about first.
+ * Orders from the sample menu on the phone, arriving in turn on the board.
+ * Table 4 comes back for a second round, which shows as running.
  */
-const TICKETS: Ticket[] = [
-  {
-    token: "42",
-    table: "Table 4",
-    round: "Round 1",
-    time: "19:42",
-    items: [
-      { qty: 2, name: "Masala dosa", note: "less spicy" },
-      { qty: 1, name: "Filter coffee", note: "Double" },
-    ],
-  },
-  {
-    token: "43",
-    table: "Table 9",
-    round: "Round 1",
-    time: "19:44",
-    items: [
-      { qty: 1, name: "Chicken cutlet" },
-      { qty: 2, name: "Cold brew", note: "no ice" },
-    ],
-  },
-  {
-    token: "42",
-    table: "Table 4",
-    round: "Round 2, new items",
-    time: "19:51",
-    items: [{ qty: 1, name: "Filter coffee", note: "Single" }],
-  },
+const ORDERS = [
+  { table: "Table 4", token: "42", items: "2× Masala dosa, 1× Filter coffee", total: "₹375" },
+  { table: "Table 9", token: "43", items: "1× Chicken cutlet, 2× Cold brew", total: "₹570" },
+  { table: "Table 4", token: "42", items: "Round 2: 1× Filter coffee", total: "₹60", running: true },
+  { table: "Table 11", token: "44", items: "2× Masala dosa, 2× Cold brew", total: "₹640" },
 ];
 
-/** The scene is drawn at this size and scaled to fit its column. */
+/** Newest first: what the board shows for a card at each depth. */
+const STATUS = [
+  { label: "New", tone: "text-[var(--lp-amber)]", action: "Accept" },
+  { label: "Being made", tone: "text-[var(--lp-muted)]", action: "Ready" },
+  { label: "Ready", tone: "text-emerald-400", action: "Bill" },
+];
+
 const W = 600;
 const H = 640;
+const N = ORDERS.length;
 
 /**
  * The hero: a table at night. The card with the QR on it, the diner's phone,
- * and the kitchen printer printing what they ordered, all under one lamp.
+ * and the owner's live board where the order lands, all under one lamp.
  *
- * Two motions. The printer loops — print, hold, tear, next — with a stepped
- * ease so the paper advances in jerks like a thermal head. And the layers
- * drift a little against the cursor, nearest most, so the table reads as a
- * place rather than a flat picture. With reduced motion, neither runs and
- * the first ticket sits fully printed.
+ * Two motions. Orders keep arriving: a "new order" signal, then the card
+ * drops in at the top while earlier ones move on to Being made and Ready.
+ * And the layers drift a little against the cursor, nearest most, so the
+ * table reads as a place rather than a flat picture. With reduced motion,
+ * neither runs and the board sits mid-service.
  */
 export function HeroStage({ toast, label }: { toast: string; label: string }) {
-  const [index, setIndex] = useState(0);
+  const [tick, setTick] = useState(N * 10);
   const [scale, setScale] = useState(1);
   const outerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<HTMLDivElement>(null);
-  const paperRef = useRef<HTMLDivElement>(null);
+  const newestRef = useRef<HTMLLIElement>(null);
   const toastRef = useRef<HTMLDivElement>(null);
-  const ticket = TICKETS[index]!;
+  const first = useRef(true);
 
-  // Fit the fixed-size scene to whatever width the column has.
+  const cards = [0, 1, 2].map((depth) => ({ id: tick - depth, order: ORDERS[(tick - depth) % N]!, status: STATUS[depth]! }));
+
   useLayoutEffect(() => {
     const el = outerRef.current;
     if (!el) return;
@@ -77,32 +60,43 @@ export function HeroStage({ toast, label }: { toast: string; label: string }) {
     return () => ro.disconnect();
   }, []);
 
-  // The printer.
+  // Orders keep coming in.
   useEffect(() => {
-    const paper = paperRef.current;
-    const pill = toastRef.current;
-    if (!paper || !pill) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const start = setTimeout(() => {
+      setTick((t) => t + 1);
+      interval = setInterval(() => setTick((t) => t + 1), 3600);
+    }, 1600);
+    return () => {
+      clearTimeout(start);
+      if (interval) clearInterval(interval);
+    };
+  }, []);
 
-    // Measure this ticket at its natural height, then roll it back into the
-    // printer before the browser paints either state.
-    gsap.set(paper, { height: "auto" });
-    const full = paper.offsetHeight;
-    gsap.set(paper, { height: 0, y: 0, opacity: 1, rotate: 0 });
-
-    const tl = gsap.timeline({
-      delay: index === 0 ? 1.2 : 0.5,
-      onComplete: () => setIndex((i) => (i + 1) % TICKETS.length),
-    });
-    tl.fromTo(pill, { opacity: 0, y: -10, scale: 0.94 }, { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: "back.out(2)" })
-      .to(paper, { height: full, duration: 1.5, ease: `steps(${Math.max(8, Math.round(full / 18))})` }, "+=0.25")
-      .to(pill, { opacity: 0, y: -6, duration: 0.3 }, "+=0.7")
-      .to(paper, { y: 54, rotate: 3, opacity: 0, duration: 0.55, ease: "power2.in" }, "+=2.1");
-
+  // Each arrival: the signal, then the card.
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    const card = newestRef.current;
+    const pill = toastRef.current;
+    if (!card || !pill) return;
+    const tl = gsap.timeline();
+    tl.fromTo(pill, { opacity: 0, y: -10, scale: 0.94 }, { opacity: 1, y: 0, scale: 1, duration: 0.35, ease: "back.out(2)" })
+      .from(card, { height: 0, opacity: 0, y: -18, duration: 0.6, ease: "power3.out", clearProps: "height,opacity,transform" }, "-=0.1")
+      .fromTo(
+        card,
+        { boxShadow: "0 0 0 1px rgba(245,158,11,0.9), 0 0 40px rgba(245,158,11,0.35)" },
+        { boxShadow: "0 0 0 1px rgba(245,158,11,0), 0 0 0px rgba(245,158,11,0)", duration: 1.6, clearProps: "boxShadow" },
+        "-=0.2",
+      )
+      .to(pill, { opacity: 0, y: -6, duration: 0.3 }, "+=0.9");
     return () => {
       tl.kill();
     };
-  }, [index]);
+  }, [tick]);
 
   // Depth: layers drift against the cursor.
   useEffect(() => {
@@ -118,7 +112,6 @@ export function HeroStage({ toast, label }: { toast: string; label: string }) {
         y: gsap.quickTo(el, "y", { duration: 0.9, ease: "power3.out" }),
       };
     });
-
     const onMove = (e: PointerEvent) => {
       const nx = e.clientX / window.innerWidth - 0.5;
       const ny = e.clientY / window.innerHeight - 0.5;
@@ -139,20 +132,19 @@ export function HeroStage({ toast, label }: { toast: string; label: string }) {
         style={{ width: W, height: H, transform: `translateX(-50%) scale(${scale})`, transformOrigin: "top center" }}
         aria-hidden="true"
       >
-        {/* The lamp over the table, and the table. */}
         <div className="lp-lamp left-[40px] top-[-40px] h-[520px] w-[520px]" />
         <div className="lp-tabletop" />
 
         {/* Back left: the card on the table */}
-        <div data-depth="0.25" className="absolute left-[-6px] top-[250px]">
+        <div data-depth="0.25" className="absolute left-[-10px] top-[250px]">
           <div className="lp-shadow bottom-[-6px] left-[20px] h-[30px] w-[150px]" />
           <div className="origin-top-left -rotate-[5deg] scale-[0.56]">
             <TableStand />
           </div>
         </div>
 
-        {/* Middle: the diner's phone, held at an angle */}
-        <div data-depth="0.6" className="absolute left-[150px] top-[22px]">
+        {/* Middle: the diner's phone */}
+        <div data-depth="0.6" className="absolute left-[120px] top-[22px]">
           <div className="lp-shadow bottom-[-24px] left-[30px] h-[40px] w-[200px]" />
           <div className="pointer-events-none -rotate-[4deg]" inert>
             <PhoneFrame scale={0.8}>
@@ -161,32 +153,56 @@ export function HeroStage({ toast, label }: { toast: string; label: string }) {
           </div>
         </div>
 
-        {/* "New order" — the hero's one amber signal */}
-        <div data-depth="0.9" className="absolute right-[6px] top-[96px] z-20">
+        {/* Front right: the owner's live board, where the order lands */}
+        <div data-depth="1" className="absolute right-[-8px] top-[132px] z-10 w-[262px]">
+          <div className="lp-shadow bottom-[-26px] left-[16px] h-[40px] w-[230px]" />
           <div
             ref={toastRef}
-            className="flex items-center gap-2.5 rounded-full border border-[var(--lp-line)] bg-[var(--lp-raised)]/95 py-2 pl-3 pr-4 text-[13px] opacity-0 shadow-[0_16px_40px_-14px_rgba(0,0,0,0.9)] backdrop-blur"
+            className="absolute -top-12 left-4 z-20 flex items-center gap-2.5 rounded-full border border-[var(--lp-line)] bg-[var(--lp-raised)] py-2 pl-3 pr-4 text-[13px] opacity-0 shadow-[0_16px_40px_-14px_rgba(0,0,0,0.9)]"
           >
             <span className="lp-led" />
             <span className="font-semibold text-[var(--lp-text)]">{toast}</span>
-            <span className="text-[var(--lp-muted)]">{ticket.table}</span>
+            <span className="text-[var(--lp-muted)]">{cards[0]!.order.table}</span>
           </div>
-        </div>
-
-        {/* Front right: the kitchen printer */}
-        <div data-depth="1" className="absolute right-[-4px] top-[168px] z-10 w-[236px]">
-          <div className="lp-shadow bottom-[-30px] left-[10px] h-[40px] w-[216px]" />
-          <div className="rotate-[3deg]">
-            <div className="lp-printer relative z-10 rounded-[18px] px-4 pb-4 pt-3.5">
-              <div className="flex items-center justify-between text-[11px] text-[var(--lp-muted)]">
-                <span>KOT, kitchen</span>
-                <span className="lp-led" />
-              </div>
-              <div className="lp-slot mt-3 h-[6px] rounded-full" />
+          <div className="rotate-[2.5deg] rounded-[20px] border border-[var(--lp-line)] bg-[#101117]/95 p-3.5 shadow-[0_40px_80px_-30px_rgba(0,0,0,0.95)] backdrop-blur">
+            <div className="mb-3 flex items-baseline justify-between px-1">
+              <span className="font-display text-[17px] font-semibold tracking-tight">Orders</span>
+              <span className="flex items-center gap-1.5 text-[11px] text-[var(--lp-faint)]">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+                Live
+              </span>
             </div>
-            <div ref={paperRef} className="relative z-0 mx-auto -mt-[9px] w-[86%] overflow-hidden">
-              <KitchenTicket ticket={ticket} />
-            </div>
+            <ul className="space-y-2.5 overflow-hidden">
+              {cards.map((c, i) => (
+                <li
+                  key={c.id}
+                  ref={i === 0 ? newestRef : undefined}
+                  className={[
+                    "overflow-hidden rounded-[13px] border bg-[var(--lp-surface)] p-3",
+                    i === 0 ? "border-[rgba(245,158,11,0.35)]" : "border-[var(--lp-line)]",
+                  ].join(" ")}
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-[13.5px] font-semibold">{c.order.table}</span>
+                    <span className={["text-[11px] font-medium", c.status.tone].join(" ")}>
+                      {c.order.running && i === 0 ? "Running" : c.status.label}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 text-[12px] leading-snug text-[var(--lp-muted)]">{c.order.items}</div>
+                  <div className="mt-2.5 flex items-center justify-between">
+                    <span className="text-[12.5px] font-semibold">{c.order.total}</span>
+                    <span
+                      className={[
+                        "rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                        i === 0 ? "bg-[var(--lp-amber)] text-[var(--lp-on-amber)]" : "bg-[var(--lp-raised)] text-[var(--lp-text)]",
+                      ].join(" ")}
+                    >
+                      {c.status.action}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       </div>

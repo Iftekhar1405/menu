@@ -121,7 +121,56 @@ export function LandingMotion() {
           .to(lamp, { opacity: 1, duration: 0.5, ease: "power2.out" });
       }
 
-      return () => gsap.ticker.remove(easeBack);
+      // The table card turns as you pass it, catching the candlelight.
+      gsap.utils.toArray<HTMLElement>("[data-turn]").forEach((el) => {
+        gsap.fromTo(
+          el,
+          { rotateY: -24, rotateZ: -5 },
+          { rotateY: 20, rotateZ: 2, ease: "none", scrollTrigger: { trigger: el, start: "top 90%", end: "bottom 10%", scrub: true } },
+        );
+      });
+
+      // Lights down for the film, and up again after.
+      const cinema = root.querySelector<HTMLElement>(".lp-cinema");
+      if (cinema) {
+        gsap
+          .timeline({ scrollTrigger: { trigger: cinema, start: "top 85%", end: "bottom 10%", scrub: true } })
+          .fromTo(cinema, { "--dim": 0 }, { "--dim": 0.74, duration: 1, ease: "none" })
+          .to(cinema, { "--dim": 0.74, duration: 1.4 })
+          .to(cinema, { "--dim": 0, duration: 1, ease: "none" });
+      }
+
+      // A torch over the details: hairlines and cells light up near the cursor.
+      const spots = gsap.utils.toArray<HTMLElement>(".lp-spotlight");
+      const offs = spots.map((grid) => {
+        const cells = Array.from(grid.children) as HTMLElement[];
+        const onMove = (e: PointerEvent) => {
+          const r = grid.getBoundingClientRect();
+          grid.style.setProperty("--mx", `${e.clientX - r.left}px`);
+          grid.style.setProperty("--my", `${e.clientY - r.top}px`);
+          for (const c of cells) {
+            const cr = c.getBoundingClientRect();
+            c.style.setProperty("--lx", `${e.clientX - cr.left}px`);
+            c.style.setProperty("--ly", `${e.clientY - cr.top}px`);
+          }
+        };
+        const onLeave = () => {
+          grid.style.removeProperty("--mx");
+          grid.style.removeProperty("--my");
+          cells.forEach((c) => (c.style.removeProperty("--lx"), c.style.removeProperty("--ly")));
+        };
+        grid.addEventListener("pointermove", onMove);
+        grid.addEventListener("pointerleave", onLeave);
+        return () => {
+          grid.removeEventListener("pointermove", onMove);
+          grid.removeEventListener("pointerleave", onLeave);
+        };
+      });
+
+      return () => {
+        gsap.ticker.remove(easeBack);
+        offs.forEach((off) => off());
+      };
     }, root);
 
     // Someone switching reduced motion on mid-visit gets a still page.

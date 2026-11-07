@@ -1,6 +1,3 @@
-import { MenuView } from "@/components/templates";
-import { PhoneFrame } from "@/components/phone-frame";
-import { sampleMenu } from "@/lib/sample-menu";
 import { KitchenTicket } from "./kitchen-ticket";
 
 /*
@@ -12,34 +9,6 @@ import { KitchenTicket } from "./kitchen-ticket";
  * here without an account; they use the app's own labels, which is why they
  * stay in English on the Hindi page too.
  */
-
-/**
- * The same menu in three of the real layout, colour and type choices,
- * fanned like cards in a hand, under a lamp.
- */
-export function DesignTrio({ layouts }: { layouts: string[] }) {
-  const variants = [
-    { layout: "editorial", accent: "#1D6F5C", fontPairing: "inter-fraunces", pose: "-rotate-[9deg] translate-y-6" },
-    { layout: "compact", accent: "#B4532A", fontPairing: "outfit-outfit", pose: "z-10" },
-    { layout: "grid", accent: "#274472", fontPairing: "playfair-lato", pose: "rotate-[9deg] translate-y-6" },
-  ] as const;
-
-  return (
-    <div aria-hidden="true" inert className="pointer-events-none relative flex justify-center">
-      <div className="lp-lamp left-1/2 top-[-60px] h-[460px] w-[560px] -translate-x-1/2" />
-      <div className="relative flex origin-top scale-[0.72] items-start sm:scale-100">
-        {variants.map((v, i) => (
-          <figure key={v.layout} className={["relative", i === 0 ? "-mr-14" : i === 2 ? "-ml-14" : "", v.pose].join(" ")}>
-            <PhoneFrame scale={0.55}>
-              <MenuView menu={sampleMenu({ layout: v.layout, accent: v.accent, fontPairing: v.fontPairing })} compactChrome />
-            </PhoneFrame>
-            <figcaption className="mt-4 text-center text-[13px] text-[var(--lp-muted)]">{layouts[i]}</figcaption>
-          </figure>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 /** The live orders board, at rest mid-service. */
 export function OrdersBoardMini() {

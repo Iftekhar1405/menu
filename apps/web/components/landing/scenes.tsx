@@ -14,16 +14,16 @@ import { TableStand } from "./product-pieces";
 /* ── Receipt ribbon ────────────────────────────────────────────────────────── */
 
 const RIBBON = [
-  "TABLE 4  2 MASALA DOSA  LESS SPICY",
-  "TOKEN 42",
-  "TABLE 9  1 CHICKEN CUTLET  2 COLD BREW",
-  "ROUND 2  NEW ITEMS ONLY",
-  "TABLE 11  2 FILTER COFFEE  DOUBLE",
-  "TOKEN 46",
-  "TABLE 2  BILL  ₹285",
+  "TABLE 4 SCANNED THE QR",
+  "ORDER PLACED  2 MASALA DOSA  1 FILTER COFFEE",
+  "ACCEPTED",
+  "TABLE 9 ADDED ROUND 2",
+  "READY  TABLE 4",
+  "BILL SENT TO PHONE  ₹435",
+  "RATED ★★★★★",
 ];
 
-/** A strip of thermal paper across the page, printing a busy evening. */
+/** A strip of paper across the page: one evening, order by order. */
 export function ReceiptRibbon() {
   const row = (
     <span className="flex shrink-0 items-center">
@@ -177,35 +177,58 @@ function OrderScene() {
 }
 
 function KitchenScene() {
+  const cards = [
+    { table: "Table 4", items: "2× Masala dosa, 1× Filter coffee", status: "New", action: "Accept", hot: true },
+    { table: "Table 9", items: "1× Chicken cutlet, 2× Cold brew", status: "Being made", action: "Ready" },
+    { table: "Table 2", items: "3× Filter coffee, Double", status: "Ready", action: "Bill" },
+  ];
   return (
-    <div className="relative w-[300px]">
-      <div className="lp-printer relative z-10 rounded-[18px] px-4 pb-4 pt-3.5">
-        <div className="flex items-center justify-between text-[11px] text-[var(--lp-muted)]">
-          <span>KOT, kitchen</span>
-          <span className="lp-led" />
+    <div className="relative w-[340px]">
+      <div className="relative z-10 rounded-[22px] border border-[var(--lp-line)] bg-[#101117] p-4 shadow-[0_50px_100px_-40px_rgba(0,0,0,0.95)]">
+        <div className="mb-3 flex items-baseline justify-between px-1">
+          <span className="font-display text-[19px] font-semibold tracking-tight">Orders</span>
+          <span className="flex items-center gap-1.5 text-[11.5px] text-[var(--lp-faint)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            Live
+          </span>
         </div>
-        <div className="lp-slot mt-3 h-[6px] rounded-full" />
+        <div className="space-y-2.5">
+          {cards.map((c) => (
+            <div
+              key={c.table}
+              className={[
+                "rounded-[14px] border bg-[var(--lp-surface)] p-3.5",
+                c.hot ? "border-[rgba(245,158,11,0.5)] shadow-[0_0_30px_-6px_rgba(245,158,11,0.35)]" : "border-[var(--lp-line)]",
+              ].join(" ")}
+            >
+              <div className="flex items-baseline justify-between">
+                <span className="text-[14px] font-semibold">{c.table}</span>
+                <span className={["text-[11.5px] font-medium", c.hot ? "text-[var(--lp-amber)]" : "text-[var(--lp-muted)]"].join(" ")}>
+                  {c.status}
+                </span>
+              </div>
+              <div className="mt-1.5 text-[12.5px] text-[var(--lp-muted)]">{c.items}</div>
+              <div className="mt-2.5 flex justify-end">
+                <span
+                  className={[
+                    "rounded-full px-3 py-1 text-[11.5px] font-semibold",
+                    c.hot ? "bg-[var(--lp-amber)] text-[var(--lp-on-amber)]" : "bg-[var(--lp-raised)] text-[var(--lp-text)]",
+                  ].join(" ")}
+                >
+                  {c.action}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
-      <div className="relative z-0 mx-auto -mt-[9px] w-[84%]">
+      {/* The optional extra: a ticket, if a printer is connected */}
+      <div className="absolute -right-16 top-10 z-0 w-[150px] rotate-[8deg] opacity-80">
+        <div className="mb-1.5 text-right text-[10.5px] text-[var(--lp-faint)]">if a printer is connected</div>
         <KitchenTicket
-          ticket={{
-            token: "42",
-            table: "Table 4",
-            round: "Round 1",
-            time: "19:42",
-            items: [
-              { qty: 2, name: "Masala dosa", note: "less spicy" },
-              { qty: 1, name: "Filter coffee", note: "Double" },
-            ],
-          }}
+          className="!px-3 !text-[10.5px]"
+          ticket={{ token: "42", table: "Table 4", round: "Round 1", time: "19:42", items: [{ qty: 2, name: "Masala dosa" }, { qty: 1, name: "Filter coffee" }] }}
         />
-      </div>
-      <div className="absolute -left-24 top-24 z-20 -rotate-6 sm:-left-36">
-        <div className="lp-paper w-[150px] px-3 pt-4 text-center shadow-[0_20px_40px_-16px_rgba(0,0,0,0.9)]">
-          <div className="text-[10.5px]">your token</div>
-          <div className="my-1 font-display text-[54px] font-bold leading-none tracking-tight">42</div>
-          <div className="text-[10.5px]">Table 4</div>
-        </div>
       </div>
     </div>
   );
@@ -267,6 +290,68 @@ export function PendantLamp() {
         <div className="lp-pendant-bulb" />
         <div className="lp-pendant-cone" />
       </div>
+    </div>
+  );
+}
+
+/* ── Festoon lights ────────────────────────────────────────────────────────── */
+
+/**
+ * A string of bulbs across the gap between two sections, the way a patio is
+ * strung for the evening. The bulbs glow in a slow chase.
+ */
+export function Festoon() {
+  const bulbs = 15;
+  // A sagging wire: y along a shallow parabola.
+  const sag = (i: number) => {
+    const t = i / (bulbs - 1);
+    return 10 + 46 * 4 * t * (1 - t);
+  };
+  const path = Array.from({ length: 41 }, (_, k) => {
+    const t = k / 40;
+    return `${k === 0 ? "M" : "L"}${(t * 1000).toFixed(1)} ${(10 + 46 * 4 * t * (1 - t)).toFixed(1)}`;
+  }).join(" ");
+
+  return (
+    <div aria-hidden="true" className="pointer-events-none relative h-[110px] overflow-hidden">
+      <svg viewBox="0 0 1000 110" preserveAspectRatio="none" className="absolute inset-0 h-full w-full">
+        <path d={path} fill="none" stroke="#2c2f3e" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+      </svg>
+      {Array.from({ length: bulbs }, (_, i) => (
+        <span
+          key={i}
+          className="lp-bulb absolute"
+          style={{
+            left: `${(i / (bulbs - 1)) * 100}%`,
+            top: `${(sag(i) / 110) * 100}%`,
+            animationDelay: `${(i * 0.22).toFixed(2)}s`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** One bare bulb on a cord, flickering: the light over a service in a rush. */
+export function FlickerBulb() {
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-[-140px] z-10 flex -translate-x-1/2 flex-col items-center">
+      <div className="h-[110px] w-px bg-gradient-to-b from-transparent to-[#3a3e52]" />
+      <div className="h-3 w-4 rounded-t-[3px] bg-[#2a2d3a]" />
+      <div className="lp-flicker h-7 w-6 rounded-[50%_50%_45%_45%] bg-[#ffd58a]" />
+      <div className="lp-flicker lp-flicker-glow absolute top-[110px] h-[360px] w-[360px] -translate-y-1/3 rounded-full" />
+    </div>
+  );
+}
+
+/** A tealight beside the table card. */
+export function Candle({ className = "" }: { className?: string }) {
+  return (
+    <div aria-hidden="true" className={["pointer-events-none flex flex-col items-center", className].join(" ")}>
+      <div className="lp-candle-glow absolute -top-16 h-40 w-40 rounded-full" />
+      <div className="lp-flame h-5 w-2.5 rounded-[50%_50%_50%_50%/60%_60%_40%_40%]" />
+      <div className="mt-0.5 h-1.5 w-px bg-[#2b2a27]" />
+      <div className="h-7 w-14 rounded-b-[6px] rounded-t-[3px] bg-gradient-to-b from-[#e9e2cf] to-[#b9b09a] shadow-[0_10px_20px_-8px_rgba(0,0,0,0.9)]" />
     </div>
   );
 }
