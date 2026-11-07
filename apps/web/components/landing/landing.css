@@ -1,0 +1,323 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Landing page
+ *
+ * Always dark, whatever the visitor's dashboard theme is. 60-30-10:
+ *   60  --lp-base           the room the page sits in
+ *   30  surfaces, hairlines and text: structure
+ *   10  --lp-amber          only on Start free, the step numbers and the
+ *                           "new order" signal. Nowhere decorative.
+ *
+ * The one warm object is the thermal paper: it is the product's output, so
+ * it is the only thing allowed to be bright.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+html:has(.lp) {
+  background: #0c0d10;
+  color-scheme: dark;
+}
+
+.lp {
+  --lp-base: #0c0d10;
+  --lp-surface: #13141a;
+  --lp-raised: #1a1c25;
+  --lp-line: #252836;
+  --lp-line-soft: rgba(240, 240, 245, 0.07);
+  --lp-text: #f0f0f5;
+  --lp-muted: #9298b0;
+  --lp-faint: #5f6585;
+  --lp-amber: #f59e0b;
+  --lp-amber-hover: #fbbf24;
+  --lp-on-amber: #1c1203;
+  --lp-paper: #f5f2ea;
+  --lp-paper-ink: #1f1d1a;
+
+  /* The shared tokens, pinned dark, so components borrowed from the app
+     (the wordmark, the phone frame chrome) read correctly on this page even
+     when the visitor's dashboard is set to light. */
+  --paper: var(--lp-base);
+  --surface: var(--lp-surface);
+  --raised: var(--lp-raised);
+  --line: var(--lp-line);
+  --ink: var(--lp-text);
+  --muted: var(--lp-muted);
+  --faint: var(--lp-faint);
+  --accent: var(--lp-amber);
+
+  --lp-gutter: clamp(16px, 4.5vw, 40px);
+  --lp-max: 1200px;
+
+  position: relative;
+  min-height: 100dvh;
+  overflow-x: clip;
+  background: var(--lp-base);
+  color: var(--lp-text);
+  font-family: var(--font-body);
+  font-size: 17px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  color-scheme: dark;
+}
+
+.lp[lang="hi"] {
+  --font-display: "Bricolage Grotesque", "Noto Sans Devanagari", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", "Noto Sans Devanagari", ui-sans-serif, system-ui, sans-serif;
+  line-height: 1.75;
+}
+
+/* Film grain: depth without a gradient. Fixed so it does not scroll with
+   the content and band. */
+.lp::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.lp ::selection {
+  background: var(--lp-amber);
+  color: var(--lp-on-amber);
+}
+
+.lp-wrap {
+  width: 100%;
+  max-width: calc(var(--lp-max) + var(--lp-gutter) * 2);
+  margin-inline: auto;
+  padding-inline: var(--lp-gutter);
+}
+
+/* ── Type ────────────────────────────────────────────────────────────────── */
+
+.lp-display {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 600;
+  letter-spacing: -0.024em;
+  line-height: 1;
+  text-wrap: balance;
+}
+.lp[lang="hi"] .lp-display {
+  /* Devanagari needs room above and below the line for its matras, and
+     negative tracking breaks the shirorekha into pieces. */
+  letter-spacing: 0;
+  line-height: 1.22;
+}
+
+.lp-h1 { font-size: clamp(44px, 6.4vw, 92px); }
+.lp-h2 { font-size: clamp(34px, 4.8vw, 64px); }
+
+/* Two lines, broken after the comma by the copy itself. Sized to the
+   column so the second line never wraps on its own at desktop widths. */
+.lp-hero-title { font-size: clamp(42px, 5.6vw, 80px); }
+@media (min-width: 1024px) { .lp-hero-title { white-space: nowrap; } }
+.lp-h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(24px, 2.6vw, 32px);
+  letter-spacing: -0.02em;
+  line-height: 1.12;
+  text-wrap: balance;
+}
+.lp[lang="hi"] .lp-h3 { letter-spacing: 0; line-height: 1.35; }
+
+.lp-lede {
+  color: var(--lp-muted);
+  font-size: clamp(17px, 1.5vw, 20px);
+  line-height: 1.6;
+  max-width: 34em;
+  text-wrap: pretty;
+}
+.lp-body {
+  color: var(--lp-muted);
+  max-width: 36em;
+  text-wrap: pretty;
+}
+
+/* ── Actions ─────────────────────────────────────────────────────────────── */
+
+.lp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 52px;
+  padding-inline: 24px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 16px;
+  white-space: nowrap;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+.lp-btn:active { transform: translateY(1px); }
+.lp-btn-sm { height: 40px; padding-inline: 16px; font-size: 14.5px; border-radius: 10px; }
+
+.lp-btn-primary { background: var(--lp-amber); color: var(--lp-on-amber); }
+.lp-btn-primary:hover { background: var(--lp-amber-hover); }
+
+.lp-btn-quiet {
+  color: var(--lp-text);
+  border: 1px solid var(--lp-line);
+  background: transparent;
+}
+.lp-btn-quiet:hover { border-color: #3a3e52; background: var(--lp-surface); }
+
+.lp-link { color: var(--lp-muted); transition: color 160ms ease; }
+.lp-link:hover { color: var(--lp-text); }
+
+.lp :focus-visible {
+  outline: 2px solid var(--lp-amber);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* ── Nav ─────────────────────────────────────────────────────────────────── */
+
+.lp-nav {
+  transition: background-color 220ms ease, border-color 220ms ease, backdrop-filter 220ms ease;
+  border-bottom: 1px solid transparent;
+}
+.lp-nav[data-scrolled="true"] {
+  background: rgba(12, 13, 16, 0.78);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border-bottom-color: var(--lp-line-soft);
+}
+
+.lp-skip {
+  position: absolute;
+  left: 12px;
+  top: -60px;
+  z-index: 80;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--lp-amber);
+  color: var(--lp-on-amber);
+  font-weight: 600;
+}
+.lp-skip:focus { top: 12px; }
+
+/* ── Sections ────────────────────────────────────────────────────────────── */
+
+.lp-section { padding-block: clamp(88px, 12vw, 168px); }
+.lp-rule { border-top: 1px solid var(--lp-line-soft); }
+
+/* A band one step lighter than the base: the 30 in 60-30-10 at section
+   scale, used twice so the page has a rhythm rather than one long scroll of
+   the same black. */
+.lp-band { background: var(--lp-surface); }
+
+/* ── Problem statement ───────────────────────────────────────────────────── */
+
+.lp-problem-line {
+  color: var(--lp-text);
+  opacity: 0.22;
+  transition: opacity 400ms ease;
+}
+.lp:not(.is-motion) .lp-problem-line { opacity: 1; }
+
+/* ── Steps ───────────────────────────────────────────────────────────────── */
+
+.lp-steps { position: relative; }
+.lp-steps-track,
+.lp-steps-fill {
+  position: absolute;
+  left: 23px;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+}
+.lp-steps-track { background: var(--lp-line); }
+.lp-steps-fill {
+  background: var(--lp-amber);
+  transform-origin: top;
+  transform: scaleY(0);
+}
+.lp:not(.is-motion) .lp-steps-fill { transform: scaleY(1); }
+
+.lp-step-num {
+  display: grid;
+  place-items: center;
+  width: 47px;
+  height: 47px;
+  border-radius: 999px;
+  border: 1px solid var(--lp-line);
+  background: var(--lp-base);
+  color: var(--lp-muted);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 17px;
+  transition: color 300ms ease, border-color 300ms ease, background-color 300ms ease;
+}
+.lp-step[data-active="true"] .lp-step-num,
+.lp:not(.is-motion) .lp-step-num {
+  color: var(--lp-on-amber);
+  background: var(--lp-amber);
+  border-color: var(--lp-amber);
+}
+
+/* ── Thermal paper ───────────────────────────────────────────────────────── */
+
+.lp-paper {
+  background: var(--lp-paper);
+  color: var(--lp-paper-ink);
+  font-family: ui-monospace, "SFMono-Regular", "Cascadia Mono", "Consolas", "Liberation Mono", monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  /* A torn edge along the bottom: the tooth of a printer's cutter. */
+  --tooth: 9px;
+  mask:
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / var(--tooth) 100%;
+  -webkit-mask:
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / var(--tooth) 100%;
+  padding-bottom: calc(var(--tooth) + 10px);
+}
+.lp-paper-rule { border-top: 1px dashed rgba(31, 29, 26, 0.45); }
+
+.lp-printer {
+  background: linear-gradient(180deg, #23252f 0%, #1a1c24 100%);
+  border: 1px solid #2e3141;
+  box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.lp-slot {
+  background: #07080b;
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.9);
+}
+
+.lp-led {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--lp-amber);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.16);
+}
+
+/* ── FAQ ─────────────────────────────────────────────────────────────────── */
+
+.lp-faq summary { list-style: none; cursor: pointer; }
+.lp-faq summary::-webkit-details-marker { display: none; }
+.lp-faq .lp-faq-icon { transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1); }
+.lp-faq[open] .lp-faq-icon { transform: rotate(45deg); }
+
+/* ── Motion hand-off ─────────────────────────────────────────────────────── */
+
+/* Hidden only once script has said it will reveal them, so a visitor with
+   no JavaScript, or one who asked for less motion, sees everything. */
+.lp.is-motion [data-intro] {
+  opacity: 0;
+  /* Fail-safe: if the script that reveals these never runs, show them
+     anyway after a beat. By then the real intro has long finished, so this
+     only ever matters when something went wrong. */
+  animation: lp-failsafe 0s linear 2.6s forwards;
+}
+@keyframes lp-failsafe { to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .lp *,
+  .lp *::before,
+  .lp *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

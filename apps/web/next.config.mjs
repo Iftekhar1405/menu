@@ -1,6 +1,7 @@
 import { config } from "dotenv";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import createNextIntlPlugin from "next-intl/plugin";
 
 // One .env at the repo root, shared with the API, so the two can never drift
 // onto different secrets or origins.
@@ -20,4 +21,7 @@ const nextConfig = {
     ],
   },
 };
-export default nextConfig;
+// Translations for the logged-out landing page only; see i18n/request.ts.
+const withNextIntl = createNextIntlPlugin("./i18n/request.ts");
+
+export default withNextIntl(nextConfig);
