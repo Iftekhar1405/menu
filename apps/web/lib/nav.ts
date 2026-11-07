@@ -20,6 +20,7 @@ const OWNER_NAV: NavItem[] = [
   { href: "/qr",         label: "QR code" },
   { href: "/merch",      label: "Printed cards" },
   { href: "/settings",   label: "Settings" },
+  { href: "/tutorial",   label: "Tutorial" },
 ];
 
 const KITCHEN_NAV: NavItem[] = [
@@ -55,9 +56,9 @@ export function navFor(role: Role): NavItem[] {
 const ALLOWED: Record<Role, string[]> = {
   kitchen: ["/orders", "/dishes", "/change-pin", "/station"],
   owner: ["/dashboard", "/orders", "/menu", "/tables", "/billing",
-          "/appearance", "/qr", "/merch", "/settings", "/change-pin", "/station"],
+          "/appearance", "/qr", "/merch", "/settings", "/tutorial", "/change-pin", "/station"],
   platform_admin: ["/dashboard", "/orders", "/menu", "/tables", "/billing",
-                   "/appearance", "/qr", "/merch", "/settings", "/admin", "/change-pin", "/station"],
+                   "/appearance", "/qr", "/merch", "/settings", "/tutorial", "/admin", "/change-pin", "/station"],
 };
 
 /**

@@ -21,7 +21,7 @@ const ICONS: Record<string, ComponentType> = {
   "/dashboard": OverviewIcon, "/orders": OrdersIcon, "/menu": MenuIcon,
   "/dishes": MenuIcon, "/tables": TablesIcon, "/billing": BillingIcon,
   "/appearance": AppearanceIcon, "/qr": QrIcon, "/merch": CardsIcon,
-  "/settings": SettingsIcon, "/admin": CardsIcon,
+  "/settings": SettingsIcon, "/admin": CardsIcon, "/tutorial": TutorialIcon,
 };
 
 /** How many of those get their own tab. The rest go behind More. */
@@ -365,6 +365,15 @@ function icon(path: React.ReactNode) {
     >
       {path}
     </svg>
+  );
+}
+
+function TutorialIcon() {
+  return icon(
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2.5" />
+      <path d="M10.5 9.5v5l4-2.5Z" />
+    </>,
   );
 }
 

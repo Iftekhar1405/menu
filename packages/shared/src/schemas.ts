@@ -82,7 +82,7 @@ export type PinResetInput = z.infer<typeof pinResetSchema>;
 /** Slugs an owner may not claim, because we route on them. */
 const RESERVED_SLUGS = [
   "admin", "api", "app", "auth", "dashboard", "login", "signup", "m",
-  "menu", "settings", "static", "support", "qr", "public", "help",
+  "menu", "settings", "static", "support", "qr", "public", "help", "tutorial",
 ];
 
 export const vanitySlugSchema = z

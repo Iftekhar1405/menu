@@ -6,8 +6,8 @@ describe("navigation by role", () => {
     expect(navFor("kitchen").map((i) => i.href)).toEqual(["/orders", "/dishes"]);
   });
 
-  it("keeps the owner's nine sections", () => {
-    expect(navFor("owner")).toHaveLength(9);
+  it("keeps the owner's ten sections", () => {
+    expect(navFor("owner")).toHaveLength(10);
     expect(navFor("owner").map((i) => i.href)).toContain("/billing");
   });
 
@@ -20,6 +20,14 @@ describe("navigation by role", () => {
     for (const path of ["/billing", "/settings", "/qr", "/merch", "/appearance", "/dashboard", "/tables", "/menu"]) {
       expect(canSee("kitchen", path)).toBe(false);
     }
+  });
+
+  it("gives owners and admins the product tour, and not the kitchen", () => {
+    expect(navFor("owner").map((i) => i.href)).toContain("/tutorial");
+    expect(canSee("owner", "/tutorial")).toBe(true);
+    expect(canSee("platform_admin", "/tutorial")).toBe(true);
+    expect(canSee("kitchen", "/tutorial")).toBe(false);
+    expect(navFor("kitchen").map((i) => i.href)).not.toContain("/tutorial");
   });
 
   it("lets the kitchen reach its own two screens", () => {
