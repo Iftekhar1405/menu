@@ -208,55 +208,6 @@ html:has(.lp) {
    the same black. */
 .lp-band { background: var(--lp-surface); }
 
-/* ── Problem statement ───────────────────────────────────────────────────── */
-
-.lp-problem-line {
-  color: var(--lp-text);
-  opacity: 0.22;
-  transition: opacity 400ms ease;
-}
-.lp:not(.is-motion) .lp-problem-line { opacity: 1; }
-
-/* ── Steps ───────────────────────────────────────────────────────────────── */
-
-.lp-steps { position: relative; }
-.lp-steps-track,
-.lp-steps-fill {
-  position: absolute;
-  left: 23px;
-  top: 8px;
-  bottom: 8px;
-  width: 1px;
-}
-.lp-steps-track { background: var(--lp-line); }
-.lp-steps-fill {
-  background: var(--lp-amber);
-  transform-origin: top;
-  transform: scaleY(0);
-}
-.lp:not(.is-motion) .lp-steps-fill { transform: scaleY(1); }
-
-.lp-step-num {
-  display: grid;
-  place-items: center;
-  width: 47px;
-  height: 47px;
-  border-radius: 999px;
-  border: 1px solid var(--lp-line);
-  background: var(--lp-base);
-  color: var(--lp-muted);
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 17px;
-  transition: color 300ms ease, border-color 300ms ease, background-color 300ms ease;
-}
-.lp-step[data-active="true"] .lp-step-num,
-.lp:not(.is-motion) .lp-step-num {
-  color: var(--lp-on-amber);
-  background: var(--lp-amber);
-  border-color: var(--lp-amber);
-}
-
 /* ── Thermal paper ───────────────────────────────────────────────────────── */
 
 .lp-paper {
@@ -299,6 +250,199 @@ html:has(.lp) {
 .lp-faq summary::-webkit-details-marker { display: none; }
 .lp-faq .lp-faq-icon { transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1); }
 .lp-faq[open] .lp-faq-icon { transform: rotate(45deg); }
+
+/* ══ Night service ═══════════════════════════════════════════════════════════
+ * The page is a restaurant after dark: pools of warm lamp light, a tabletop,
+ * paper. Amber here is light, not paint — always soft, always behind.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+.lp-lamp {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 999px;
+  background: radial-gradient(closest-side, rgba(245, 158, 11, 0.22), rgba(245, 158, 11, 0.07) 45%, transparent 75%);
+  filter: blur(10px);
+}
+.lp-lamp-cool {
+  background: radial-gradient(closest-side, rgba(146, 152, 176, 0.12), transparent 70%);
+}
+
+/* The hero's table: a plane in perspective, lit from above. */
+.lp-tabletop {
+  position: absolute;
+  left: -14%;
+  right: -14%;
+  bottom: 0;
+  height: 62%;
+  transform: perspective(900px) rotateX(58deg);
+  transform-origin: bottom center;
+  border-radius: 40px 40px 0 0;
+  background:
+    radial-gradient(60% 70% at 50% 30%, rgba(245, 158, 11, 0.16), transparent 70%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.018) 0 2px, transparent 2px 46px),
+    linear-gradient(180deg, #1b1712 0%, #120f0c 60%, #0c0d10 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  -webkit-mask: linear-gradient(180deg, #000 55%, transparent);
+  mask: linear-gradient(180deg, #000 55%, transparent);
+}
+
+.lp-shadow {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.75);
+  filter: blur(18px);
+  pointer-events: none;
+}
+
+/* ── Receipt ribbon ──────────────────────────────────────────────────────── */
+
+.lp-ribbon {
+  position: relative;
+  z-index: 2;
+  margin-inline: -4vw;
+  transform: rotate(-2.2deg);
+  background: var(--lp-paper);
+  color: var(--lp-paper-ink);
+  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.85);
+  --tooth: 10px;
+  -webkit-mask:
+    conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / var(--tooth) 51% repeat-x,
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) 51% repeat-x;
+  mask:
+    conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / var(--tooth) 51% repeat-x,
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) 51% repeat-x;
+}
+.lp-ribbon-text {
+  font-family: ui-monospace, "SFMono-Regular", "Cascadia Mono", "Consolas", monospace;
+  font-size: clamp(13px, 1.3vw, 16px);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.lp-marquee { display: flex; width: max-content; will-change: transform; }
+
+/* Dish names, set huge. Alternate rows outline and solid. */
+.lp-dishes {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(64px, 11vw, 168px);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+}
+.lp-dishes-outline {
+  color: transparent;
+  -webkit-text-stroke: 1.5px #3a3e52;
+}
+.lp-dishes-solid { color: #1f2130; }
+.lp-dish-dot {
+  display: inline-block;
+  width: 0.14em;
+  height: 0.14em;
+  margin-inline: 0.45em;
+  vertical-align: middle;
+  border-radius: 999px;
+  background: var(--lp-amber);
+}
+
+/* ── Waiter's slips ──────────────────────────────────────────────────────── */
+
+.lp-slip {
+  position: absolute;
+  width: 190px;
+  padding: 16px 16px 18px;
+  background:
+    repeating-linear-gradient(180deg, transparent 0 25px, rgba(60, 90, 160, 0.16) 25px 26px),
+    #f2ead2;
+  color: #2b2a27;
+  font-family: "Caveat", "Segoe Print", "Bradley Hand", cursive;
+  font-size: 23px;
+  line-height: 26px;
+  box-shadow: 0 18px 30px -14px rgba(0, 0, 0, 0.8);
+  border-radius: 2px;
+}
+.lp-slip::before {
+  /* the torn top edge of a notepad page */
+  content: "";
+  position: absolute;
+  inset: -4px 0 auto;
+  height: 6px;
+  background: radial-gradient(circle at 5px -1px, transparent 4px, #f2ead2 4.5px) 0 0 / 10px 6px repeat-x;
+}
+.lp-slip s { text-decoration-thickness: 2px; text-decoration-color: #9b2f2f; }
+
+/* ── How it works: the stage ─────────────────────────────────────────────── */
+
+.lp-scene {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transform: translateY(24px) scale(0.97);
+  transition: opacity 500ms ease, transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+.lp-scene[data-show="true"] { opacity: 1; transform: none; }
+
+.lp-step-big {
+  transition: opacity 400ms ease;
+}
+.lp.is-motion .lp-step-big { opacity: 0.32; }
+.lp.is-motion .lp-step-big[data-active="true"] { opacity: 1; }
+
+/* ── Feature visuals ─────────────────────────────────────────────────────── */
+
+.lp-swing {
+  transform-origin: top center;
+  animation: lp-swing 5.5s ease-in-out infinite;
+}
+.lp-swing:nth-child(2) { animation-duration: 6.4s; animation-delay: -1.2s; }
+.lp-swing:nth-child(3) { animation-duration: 5s; animation-delay: -2.6s; }
+@keyframes lp-swing {
+  0%, 100% { transform: rotate(-1.1deg); }
+  50% { transform: rotate(1.1deg); }
+}
+
+.lp-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--lp-line);
+  background: var(--lp-surface);
+  color: var(--lp-amber);
+}
+
+/* ── The pendant lamp over the last call ─────────────────────────────────── */
+
+.lp-pendant-cord { width: 1px; background: linear-gradient(#000, #3a3e52); }
+.lp-pendant-shade {
+  width: 132px;
+  height: 58px;
+  background: linear-gradient(180deg, #2a2d3a, #15161d);
+  clip-path: polygon(22% 0, 78% 0, 100% 100%, 0 100%);
+  border-radius: 4px;
+}
+.lp-pendant-bulb {
+  width: 44px;
+  height: 14px;
+  margin-top: -7px;
+  border-radius: 0 0 999px 999px;
+  background: #ffd58a;
+  box-shadow: 0 0 30px 10px rgba(255, 196, 92, 0.55);
+}
+.lp-pendant-cone {
+  width: min(1100px, 120vw);
+  height: 620px;
+  margin-top: -4px;
+  clip-path: polygon(46% 0, 54% 0, 100% 100%, 0 100%);
+  background: linear-gradient(180deg, rgba(255, 196, 92, 0.2), rgba(245, 158, 11, 0.06) 55%, transparent 90%);
+  filter: blur(6px);
+}
+.lp.is-motion .lp-pendant-light { opacity: 0; }
 
 /* ── Motion hand-off ─────────────────────────────────────────────────────── */
 

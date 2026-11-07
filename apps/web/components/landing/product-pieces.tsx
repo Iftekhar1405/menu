@@ -13,24 +13,30 @@ import { KitchenTicket } from "./kitchen-ticket";
  * stay in English on the Hindi page too.
  */
 
-/** The same menu in three of the real layout, colour and type choices. */
+/**
+ * The same menu in three of the real layout, colour and type choices,
+ * fanned like cards in a hand, under a lamp.
+ */
 export function DesignTrio({ layouts }: { layouts: string[] }) {
   const variants = [
-    { layout: "editorial", accent: "#1D6F5C", fontPairing: "inter-fraunces" },
-    { layout: "compact", accent: "#B4532A", fontPairing: "outfit-outfit" },
-    { layout: "grid", accent: "#274472", fontPairing: "playfair-lato" },
+    { layout: "editorial", accent: "#1D6F5C", fontPairing: "inter-fraunces", pose: "-rotate-[9deg] translate-y-6" },
+    { layout: "compact", accent: "#B4532A", fontPairing: "outfit-outfit", pose: "z-10" },
+    { layout: "grid", accent: "#274472", fontPairing: "playfair-lato", pose: "rotate-[9deg] translate-y-6" },
   ] as const;
 
   return (
-    <div aria-hidden="true" inert className="pointer-events-none flex items-end justify-center gap-3 sm:gap-5">
-      {variants.map((v, i) => (
-        <figure key={v.layout} className={i === 1 ? "-mb-0 sm:-mb-6" : "mb-6 hidden sm:block"}>
-          <PhoneFrame scale={i === 1 ? 0.6 : 0.5}>
-            <MenuView menu={sampleMenu({ layout: v.layout, accent: v.accent, fontPairing: v.fontPairing })} compactChrome />
-          </PhoneFrame>
-          <figcaption className="mt-3 text-center text-[13px] text-[var(--lp-muted)]">{layouts[i]}</figcaption>
-        </figure>
-      ))}
+    <div aria-hidden="true" inert className="pointer-events-none relative flex justify-center">
+      <div className="lp-lamp left-1/2 top-[-60px] h-[460px] w-[560px] -translate-x-1/2" />
+      <div className="relative flex origin-top scale-[0.72] items-start sm:scale-100">
+        {variants.map((v, i) => (
+          <figure key={v.layout} className={["relative", i === 0 ? "-mr-14" : i === 2 ? "-ml-14" : "", v.pose].join(" ")}>
+            <PhoneFrame scale={0.55}>
+              <MenuView menu={sampleMenu({ layout: v.layout, accent: v.accent, fontPairing: v.fontPairing })} compactChrome />
+            </PhoneFrame>
+            <figcaption className="mt-4 text-center text-[13px] text-[var(--lp-muted)]">{layouts[i]}</figcaption>
+          </figure>
+        ))}
+      </div>
     </div>
   );
 }
@@ -155,7 +161,7 @@ export function TicketRail({ jobs }: { jobs: { name: string; note: string }[] })
         <div className="h-[10px] rounded-full border border-[#343849] bg-gradient-to-b from-[#3a3e50] to-[#20222c]" />
         <div className="-mt-[3px] grid grid-cols-2 items-start gap-3 sm:grid-cols-3 sm:gap-5">
           {/* Token slip */}
-          <div className="lp-paper px-3 pt-4 text-center">
+          <div className="lp-swing lp-paper px-3 pt-4 text-center">
             <div className="text-[10.5px]">Kumar Coffee House</div>
             <div className="text-[10.5px]">your token</div>
             <div className="my-1 font-display text-[44px] font-bold leading-none tracking-tight sm:text-[56px]">42</div>
@@ -166,7 +172,7 @@ export function TicketRail({ jobs }: { jobs: { name: string; note: string }[] })
 
           {/* Kitchen ticket */}
           <KitchenTicket
-            className="!text-[11px] !px-3"
+            className="lp-swing !text-[11px] !px-3"
             ticket={{
               token: "42",
               table: "Table 4",
@@ -180,7 +186,7 @@ export function TicketRail({ jobs }: { jobs: { name: string; note: string }[] })
           />
 
           {/* Bill */}
-          <div className="lp-paper hidden px-3 pt-4 !text-[11px] sm:block">
+          <div className="lp-swing lp-paper hidden px-3 pt-4 !text-[11px] sm:block">
             <div className="text-center font-bold">BILL</div>
             <div className="text-center text-[10px]">Table 4, token 42</div>
             <div className="lp-paper-rule my-2" />

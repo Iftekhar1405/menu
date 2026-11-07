@@ -8,6 +8,7 @@ import { HeroStage } from "./hero-stage";
 import { LandingMotion, MOTION_BOOTSTRAP } from "./motion";
 import { LandingNav } from "./nav";
 import { DesignTrio, OrdersBoardMini, TableStand, TicketRail } from "./product-pieces";
+import { DetailIcon, DishMarquee, PendantLamp, ReceiptRibbon, STEP_SCENES, WaiterSlips } from "./scenes";
 import { SessionRedirect } from "./session-redirect";
 import { landingJsonLd } from "./seo";
 import "./landing.css";
@@ -45,6 +46,8 @@ export async function LandingPage({ locale }: { locale: Locale }) {
   return (
     <div className="lp" lang={locale} suppressHydrationWarning>
       <script dangerouslySetInnerHTML={{ __html: MOTION_BOOTSTRAP }} />
+      {/* The waiter's handwriting on the notepad slips */}
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600&display=swap" precedence="default" />
       {locale === "hi" && (
         <link
           rel="stylesheet"
@@ -78,10 +81,11 @@ export async function LandingPage({ locale }: { locale: Locale }) {
       />
 
       <main id="main" tabIndex={-1} className="outline-none">
-        {/* ── Hero ─────────────────────────────────────────────────────── */}
-        <section aria-labelledby="hero-title" className="relative pb-20 pt-[128px] sm:pt-[148px] lg:pb-28">
-          <div className="lp-wrap grid items-center gap-14 lg:grid-cols-[1.3fr_1fr] lg:gap-10">
-            <div>
+        {/* ── Hero: a table at night ───────────────────────────────────── */}
+        <section aria-labelledby="hero-title" className="relative overflow-hidden pb-16 pt-[120px] sm:pt-[140px] lg:pb-24">
+          <div className="lp-lamp lp-lamp-cool -left-40 top-20 h-[520px] w-[520px]" aria-hidden="true" />
+          <div className="lp-wrap relative grid items-center gap-10 lg:grid-cols-[1.15fr_1fr] lg:gap-6">
+            <div className="relative z-10">
               <h1 id="hero-title" data-intro className="lp-display lp-h1 lp-hero-title">
                 {t.rich("hero.title", { br: () => <br /> })}
               </h1>
@@ -93,6 +97,9 @@ export async function LandingPage({ locale }: { locale: Locale }) {
                   {t("hero.primary")}
                 </Link>
                 <a href="#tour" className="lp-btn lp-btn-quiet">
+                  <svg width="12" height="14" viewBox="0 0 14 16" fill="currentColor" aria-hidden="true">
+                    <path d="M1 1.8v12.4a1 1 0 0 0 1.52.85l10-6.2a1 1 0 0 0 0-1.7l-10-6.2A1 1 0 0 0 1 1.8Z" />
+                  </svg>
                   {t("hero.secondary")}
                 </a>
               </div>
@@ -106,63 +113,94 @@ export async function LandingPage({ locale }: { locale: Locale }) {
           </div>
         </section>
 
-        {/* ── The problem ──────────────────────────────────────────────── */}
-        <section aria-labelledby="problem-title" className="lp-section lp-rule">
-          <div className="lp-wrap">
-            <h2 id="problem-title" className="max-w-[30em] text-[18px] text-[var(--lp-muted)] sm:text-[20px]">
-              {t("problem.lead")}
-            </h2>
-            <ul className="mt-10 space-y-4 sm:space-y-6">
-              {problemLines.map((line) => (
-                <li key={line} className="lp-problem-line lp-display lp-h2 max-w-[18ch]">
-                  {line}
-                </li>
-              ))}
-            </ul>
-            <p className="mt-16 max-w-[26em] border-t border-[var(--lp-line)] pt-8 text-[20px] font-medium leading-snug text-[var(--lp-text)] sm:text-[24px]">
-              {t("problem.close")}
-            </p>
+        {/* A strip of paper from the kitchen printer, across the page */}
+        <div className="relative z-10 -mt-6 overflow-x-clip pb-6">
+          <ReceiptRibbon />
+        </div>
+
+        {/* ── The problem: a waiter's notepad ──────────────────────────── */}
+        <section aria-labelledby="problem-title" className="lp-section relative overflow-hidden">
+          <div className="lp-wrap grid grid-cols-[minmax(0,1fr)] items-center gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-10">
+            <div>
+              <h2 id="problem-title" className="text-[18px] text-[var(--lp-muted)] sm:text-[20px]">
+                {t("problem.lead")}
+              </h2>
+              <ul className="mt-8 space-y-4">
+                {problemLines.map((line) => (
+                  <li key={line} className="lp-display lp-h3 !text-[clamp(26px,3vw,40px)]">
+                    {line}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-12 max-w-[24em] border-l-2 border-[var(--lp-amber)] pl-5 text-[20px] font-medium leading-snug text-[var(--lp-text)] sm:text-[24px]">
+                {t("problem.close")}
+              </p>
+            </div>
+            <div className="relative h-[200px] sm:h-[280px] lg:h-[340px]">
+              <div className="lp-lamp left-1/2 top-1/2 h-[420px] w-[620px] -translate-x-1/2 -translate-y-1/2 opacity-70" aria-hidden="true" />
+              <WaiterSlips />
+            </div>
           </div>
         </section>
 
-        {/* ── How it works ─────────────────────────────────────────────── */}
-        <section id="how" aria-labelledby="how-title" className="lp-section lp-band">
-          <div className="lp-wrap grid gap-14 lg:grid-cols-[0.85fr_1.15fr] lg:gap-20">
-            <div className="lg:sticky lg:top-32 lg:self-start">
-              <h2 id="how-title" className="lp-display lp-h2 max-w-[12ch]">
-                {t("how.title")}
-              </h2>
-              <p className="lp-lede mt-6">{t("how.lede")}</p>
+        {/* ── How it works: steps on the left, the scene on the right ──── */}
+        <section id="how" aria-labelledby="how-title" className="lp-section lp-band relative">
+          <div className="lp-wrap">
+            <h2 id="how-title" className="lp-display lp-h2 max-w-[16ch]">
+              {t("how.title")}
+            </h2>
+            <p className="lp-lede mt-6">{t("how.lede")}</p>
+
+            <div className="mt-16 grid gap-10 lg:mt-20 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+              <ol>
+                {steps.map((step, i) => {
+                  const Scene = STEP_SCENES[i]!;
+                  return (
+                    <li
+                      key={step.title}
+                      data-step
+                      className="lp-step-big grid grid-cols-[56px_minmax(0,1fr)] gap-5 py-10 lg:min-h-[62vh] lg:items-center lg:py-0"
+                    >
+                      <span className="font-display text-[44px] font-semibold leading-none text-[var(--lp-amber)]" aria-hidden="true">
+                        {i + 1}
+                      </span>
+                      <div>
+                        <h3 className="lp-h3">{step.title}</h3>
+                        <p className="lp-body mt-3">{step.body}</p>
+                        {/* Small screens: the scene sits under its step */}
+                        <div aria-hidden="true" className="mt-8 flex justify-center lg:hidden">
+                          <div className="origin-top scale-[0.82]">
+                            <Scene />
+                          </div>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+              <div aria-hidden="true" className="hidden lg:block">
+                <div className="sticky top-[12vh] h-[76vh] overflow-hidden rounded-[28px] border border-[var(--lp-line)] bg-[var(--lp-base)]">
+                  <div className="lp-lamp left-1/2 top-[-120px] h-[560px] w-[640px] -translate-x-1/2" />
+                  <div className="lp-tabletop !h-[40%]" />
+                  {STEP_SCENES.map((Scene, i) => (
+                    <div key={i} className="lp-scene" data-scene={i} data-show={i === 0 ? "true" : "false"}>
+                      <Scene />
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
-            <ol className="lp-steps">
-              <span aria-hidden="true" className="lp-steps-track" />
-              <span aria-hidden="true" className="lp-steps-fill" />
-              {steps.map((step, i) => (
-                <li
-                  key={step.title}
-                  className="lp-step relative grid grid-cols-[47px_minmax(0,1fr)] gap-6 pb-14 last:pb-0 sm:gap-8"
-                >
-                  <span className="lp-step-num relative z-10" aria-hidden="true">
-                    {i + 1}
-                  </span>
-                  <div className="pt-2">
-                    <h3 className="lp-h3">{step.title}</h3>
-                    <p className="lp-body mt-3">{step.body}</p>
-                  </div>
-                </li>
-              ))}
-            </ol>
           </div>
         </section>
 
         {/* ── Features ─────────────────────────────────────────────────── */}
-        <section id="features" aria-labelledby="features-title" className="lp-section">
+        <section id="features" aria-labelledby="features-title" className="lp-section relative overflow-hidden">
           <div className="lp-wrap">
             <h2 id="features-title" className="lp-display lp-h2 max-w-[14ch]">
               {t("features.title")}
             </h2>
 
-            <div className="mt-20 grid items-center gap-12 lg:mt-28 lg:grid-cols-[0.9fr_1.1fr] lg:gap-20">
+            <div className="mt-20 grid items-center gap-14 lg:mt-24 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
               <div>
                 <h3 className="lp-h3">{t("features.design.title")}</h3>
                 <p className="lp-body mt-4">{t("features.design.body")}</p>
@@ -170,30 +208,39 @@ export async function LandingPage({ locale }: { locale: Locale }) {
               <DesignTrio layouts={layouts} />
             </div>
 
-            <div className="mt-28 grid items-center gap-12 lg:mt-36 lg:grid-cols-[1.25fr_0.75fr] lg:gap-20">
+            <div className="mt-28 grid items-center gap-14 lg:mt-36 lg:grid-cols-[1.3fr_0.7fr] lg:gap-16">
               <div className="lg:order-2">
                 <h3 className="lp-h3">{t("features.board.title")}</h3>
                 <p className="lp-body mt-4">{t("features.board.body")}</p>
               </div>
-              <div className="lg:order-1">
-                <OrdersBoardMini />
+              <div className="relative lg:order-1">
+                <div className="lp-lamp left-[10%] top-[-20%] h-[140%] w-[80%] opacity-80" aria-hidden="true" />
+                <div className="relative lg:[transform:perspective(1400px)_rotateX(10deg)_rotateY(-14deg)_rotateZ(1deg)]">
+                  <OrdersBoardMini />
+                </div>
               </div>
             </div>
 
-            <div className="mt-28 grid items-center gap-12 lg:mt-36 lg:grid-cols-[0.9fr_1.1fr] lg:gap-20">
+            <div className="mt-28 grid items-center gap-14 lg:mt-36 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
               <div>
                 <h3 className="lp-h3">{t("features.print.title")}</h3>
                 <p className="lp-body mt-4">{t("features.print.body")}</p>
               </div>
-              <TicketRail jobs={jobs} />
+              <div className="relative">
+                <div className="lp-lamp left-[5%] top-[-30%] h-[120%] w-[90%] opacity-70" aria-hidden="true" />
+                <div className="relative">
+                  <TicketRail jobs={jobs} />
+                </div>
+              </div>
             </div>
 
             <div className="mt-28 lg:mt-40">
               <h3 className="lp-h3 max-w-[22ch]">{t("features.detailsTitle")}</h3>
-              <ul className="mt-10 grid gap-x-10 sm:grid-cols-2 lg:grid-cols-3">
-                {details.map((d) => (
-                  <li key={d.title} className="border-t border-[var(--lp-line)] py-7">
-                    <p className="text-[17px] font-semibold leading-snug text-[var(--lp-text)]">{d.title}</p>
+              <ul className="mt-10 grid gap-px overflow-hidden rounded-[22px] border border-[var(--lp-line)] bg-[var(--lp-line)] sm:grid-cols-2 lg:grid-cols-3">
+                {details.map((d, i) => (
+                  <li key={d.title} className="bg-[var(--lp-base)] p-7 sm:p-8">
+                    <DetailIcon index={i} />
+                    <p className="mt-6 text-[17px] font-semibold leading-snug text-[var(--lp-text)]">{d.title}</p>
                     <p className="mt-2 text-[15.5px] leading-relaxed text-[var(--lp-muted)]">{d.body}</p>
                   </li>
                 ))}
@@ -203,7 +250,7 @@ export async function LandingPage({ locale }: { locale: Locale }) {
         </section>
 
         {/* ── Printed cards ────────────────────────────────────────────── */}
-        <section aria-labelledby="cards-title" className="lp-section lp-band overflow-hidden">
+        <section aria-labelledby="cards-title" className="lp-section lp-band relative overflow-hidden">
           <div className="lp-wrap grid items-center gap-16 lg:grid-cols-2">
             <div>
               <h2 id="cards-title" className="lp-display lp-h2 max-w-[13ch]">
@@ -211,12 +258,17 @@ export async function LandingPage({ locale }: { locale: Locale }) {
               </h2>
               <p className="lp-lede mt-6">{t("cards.body")}</p>
             </div>
-            <TableStand />
+            <div className="relative py-6">
+              <div className="lp-lamp left-1/2 top-[-10%] h-[120%] w-[120%] -translate-x-1/2" aria-hidden="true" />
+              <div className="relative rotate-[-3deg]">
+                <TableStand />
+              </div>
+            </div>
           </div>
         </section>
 
         {/* ── Tour ─────────────────────────────────────────────────────── */}
-        <section id="tour" aria-labelledby="tour-title" className="lp-section">
+        <section id="tour" aria-labelledby="tour-title" className="lp-section relative">
           <div className="lp-wrap">
             <div className="grid gap-6 lg:grid-cols-[1fr_1fr] lg:items-end lg:gap-20">
               <h2 id="tour-title" className="lp-display lp-h2 max-w-[13ch]">
@@ -224,8 +276,11 @@ export async function LandingPage({ locale }: { locale: Locale }) {
               </h2>
               <p className="lp-lede">{t("tour.body")}</p>
             </div>
-            <div className="mt-12 lg:mt-16">
-              <TourVideo playLabel={t("tour.play")} transcriptLabel={t("tour.transcript")} />
+            <div className="relative mt-12 lg:mt-16">
+              <div className="lp-lamp left-1/2 top-[-15%] h-[130%] w-[110%] -translate-x-1/2 opacity-80" aria-hidden="true" />
+              <div className="relative">
+                <TourVideo playLabel={t("tour.play")} transcriptLabel={t("tour.transcript")} />
+              </div>
             </div>
           </div>
         </section>
@@ -252,14 +307,18 @@ export async function LandingPage({ locale }: { locale: Locale }) {
           </div>
         </section>
 
-        {/* ── Final call ───────────────────────────────────────────────── */}
-        <section aria-labelledby="final-title" className="lp-section lp-band">
-          <div className="lp-wrap">
-            <h2 id="final-title" className="lp-display lp-h1 max-w-[18ch]">
+        {/* The menu, too big to read in one go */}
+        <DishMarquee />
+
+        {/* ── Final call, under the lamp ───────────────────────────────── */}
+        <section aria-labelledby="final-title" className="relative overflow-hidden pb-32 pt-[210px] sm:pb-40">
+          <PendantLamp />
+          <div className="lp-wrap relative text-center">
+            <h2 id="final-title" className="lp-display lp-h1 mx-auto max-w-[16ch]">
               {t("final.title")}
             </h2>
-            <p className="lp-lede mt-7">{t("final.body")}</p>
-            <div className="mt-10 flex flex-wrap gap-3">
+            <p className="lp-lede mx-auto mt-7">{t("final.body")}</p>
+            <div className="mt-10 flex flex-wrap justify-center gap-3">
               <Link href="/signup" className="lp-btn lp-btn-primary">
                 {t("final.primary")}
               </Link>
