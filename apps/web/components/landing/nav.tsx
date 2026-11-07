@@ -68,7 +68,7 @@ export function LandingNav({
               <Mark size={26} />
             </span>
             <span className="font-display text-[19px] font-semibold tracking-tight text-[var(--lp-text)]">
-              menu<span className="text-[var(--lp-faint)]">.irad</span>
+              supermenu<span className="text-[var(--lp-faint)]">.irad</span>
             </span>
           </Link>
 

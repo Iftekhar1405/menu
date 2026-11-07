@@ -1,1 +1,1 @@
-menu.irad: digital menu, table ordering and kitchen printing for restaurants
+supermenu: digital menu, table ordering and kitchen printing for restaurants

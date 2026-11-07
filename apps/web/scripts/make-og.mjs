@@ -49,9 +49,9 @@ const page = (c) => `<!doctype html><html lang="${c.lang}"><head><meta charset="
   .foot{display:flex;justify-content:space-between;align-items:center;font-size:22px;color:#5f6585}
   .cta{background:#f59e0b;color:#1c1203;font-weight:600;font-family:Inter,"Noto Sans Devanagari",sans-serif;padding:12px 22px;border-radius:12px}
 </style></head><body>
-  <div class="brand">${MARK}<div>menu<span>.irad</span></div></div>
+  <div class="brand">${MARK}<div>supermenu<span>.irad</span></div></div>
   <div><h1>${c.title}</h1><p>${c.body}</p></div>
-  <div class="foot"><div>menu.irad.solutions</div><div class="cta">${c.lang === "hi" ? "मुफ़्त में शुरू करें" : "Start free"}</div></div>
+  <div class="foot"><div>supermenu.irad.solutions</div><div class="cta">${c.lang === "hi" ? "मुफ़्त में शुरू करें" : "Start free"}</div></div>
 </body></html>`;
 
 const browser = await chromium.launch();

@@ -280,7 +280,7 @@ export async function LandingPage({ locale }: { locale: Locale }) {
                 <Mark size={24} />
               </span>
               <span className="font-display text-[18px] font-semibold tracking-tight">
-                menu<span className="text-[var(--lp-faint)]">.irad</span>
+                supermenu<span className="text-[var(--lp-faint)]">.irad</span>
               </span>
             </Link>
             <p className="mt-4 max-w-[30ch] text-[14.5px] leading-relaxed text-[var(--lp-muted)]">

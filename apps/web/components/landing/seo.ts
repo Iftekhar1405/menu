@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 import { LOCALE_PATH, LOCALE_TAG, type Locale } from "@/i18n/locales";
-import { BRAND_NAME, COMPANY_NAME, COMPANY_URL, SITE_URL, TOUR } from "@/lib/site";
+import { BRAND_NAME, COMPANY_NAME, COMPANY_URL, LEGACY_BRAND_NAMES, SITE_URL, TOUR } from "@/lib/site";
 
 /** Title, description, canonical, hreflang alternates and social cards. */
 export async function landingMetadata(locale: Locale): Promise<Metadata> {
@@ -50,6 +50,8 @@ export async function landingMetadata(locale: Locale): Promise<Metadata> {
       "thermal printer",
       "cafe menu",
       "restaurant POS India",
+      BRAND_NAME,
+      ...LEGACY_BRAND_NAMES,
     ],
   };
 }
@@ -83,6 +85,8 @@ export function landingJsonLd({
         "@id": `${SITE_URL}/#website`,
         url: SITE_URL,
         name: BRAND_NAME,
+        // The old name, so searches for it still find the product.
+        alternateName: [...LEGACY_BRAND_NAMES],
         inLanguage: ["en", "hi"],
         publisher: { "@id": org["@id"] },
       },
@@ -90,6 +94,7 @@ export function landingJsonLd({
         "@type": "WebApplication",
         "@id": `${SITE_URL}/#app`,
         name: BRAND_NAME,
+        alternateName: [...LEGACY_BRAND_NAMES],
         url: SITE_URL,
         description,
         applicationCategory: "BusinessApplication",
