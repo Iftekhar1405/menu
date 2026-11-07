@@ -1,0 +1,244 @@
+1
+00:00:00,350 --> 00:00:05,063
+Rush hour. Har table bhara hua. Waiter ek, orders das.
+
+2
+00:00:05,363 --> 00:00:09,337
+Galat order. Late bill. Aur naraaz customer.
+
+3
+00:00:09,637 --> 00:00:13,612
+Problem aapki kitchen mein nahi hai. Problem system mein hai.
+
+4
+00:00:14,561 --> 00:00:17,010
+Pesh hai — menu.irad.solutions.
+
+5
+00:00:17,310 --> 00:00:21,252
+Digital menu, table se ordering, aur kitchen printing — sab ek jagah.
+
+6
+00:00:21,552 --> 00:00:23,976
+Aur customer ko koi app download nahi karni.
+
+7
+00:00:24,926 --> 00:00:27,525
+Pehle dekhte hain, poora restaurant kaise chalta hai.
+
+8
+00:00:28,475 --> 00:00:30,368
+Shuruaat hoti hai aapke menu se.
+
+9
+00:00:30,668 --> 00:00:34,645
+Sections banaiye, dishes daaliye, variants aur prices set kijiye.
+
+10
+00:00:34,945 --> 00:00:39,699
+Save karte hi menu live. Jo aap dekhte hain, wahi customer dekhta hai.
+
+11
+00:00:40,649 --> 00:00:45,186
+Design aapke brand ke hisaab se. Layout, colour, font — aap chuniye.
+
+12
+00:00:45,486 --> 00:00:49,839
+Phone preview saath-saath badalta hai. Koi designer nahi chahiye.
+
+13
+00:00:50,789 --> 00:00:55,208
+Har table ka apna QR card. Download kijiye aur print kijiye.
+
+14
+00:00:55,508 --> 00:00:58,544
+Ya PVC cards aur acrylic stands humse mangwaaiye.
+
+15
+00:00:58,844 --> 00:01:03,590
+QR kabhi expire nahi hota. Naam badle, tab bhi card chalta rahega.
+
+16
+00:01:04,540 --> 00:01:06,095
+Ab customer ki taraf se dekhiye.
+
+17
+00:01:06,395 --> 00:01:11,349
+Table pe baithe, QR scan kiya — menu khul gaya. Na app, na login.
+
+18
+00:01:11,649 --> 00:01:15,354
+Dish chuni, 'Place order' dabaya. Order seedha kitchen tak.
+
+19
+00:01:16,304 --> 00:01:19,631
+Baad mein kuch aur chahiye? Ek aur filter coffee?
+
+20
+00:01:19,931 --> 00:01:25,406
+Customer wahin se naya round jodta hai. Pehla order jaisa tha, waisa rehta hai.
+
+21
+00:01:25,706 --> 00:01:27,794
+Waiter ko awaaz dene ki zaroorat hi nahi.
+
+22
+00:01:28,744 --> 00:01:31,227
+Aur aapke counter pe — live orders board.
+
+23
+00:01:31,527 --> 00:01:35,730
+New, Being made, Ready. Har table, har round, ek nazar mein.
+
+24
+00:01:36,030 --> 00:01:42,263
+Jo table dobara order karta hai, woh 'running' banke sabse upar aata hai. Kuch miss nahi hota.
+
+25
+00:01:43,213 --> 00:01:44,962
+Kitchen staff ka apna alag login.
+
+26
+00:01:45,262 --> 00:01:48,888
+Woh order accept karte hain, preparing aur ready mark karte hain.
+
+27
+00:01:49,188 --> 00:01:52,382
+Lekin prices, bills aur paise — sirf owner dekhta hai.
+
+28
+00:01:53,332 --> 00:01:56,058
+Khaana khatam. Aap table close karte hain.
+
+29
+00:01:56,358 --> 00:01:59,203
+Bill customer ke phone pe — tax ke saath, saaf-saaf.
+
+30
+00:01:59,503 --> 00:02:03,972
+Service charge optional hai. Customer chahe toh hata sakta hai.
+
+31
+00:02:04,922 --> 00:02:06,822
+Saath mein ek sawaal: khaana kaisa tha?
+
+32
+00:02:07,122 --> 00:02:11,219
+Customer Google review de sakta hai — aur ek private message, seedha aapko.
+
+33
+00:02:11,519 --> 00:02:14,573
+Jo baat aapko jaanni chahiye, woh aap tak pahunchti hai.
+
+34
+00:02:15,523 --> 00:02:17,247
+Aur din ke end mein — poora hisaab.
+
+35
+00:02:17,547 --> 00:02:23,257
+Har bill. Cash, UPI, card. Aaj, is hafte, ya poora financial year.
+
+36
+00:02:23,557 --> 00:02:27,178
+Export kijiye, apne CA ko bhej dijiye. Bas.
+
+37
+00:02:28,128 --> 00:02:30,865
+Ab baat karte hain kitchen ki. Printing.
+
+38
+00:02:31,815 --> 00:02:36,566
+Aapke counter ka koi bhi computer. Chrome kholiye — wahi aapka print station.
+
+39
+00:02:36,866 --> 00:02:41,798
+Thermal printer jodiye — 58 ya 80 mm. Koi special software nahi.
+
+40
+00:02:42,098 --> 00:02:44,326
+Phir bataiye, kaunsa printer kya chhaapega.
+
+41
+00:02:45,276 --> 00:02:47,745
+Teen kaam hain: token, kitchen ticket, aur bill.
+
+42
+00:02:48,045 --> 00:02:51,818
+Chhota restaurant? Ek hi computer teenon kaam kar leta hai.
+
+43
+00:02:52,118 --> 00:02:57,996
+Bada setup? Counter pe token aur bill, kitchen mein KOT. Aap decide kijiye.
+
+44
+00:02:58,946 --> 00:03:02,234
+Jaise hi order accept hota hai, do cheezein print hoti hain.
+
+45
+00:03:02,534 --> 00:03:05,490
+Customer ke liye token slip — bade token number ke saath.
+
+46
+00:03:05,790 --> 00:03:10,302
+Aur kitchen ke liye KOT — sirf dishes aur instructions, jaise 'less spicy'.
+
+47
+00:03:10,602 --> 00:03:14,270
+Token number dono pe same. Confusion ka sawaal hi nahi.
+
+48
+00:03:15,220 --> 00:03:16,892
+Customer ne baad mein chai mangwaayi?
+
+49
+00:03:17,192 --> 00:03:20,746
+Kitchen ko sirf naye items jaate hain — 'Round 2, new items'.
+
+50
+00:03:21,046 --> 00:03:23,450
+Pehle round ka kuch bhi dobara print nahi hota.
+
+51
+00:03:24,400 --> 00:03:26,850
+Table close hote hi — poore order ka ek bill.
+
+52
+00:03:27,150 --> 00:03:31,496
+Saare rounds ek saath. Token number ke saath, taaki hisaab mile.
+
+53
+00:03:32,446 --> 00:03:35,668
+Aur agar printer band ho jaaye? Paper khatam ho jaaye?
+
+54
+00:03:35,968 --> 00:03:40,301
+Order nahi rukta. Printing ki galti se order kabhi fail nahi hota.
+
+55
+00:03:40,601 --> 00:03:47,530
+Fail hua print apne aap dobara try hota hai. Screen pe saaf dikhta hai — kitne print hue, kitne fail.
+
+56
+00:03:47,830 --> 00:03:51,951
+Ek click mein reprint. Aur ek ticket kabhi do baar print nahi hoti.
+
+57
+00:03:52,901 --> 00:03:58,037
+Owner dashboard se har station dikhta hai — kaunsa online hai, kaunsa printer kis kaam pe.
+
+58
+00:03:58,337 --> 00:04:02,004
+Test print kijiye, naam badaliye, ya kisi machine ko hata dijiye.
+
+59
+00:04:02,954 --> 00:04:06,630
+Menu se bill tak. Customer ke phone se kitchen ke printer tak.
+
+60
+00:04:06,930 --> 00:04:11,162
+Ek system. Shaant. Tez. Bharosemand.
+
+61
+00:04:11,462 --> 00:04:15,734
+menu.irad.solutions — aapka restaurant, bina shor ke.
+
